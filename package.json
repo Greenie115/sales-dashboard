@@ -2,7 +2,7 @@
   "name": "sales-dashboard",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://[your-github-username].github.io/sales-dashboard",
+  "homepage": "https://Greenie115.github.io/sales-dashboard",
   "dependencies": {
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.4.0",
@@ -16,10 +16,10 @@
     "web-vitals": "^2.1.4"
   },
   "devDependencies": {
-    "tailwindcss": "^3.2.4",
-    "postcss": "^8.4.20",
     "autoprefixer": "^10.4.13",
-    "gh-pages": "^6.1.1"
+    "gh-pages": "^6.3.0",
+    "postcss": "^8.4.20",
+    "tailwindcss": "^3.2.4"
   },
   "scripts": {
     "predeploy": "npm run build",
