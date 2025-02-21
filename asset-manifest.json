@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/sales-dashboard/static/css/main.fe6a3b45.css",
+    "main.js": "/sales-dashboard/static/js/main.13d9191e.js",
+    "index.html": "/sales-dashboard/index.html",
+    "main.fe6a3b45.css.map": "/sales-dashboard/static/css/main.fe6a3b45.css.map",
+    "main.13d9191e.js.map": "/sales-dashboard/static/js/main.13d9191e.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.fe6a3b45.css",
+    "static/js/main.13d9191e.js"
+  ]
+}
