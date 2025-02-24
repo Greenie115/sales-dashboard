@@ -4,18 +4,20 @@ import Papa from 'papaparse';
 import _ from 'lodash';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import DemographicInsights from './DemographicInsights';
 
 const SalesDashboard = () => {
   const [data, setData] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState('all');
   const [selectedRetailers, setSelectedRetailers] = useState(['all']);
-  const [dateRange, setDateRange] = useState('all'); // 'all', 'month', 'custom'
+  const [dateRange, setDateRange] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
   const [clientName, setClientName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('sales');
 
   const handleFileUpload = (event) => {
     setLoading(true);
@@ -163,8 +165,8 @@ const SalesDashboard = () => {
       {/* Header with Export Button */}
       <div className="mb-6 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Unit Sales Analysis</h1>
-          <p className="text-gray-600">Analyze unit sales by product and retailer</p>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Sales & Demographics Analysis</h1>
+          <p className="text-gray-600">Analyze sales and demographic insights</p>
         </div>
         {data.length > 0 && (
           <div className="flex items-center gap-4">
@@ -209,64 +211,31 @@ const SalesDashboard = () => {
                 doc.text(`Total Units: ${metrics?.totalUnits.toLocaleString()}`, 20, 82);
                 doc.setTextColor(0, 0, 0);
 
-                // Create table data first
+                // Add retailer distribution table
+                doc.setFontSize(12);
+                doc.text('Retailer Distribution:', 15, 95);
+                
                 const tableData = retailerData.map(retailer => [
                   retailer.name,
                   retailer.value.toLocaleString(),
                   `${retailer.percentage.toFixed(1)}%`
                 ]);
-
-                // Get the pie chart SVG
-                const chartContainer = document.querySelector('.recharts-wrapper svg');
-                if (chartContainer) {
-                  const svgData = new XMLSerializer().serializeToString(chartContainer);
-                  // Convert SVG to data URL
-                  const canvas = document.createElement('canvas');
-                  const ctx = canvas.getContext('2d');
-                  const img = new Image();
-                  img.onload = function() {
-                    canvas.width = this.width;
-                    canvas.height = this.height;
-                    ctx.drawImage(this, 0, 0);
-                    const pngData = canvas.toDataURL('image/png');
-                    
-                    // Add the chart to PDF
-                    doc.addImage(pngData, 'PNG', 15, 90, 100, 70);
-                    
-                    // Add retailer distribution table
-                    doc.autoTable({
-                      startY: 90,
-                      head: [['Retailer', 'Units', 'Percentage']],
-                      body: tableData,
-                      theme: 'grid',
-                      headStyles: { fillColor: [71, 85, 105] },
-                      styles: { fontSize: 10 },
-                      margin: { left: 130 }
-                    });
-                    
-                    // Save the PDF with client name
-                    const fileName = clientName 
-                      ? `${clientName.toLowerCase().replace(/\s+/g, '-')}-sales-analysis.pdf`
-                      : 'sales-analysis-report.pdf';
-                    doc.save(fileName);
-                  };
-                  img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
-                } else {
-                  // Fallback if chart isn't available
-                  doc.autoTable({
-                    startY: 90,
-                    head: [['Retailer', 'Units', 'Percentage']],
-                    body: tableData,
-                    theme: 'grid',
-                    headStyles: { fillColor: [71, 85, 105] },
-                    styles: { fontSize: 10 },
-                    margin: { left: 15 }
-                  });
-                  const fileName = clientName 
-                    ? `${clientName.toLowerCase().replace(/\s+/g, '-')}-sales-analysis.pdf`
-                    : 'sales-analysis-report.pdf';
-                  doc.save(fileName);
-                }
+                
+                doc.autoTable({
+                  startY: 100,
+                  head: [['Retailer', 'Units', 'Percentage']],
+                  body: tableData,
+                  theme: 'grid',
+                  headStyles: { fillColor: [71, 85, 105] },
+                  styles: { fontSize: 10 },
+                  margin: { left: 15 }
+                });
+                
+                // Save the PDF with client name
+                const fileName = clientName 
+                  ? `${clientName.toLowerCase().replace(/\s+/g, '-')}-sales-analysis.pdf`
+                  : 'sales-analysis-report.pdf';
+                doc.save(fileName);
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
@@ -290,159 +259,192 @@ const SalesDashboard = () => {
 
       {data.length > 0 && (
         <>
-          {/* Controls */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="p-4 bg-white rounded-lg shadow">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Product</label>
-              <select
-                value={selectedProduct}
-                onChange={(e) => setSelectedProduct(e.target.value)}
-                className="block w-full p-2 border rounded"
-              >
-                <option value="all">All Products</option>
-                {_.uniq(data.map(item => item.product_name)).sort().map(product => (
-                  <option key={product} value={product}>{product}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="p-4 bg-white rounded-lg shadow">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
-              <select
-                value={dateRange}
-                onChange={(e) => setDateRange(e.target.value)}
-                className="block w-full p-2 border rounded mb-2"
-              >
-                <option value="all">All Time</option>
-                <option value="month">Specific Month</option>
-                <option value="custom">Custom Range</option>
-              </select>
-
-              {dateRange === 'month' && (
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="block w-full p-2 border rounded"
-                >
-                  {getAvailableMonths().map(month => (
-                    <option key={month} value={month}>{month}</option>
-                  ))}
-                </select>
-              )}
-
-              {dateRange === 'custom' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="block w-full p-2 border rounded"
-                  />
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="block w-full p-2 border rounded"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Retailer Selection */}
-          <div className="mb-6 p-4 bg-white rounded-lg shadow">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Select Retailers</label>
-            <div className="flex flex-wrap gap-2">
+          {/* Tabs Navigation */}
+          <div className="mb-6 border-b border-gray-200">
+            <nav className="-mb-px flex">
               <button
-                onClick={() => handleRetailerSelection('all')}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  selectedRetailers.includes('all')
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700'
+                onClick={() => setActiveTab('sales')}
+                className={`py-2 px-4 text-center border-b-2 font-medium text-sm ${
+                  activeTab === 'sales'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                All Retailers
+                Sales Analysis
               </button>
-              {availableRetailers.map(retailer => (
-                <button
-                  key={retailer}
-                  onClick={() => handleRetailerSelection(retailer)}
-                  className={`px-3 py-1 rounded-full text-sm ${
-                    selectedRetailers.includes(retailer) && !selectedRetailers.includes('all')
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  {retailer}
-                </button>
-              ))}
-            </div>
+              <button
+                onClick={() => setActiveTab('demographics')}
+                className={`ml-8 py-2 px-4 text-center border-b-2 font-medium text-sm ${
+                  activeTab === 'demographics'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Demographic Insights
+              </button>
+            </nav>
           </div>
 
-          {/* Metrics Cards */}
-          {metrics && (
-            <div className="mb-6">
-              <div className="p-4 bg-white rounded-lg shadow">
-                <h3 className="text-lg font-semibold text-gray-700">Total Units</h3>
-                <p className="text-2xl font-bold text-blue-600">{metrics.totalUnits.toLocaleString()}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Distribution Chart and Table */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Pie Chart */}
-            <div className="p-4 bg-white rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">Unit Sales Distribution</h3>
-              <div className="h-96">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={retailerData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {retailerData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="p-4 bg-white rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">Detailed Breakdown</h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Retailer</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {retailerData.map((retailer, idx) => (
-                      <tr key={retailer.name} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{retailer.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{retailer.value.toLocaleString()}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{retailer.percentage.toFixed(1)}%</td>
-                      </tr>
+          {/* Content */}
+          {activeTab === 'sales' ? (
+            <>
+              {/* Controls */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="p-4 bg-white rounded-lg shadow">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Product</label>
+                  <select
+                    value={selectedProduct}
+                    onChange={(e) => setSelectedProduct(e.target.value)}
+                    className="block w-full p-2 border rounded"
+                  >
+                    <option value="all">All Products</option>
+                    {_.uniq(data.map(item => item.product_name)).sort().map(product => (
+                      <option key={product} value={product}>{product}</option>
                     ))}
-                  </tbody>
-                </table>
+                  </select>
+                </div>
+
+                <div className="p-4 bg-white rounded-lg shadow">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
+                  <select
+                    value={dateRange}
+                    onChange={(e) => setDateRange(e.target.value)}
+                    className="block w-full p-2 border rounded mb-2"
+                  >
+                    <option value="all">All Time</option>
+                    <option value="month">Specific Month</option>
+                    <option value="custom">Custom Range</option>
+                  </select>
+
+                  {dateRange === 'month' && (
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      className="block w-full p-2 border rounded"
+                    >
+                      {getAvailableMonths().map(month => (
+                        <option key={month} value={month}>{month}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {dateRange === 'custom' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="block w-full p-2 border rounded"
+                      />
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="block w-full p-2 border rounded"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          </div>
+
+              {/* Retailer Selection */}
+              <div className="mb-6 p-4 bg-white rounded-lg shadow">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Retailers</label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleRetailerSelection('all')}
+                    className={`px-3 py-1 rounded-full text-sm ${
+                      selectedRetailers.includes('all')
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700'
+                    }`}
+                  >
+                    All Retailers
+                  </button>
+                  {availableRetailers.map(retailer => (
+                    <button
+                      key={retailer}
+                      onClick={() => handleRetailerSelection(retailer)}
+                      className={`px-3 py-1 rounded-full text-sm ${
+                        selectedRetailers.includes(retailer) && !selectedRetailers.includes('all')
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {retailer}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Metrics Cards */}
+              {metrics && (
+                <div className="mb-6">
+                  <div className="p-4 bg-white rounded-lg shadow">
+                    <h3 className="text-lg font-semibold text-gray-700">Total Units</h3>
+                    <p className="text-2xl font-bold text-blue-600">{metrics.totalUnits.toLocaleString()}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Distribution Chart and Table */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Pie Chart */}
+                <div className="p-4 bg-white rounded-lg shadow">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-4">Unit Sales Distribution</h3>
+                  <div className="h-96">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={retailerData}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {retailerData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="p-4 bg-white rounded-lg shadow">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-4">Detailed Breakdown</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Retailer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {retailerData.map((retailer, idx) => (
+                          <tr key={retailer.name} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{retailer.name}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{retailer.value.toLocaleString()}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{retailer.percentage.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <DemographicInsights data={data} />
+          )}
         </>
       )}
     </div>
