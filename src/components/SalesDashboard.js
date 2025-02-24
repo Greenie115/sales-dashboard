@@ -165,7 +165,7 @@ const SalesDashboard = () => {
       {/* Header with Export Button */}
       <div className="mb-6 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Sales & Demographics Analysis</h1>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Insights Analysis Dashboard</h1>
           <p className="text-gray-600">Analyze sales and demographic insights</p>
         </div>
         {data.length > 0 && (
