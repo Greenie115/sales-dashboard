@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import Papa from 'papaparse';
 import _ from 'lodash';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const SalesDashboard = () => {
   const [data, setData] = useState([]);
@@ -11,71 +13,74 @@ const SalesDashboard = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [clientName, setClientName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleFileUpload = async (event) => {
+  const handleFileUpload = (event) => {
     setLoading(true);
     setError('');
     const file = event.target.files[0];
     
     if (file) {
-      try {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          Papa.parse(e.target.result, {
-            header: true,
-            dynamicTyping: true,
-            skipEmptyLines: true,
-            complete: (results) => {
-              if (results.data && results.data.length > 0) {
-                const validData = results.data.filter(row => 
-                  row.receipt_date && 
-                  row.product_name &&
-                  row.chain &&
-                  !isNaN(new Date(row.receipt_date).getTime())
-                );
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        Papa.parse(e.target.result, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          if (results.data && results.data.length > 0) {
+            const validData = results.data.filter(row => 
+              row.receipt_date && 
+              row.product_name &&
+              row.chain &&
+              !isNaN(new Date(row.receipt_date).getTime())
+            );
 
-                if (validData.length === 0) {
-                  setError('No valid data found. Please ensure your CSV has the correct format.');
-                  setData([]);
-                } else {
-                  // Process dates and add month field
-                  const processedData = validData.map(row => {
-                    const date = new Date(row.receipt_date);
-                    return {
-                      ...row,
-                      receipt_date: date.toISOString().split('T')[0],
-                      month: date.toISOString().slice(0, 7) // YYYY-MM format
-                    };
-                  });
-                  
-                  setData(processedData);
-                  // Set initial dates
-                  const dates = processedData.map(row => row.receipt_date);
-                  setStartDate(_.min(dates));
-                  setEndDate(_.max(dates));
-                  // Set initial product
-                  const products = _.uniq(processedData.map(row => row.product_name));
-                  setSelectedProduct(products[0] || 'all');
-                }
-              } else {
-                setError('No data found in file');
-                setData([]);
-              }
-              setLoading(false);
-            },
-            error: (error) => {
-              setError('Error parsing file: ' + error.message);
-              setLoading(false);
+            if (validData.length === 0) {
+              setError('No valid data found. Please ensure your CSV has the correct format.');
+              setData([]);
+            } else {
+              // Process dates and add month field
+              const processedData = validData.map(row => {
+                const date = new Date(row.receipt_date);
+                return {
+                  ...row,
+                  receipt_date: date.toISOString().split('T')[0],
+                  month: date.toISOString().slice(0, 7) // YYYY-MM format
+                };
+              });
+              
+              setData(processedData);
+              // Set initial date range
+              const dates = processedData.map(row => row.receipt_date);
+              setStartDate(_.min(dates));
+              setEndDate(_.max(dates));
+              // Set initial product
+              const products = _.uniq(processedData.map(row => row.product_name));
+              setSelectedProduct(products[0] || 'all');
             }
-          });
-        };
-        reader.readAsText(file);
-      } catch (error) {
-        setError('Error reading file: ' + error.message);
+          } else {
+            setError('No data found in file');
+            setData([]);
+          }
+          setLoading(false);
+        },
+        error: (error) => {
+          setError('Error parsing file: ' + error.message);
+          setLoading(false);
+        }
+      });
+      };
+      reader.onerror = () => {
+        setError('Error reading file');
         setLoading(false);
-      }
+      };
+      reader.readAsText(file);
+    } else {
+      setError('Please select a file');
+      setLoading(false);
     }
   };
 
@@ -155,10 +160,120 @@ const SalesDashboard = () => {
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">Unit Sales Analysis</h1>
-        <p className="text-gray-600">Analyze unit sales by product and retailer</p>
+      {/* Header with Export Button */}
+      <div className="mb-6 flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Unit Sales Analysis</h1>
+          <p className="text-gray-600">Analyze unit sales by product and retailer</p>
+        </div>
+        {data.length > 0 && (
+          <div className="flex items-center gap-4">
+            <input
+              type="text"
+              placeholder="Enter Client Name"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              className="px-3 py-2 border rounded"
+            />
+            <button
+              onClick={() => {
+                // Create new PDF document
+                const doc = new jsPDF('l', 'mm', 'a4');
+                
+                // Add client name and header
+                doc.setFontSize(20);
+                doc.text(`${clientName || 'Sales'} Analysis Report`, 15, 20);
+                
+                // Add date
+                doc.setFontSize(10);
+                doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 15, 30);
+                
+                // Add filters section
+                doc.setFontSize(12);
+                doc.text('Applied Filters:', 15, 40);
+                doc.setFontSize(10);
+                doc.text(`Product: ${selectedProduct === 'all' ? 'All Products' : selectedProduct}`, 20, 47);
+                doc.text(`Date Range: ${dateRange}`, 20, 54);
+                if (dateRange === 'month') {
+                  doc.text(`Month: ${selectedMonth}`, 20, 61);
+                }
+                if (dateRange === 'custom') {
+                  doc.text(`Period: ${startDate} to ${endDate}`, 20, 61);
+                }
+                
+                // Add metrics
+                doc.setFontSize(12);
+                doc.text('Summary Metrics:', 15, 75);
+                doc.setFontSize(14);
+                doc.setTextColor(0, 102, 204);
+                doc.text(`Total Units: ${metrics?.totalUnits.toLocaleString()}`, 20, 82);
+                doc.setTextColor(0, 0, 0);
+
+                // Create table data first
+                const tableData = retailerData.map(retailer => [
+                  retailer.name,
+                  retailer.value.toLocaleString(),
+                  `${retailer.percentage.toFixed(1)}%`
+                ]);
+
+                // Get the pie chart SVG
+                const chartContainer = document.querySelector('.recharts-wrapper svg');
+                if (chartContainer) {
+                  const svgData = new XMLSerializer().serializeToString(chartContainer);
+                  // Convert SVG to data URL
+                  const canvas = document.createElement('canvas');
+                  const ctx = canvas.getContext('2d');
+                  const img = new Image();
+                  img.onload = function() {
+                    canvas.width = this.width;
+                    canvas.height = this.height;
+                    ctx.drawImage(this, 0, 0);
+                    const pngData = canvas.toDataURL('image/png');
+                    
+                    // Add the chart to PDF
+                    doc.addImage(pngData, 'PNG', 15, 90, 100, 70);
+                    
+                    // Add retailer distribution table
+                    doc.autoTable({
+                      startY: 90,
+                      head: [['Retailer', 'Units', 'Percentage']],
+                      body: tableData,
+                      theme: 'grid',
+                      headStyles: { fillColor: [71, 85, 105] },
+                      styles: { fontSize: 10 },
+                      margin: { left: 130 }
+                    });
+                    
+                    // Save the PDF with client name
+                    const fileName = clientName 
+                      ? `${clientName.toLowerCase().replace(/\s+/g, '-')}-sales-analysis.pdf`
+                      : 'sales-analysis-report.pdf';
+                    doc.save(fileName);
+                  };
+                  img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+                } else {
+                  // Fallback if chart isn't available
+                  doc.autoTable({
+                    startY: 90,
+                    head: [['Retailer', 'Units', 'Percentage']],
+                    body: tableData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [71, 85, 105] },
+                    styles: { fontSize: 10 },
+                    margin: { left: 15 }
+                  });
+                  const fileName = clientName 
+                    ? `${clientName.toLowerCase().replace(/\s+/g, '-')}-sales-analysis.pdf`
+                    : 'sales-analysis-report.pdf';
+                  doc.save(fileName);
+                }
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Download Report
+            </button>
+          </div>
+        )}
       </div>
 
       {/* File Upload */}
