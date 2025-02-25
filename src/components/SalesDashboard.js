@@ -8,7 +8,7 @@ import DemographicInsights from './DemographicInsights';
 
 const SalesDashboard = () => {
   const [data, setData] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState('all');
+  const [selectedProducts, setSelectedProducts] = useState(['all']);
   const [selectedRetailers, setSelectedRetailers] = useState(['all']);
   const [dateRange, setDateRange] = useState('all');
   const [startDate, setStartDate] = useState('');
@@ -18,6 +18,24 @@ const SalesDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('sales');
+
+  // Generate colors for responses/age groups - Shopmium branded colors with better contrast
+  const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
+
+  // Handle product selection
+  const handleProductSelection = (product) => {
+    if (product === 'all') {
+      setSelectedProducts(['all']);
+    } else {
+      const newSelection = selectedProducts.includes('all') 
+        ? [product]
+        : selectedProducts.includes(product)
+          ? selectedProducts.filter(p => p !== product)
+          : [...selectedProducts, product];
+      
+      setSelectedProducts(newSelection.length ? newSelection : ['all']);
+    }
+  };
 
   const handleFileUpload = (event) => {
     setLoading(true);
@@ -59,9 +77,8 @@ const SalesDashboard = () => {
               const dates = processedData.map(row => row.receipt_date);
               setStartDate(_.min(dates));
               setEndDate(_.max(dates));
-              // Set initial product
-              const products = _.uniq(processedData.map(row => row.product_name));
-              setSelectedProduct(products[0] || 'all');
+              // Initialize with all products selected
+              setSelectedProducts(['all']);
             }
           } else {
             setError('No data found in file');
@@ -105,7 +122,7 @@ const SalesDashboard = () => {
   const getFilteredData = () => {
     return data.filter(item => {
       // Product filter
-      const productMatch = selectedProduct === 'all' || item.product_name === selectedProduct;
+      const productMatch = selectedProducts.includes('all') || selectedProducts.includes(item.product_name);
       
       // Retailer filter
       const retailerMatch = selectedRetailers.includes('all') || selectedRetailers.includes(item.chain);
@@ -157,11 +174,8 @@ const SalesDashboard = () => {
   const retailerData = getRetailerDistribution();
   const availableRetailers = _.uniq(data.map(item => item.chain)).sort();
 
-  // Chart colors
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
-
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
+    <div className="p-6 bg-white min-h-screen">
       {/* Header with Export Button */}
       <div className="mb-6 flex justify-between items-center">
         <div>
@@ -175,7 +189,7 @@ const SalesDashboard = () => {
               placeholder="Enter Client Name"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
-              className="px-3 py-2 border rounded"
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring focus:ring-pink-200 focus:border-pink-500 outline-none"
             />
             <button
               onClick={() => {
@@ -194,7 +208,7 @@ const SalesDashboard = () => {
                 doc.setFontSize(12);
                 doc.text('Applied Filters:', 15, 40);
                 doc.setFontSize(10);
-                doc.text(`Product: ${selectedProduct === 'all' ? 'All Products' : selectedProduct}`, 20, 47);
+                doc.text(`Products: ${selectedProducts.includes('all') ? 'All Products' : selectedProducts.join(', ')}`, 20, 47);
                 doc.text(`Date Range: ${dateRange}`, 20, 54);
                 if (dateRange === 'month') {
                   doc.text(`Month: ${selectedMonth}`, 20, 61);
@@ -207,7 +221,7 @@ const SalesDashboard = () => {
                 doc.setFontSize(12);
                 doc.text('Summary Metrics:', 15, 75);
                 doc.setFontSize(14);
-                doc.setTextColor(0, 102, 204);
+                doc.setTextColor(255, 0, 102); // Shopmium pink
                 doc.text(`Total Units: ${metrics?.totalUnits.toLocaleString()}`, 20, 82);
                 doc.setTextColor(0, 0, 0);
 
@@ -226,7 +240,7 @@ const SalesDashboard = () => {
                   head: [['Retailer', 'Units', 'Percentage']],
                   body: tableData,
                   theme: 'grid',
-                  headStyles: { fillColor: [71, 85, 105] },
+                  headStyles: { fillColor: [255, 0, 102] }, // Shopmium pink
                   styles: { fontSize: 10 },
                   margin: { left: 15 }
                 });
@@ -237,7 +251,7 @@ const SalesDashboard = () => {
                   : 'sales-analysis-report.pdf';
                 doc.save(fileName);
               }}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors shadow-md"
             >
               Download Report
             </button>
@@ -246,14 +260,14 @@ const SalesDashboard = () => {
       </div>
 
       {/* File Upload */}
-      <div className="mb-6 p-4 bg-white rounded-lg shadow">
+      <div className="mb-6 p-4 bg-white rounded-xl shadow-md">
         <input
           type="file"
           accept=".csv"
           onChange={handleFileUpload}
-          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100 transition-colors"
         />
-        {loading && <p className="mt-2 text-blue-600">Loading data...</p>}
+        {loading && <p className="mt-2 text-pink-600">Loading data...</p>}
         {error && <p className="mt-2 text-red-600">{error}</p>}
       </div>
 
@@ -266,7 +280,7 @@ const SalesDashboard = () => {
                 onClick={() => setActiveTab('sales')}
                 className={`py-2 px-4 text-center border-b-2 font-medium text-sm ${
                   activeTab === 'sales'
-                    ? 'border-blue-500 text-blue-600'
+                    ? 'border-pink-500 text-pink-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -276,7 +290,7 @@ const SalesDashboard = () => {
                 onClick={() => setActiveTab('demographics')}
                 className={`ml-8 py-2 px-4 text-center border-b-2 font-medium text-sm ${
                   activeTab === 'demographics'
-                    ? 'border-blue-500 text-blue-600'
+                    ? 'border-pink-500 text-pink-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -290,26 +304,41 @@ const SalesDashboard = () => {
             <>
               {/* Controls */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div className="p-4 bg-white rounded-lg shadow">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Product</label>
-                  <select
-                    value={selectedProduct}
-                    onChange={(e) => setSelectedProduct(e.target.value)}
-                    className="block w-full p-2 border rounded"
-                  >
-                    <option value="all">All Products</option>
+                <div className="p-4 bg-white rounded-xl shadow-md">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Products</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button
+                      onClick={() => handleProductSelection('all')}
+                      className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                        selectedProducts.includes('all')
+                          ? 'bg-pink-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      All Products
+                    </button>
                     {_.uniq(data.map(item => item.product_name)).sort().map(product => (
-                      <option key={product} value={product}>{product}</option>
+                      <button
+                        key={product}
+                        onClick={() => handleProductSelection(product)}
+                        className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                          selectedProducts.includes(product) && !selectedProducts.includes('all')
+                            ? 'bg-pink-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        {product.length > 30 ? product.substring(0, 30) + '...' : product}
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
-                <div className="p-4 bg-white rounded-lg shadow">
+                <div className="p-4 bg-white rounded-xl shadow-md">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
                   <select
                     value={dateRange}
                     onChange={(e) => setDateRange(e.target.value)}
-                    className="block w-full p-2 border rounded mb-2"
+                    className="block w-full p-2 border border-gray-300 rounded-lg focus:ring focus:ring-pink-200 focus:border-pink-500 outline-none mb-2"
                   >
                     <option value="all">All Time</option>
                     <option value="month">Specific Month</option>
@@ -320,7 +349,7 @@ const SalesDashboard = () => {
                     <select
                       value={selectedMonth}
                       onChange={(e) => setSelectedMonth(e.target.value)}
-                      className="block w-full p-2 border rounded"
+                      className="block w-full p-2 border border-gray-300 rounded-lg focus:ring focus:ring-pink-200 focus:border-pink-500 outline-none"
                     >
                       {getAvailableMonths().map(month => (
                         <option key={month} value={month}>{month}</option>
@@ -334,13 +363,13 @@ const SalesDashboard = () => {
                         type="date"
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
-                        className="block w-full p-2 border rounded"
+                        className="block w-full p-2 border border-gray-300 rounded-lg focus:ring focus:ring-pink-200 focus:border-pink-500 outline-none"
                       />
                       <input
                         type="date"
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
-                        className="block w-full p-2 border rounded"
+                        className="block w-full p-2 border border-gray-300 rounded-lg focus:ring focus:ring-pink-200 focus:border-pink-500 outline-none"
                       />
                     </div>
                   )}
@@ -348,15 +377,15 @@ const SalesDashboard = () => {
               </div>
 
               {/* Retailer Selection */}
-              <div className="mb-6 p-4 bg-white rounded-lg shadow">
+              <div className="mb-6 p-4 bg-white rounded-xl shadow-md">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Select Retailers</label>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => handleRetailerSelection('all')}
-                    className={`px-3 py-1 rounded-full text-sm ${
+                    className={`px-3 py-1 rounded-full text-sm transition-colors ${
                       selectedRetailers.includes('all')
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 text-gray-700'
+                        ? 'bg-pink-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
                     All Retailers
@@ -365,10 +394,10 @@ const SalesDashboard = () => {
                     <button
                       key={retailer}
                       onClick={() => handleRetailerSelection(retailer)}
-                      className={`px-3 py-1 rounded-full text-sm ${
+                      className={`px-3 py-1 rounded-full text-sm transition-colors ${
                         selectedRetailers.includes(retailer) && !selectedRetailers.includes('all')
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-200 text-gray-700'
+                          ? 'bg-pink-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
                       {retailer}
@@ -380,9 +409,9 @@ const SalesDashboard = () => {
               {/* Metrics Cards */}
               {metrics && (
                 <div className="mb-6">
-                  <div className="p-4 bg-white rounded-lg shadow">
+                  <div className="p-4 bg-white rounded-xl shadow-md">
                     <h3 className="text-lg font-semibold text-gray-700">Total Units</h3>
-                    <p className="text-2xl font-bold text-blue-600">{metrics.totalUnits.toLocaleString()}</p>
+                    <p className="text-2xl font-bold text-pink-600">{metrics.totalUnits.toLocaleString()}</p>
                   </div>
                 </div>
               )}
@@ -390,7 +419,7 @@ const SalesDashboard = () => {
               {/* Distribution Chart and Table */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Pie Chart */}
-                <div className="p-4 bg-white rounded-lg shadow">
+                <div className="p-4 bg-white rounded-xl shadow-md">
                   <h3 className="text-lg font-semibold text-gray-700 mb-4">Unit Sales Distribution</h3>
                   <div className="h-96">
                     <ResponsiveContainer width="100%" height="100%">
@@ -402,7 +431,7 @@ const SalesDashboard = () => {
                           labelLine={false}
                           label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`}
                           outerRadius={80}
-                          fill="#8884d8"
+                          fill="#FF0066"
                           dataKey="value"
                         >
                           {retailerData.map((entry, index) => (
@@ -417,20 +446,24 @@ const SalesDashboard = () => {
                 </div>
 
                 {/* Table */}
-                <div className="p-4 bg-white rounded-lg shadow">
+                <div className="p-4 bg-white rounded-xl shadow-md">
                   <h3 className="text-lg font-semibold text-gray-700 mb-4">Detailed Breakdown</h3>
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-gray-200 rounded-lg overflow-hidden">
+                      <thead className="bg-pink-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Retailer</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Retailer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Units</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Percentage</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {retailerData.map((retailer, idx) => (
-                          <tr key={retailer.name} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <tr 
+                            key={retailer.name} 
+                            className="transition-colors hover:bg-pink-50 cursor-pointer"
+                            style={{ borderLeft: `4px solid ${COLORS[idx % COLORS.length]}` }}
+                          >
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{retailer.name}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{retailer.value.toLocaleString()}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{retailer.percentage.toFixed(1)}%</td>
