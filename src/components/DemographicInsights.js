@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import _ from 'lodash';
 
@@ -16,7 +16,8 @@ const AGE_GROUP_ORDER = [
 // Generate colors for responses/age groups - Shopmium branded colors with better contrast
 const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
 
-const DemographicInsights = ({ data }) => {
+// Modified the component to use forwardRef
+const DemographicInsights = forwardRef(({ data }, ref) => {
   const [selectedQuestionNumber, setSelectedQuestionNumber] = useState('08');
   const [selectedResponses, setSelectedResponses] = useState([]);
   const [responseData, setResponseData] = useState([]);
@@ -161,7 +162,7 @@ const DemographicInsights = ({ data }) => {
     setResponseData(_.orderBy(responseStats, ['total'], ['desc']));
   };
   
-  // Generate age distribution for selected responses
+  // Generate age distribution for selected responses - Updated with percentages
   const generateAgeDistribution = () => {
     if (!selectedResponses.length || !data.length) return;
     
@@ -184,6 +185,20 @@ const DemographicInsights = ({ data }) => {
         : 999
     }));
     
+    // Get total counts by age group for percentage calculation
+    const totalsByAgeGroup = {};
+    uniqueAgeGroups.forEach(ageGroup => {
+      totalsByAgeGroup[ageGroup] = data.filter(item => item.age_group === ageGroup).length;
+    });
+    
+    // Count total responses by selected options
+    const totalResponseCounts = {};
+    selectedResponses.forEach(responseValue => {
+      totalResponseCounts[responseValue] = data.filter(item => 
+        item[propositionKey] === responseValue
+      ).length;
+    });
+    
     // Process each selected response
     selectedResponses.forEach(responseValue => {
       // Filter data to the selected response
@@ -199,8 +214,22 @@ const DemographicInsights = ({ data }) => {
           ageGroupData.count++;
           if (!ageGroupData[responseValue]) {
             ageGroupData[responseValue] = 0;
+            ageGroupData[`${responseValue}_percent`] = 0;
+            ageGroupData[`${responseValue}_percent_of_total`] = 0;
           }
           ageGroupData[responseValue]++;
+          
+          // Calculate percentage within age group
+          if (totalsByAgeGroup[item.age_group] > 0) {
+            ageGroupData[`${responseValue}_percent`] = 
+              (ageGroupData[responseValue] / totalsByAgeGroup[item.age_group]) * 100;
+          }
+          
+          // Calculate percentage of total for this response
+          if (totalResponseCounts[responseValue] > 0) {
+            ageGroupData[`${responseValue}_percent_of_total`] = 
+              (ageGroupData[responseValue] / totalResponseCounts[responseValue]) * 100;
+          }
         }
       });
     });
@@ -208,6 +237,19 @@ const DemographicInsights = ({ data }) => {
     // Sort by the defined age group order
     setAgeDistribution(_.sortBy(ageDistributionData, 'sortOrder'));
   };
+
+  // Add this to expose data to parent component for export
+  useImperativeHandle(ref, () => ({
+    getVisibleData: () => {
+      return {
+        responseData,
+        selectedResponses,
+        ageDistribution,
+        uniqueResponses,
+        getCurrentQuestionText: getCurrentQuestionText()
+      };
+    }
+  }));
   
   return (
     <div className="p-6 bg-white">
@@ -314,6 +356,7 @@ const DemographicInsights = ({ data }) => {
                         </ResponsiveContainer>
                       </div>
                       
+                      {/* Enhanced table with percentages */}
                       <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                           <thead className="bg-pink-50">
@@ -321,9 +364,17 @@ const DemographicInsights = ({ data }) => {
                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Age Group</th>
                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Total Count</th>
                               {selectedResponses.map(response => (
-                                <th key={response} className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                                  {response}
-                                </th>
+                                <React.Fragment key={response}>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    {response}
+                                  </th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    % of Age Group
+                                  </th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    % of Response
+                                  </th>
+                                </React.Fragment>
                               ))}
                             </tr>
                           </thead>
@@ -338,9 +389,17 @@ const DemographicInsights = ({ data }) => {
                                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.ageGroup}</td>
                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.count}</td>
                                   {selectedResponses.map((response, responseIdx) => (
-                                    <td key={response} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                      {row[response] || 0}
-                                    </td>
+                                    <React.Fragment key={response}>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {row[response] || 0}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {row[`${response}_percent`] ? row[`${response}_percent`].toFixed(1) + '%' : '0.0%'}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {row[`${response}_percent_of_total`] ? row[`${response}_percent_of_total`].toFixed(1) + '%' : '0.0%'}
+                                      </td>
+                                    </React.Fragment>
                                   ))}
                                 </tr>
                               );
@@ -368,6 +427,6 @@ const DemographicInsights = ({ data }) => {
       </div>
     </div>
   );
-};
+});
 
 export default DemographicInsights;
