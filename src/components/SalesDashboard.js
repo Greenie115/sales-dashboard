@@ -4,6 +4,9 @@ import _ from 'lodash';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { saveAs } from 'file-saver';
+import { identifyBrandPrefixes, extractBrandNames } from '../utils/brandDetection.js'
+// import AdvancedFilterPanel from './filters/AdvancedFilterPanel';
+// import SurveyResponseAnalytics from './analytics/SurveyResponseAnalytics';
 
 // Import our new components
 import ExecutiveSummaryPanel from './ExecutiveSummaryPanel';
@@ -23,153 +26,10 @@ const AGE_GROUP_ORDER = [
   'Under 18'
 ];
 
-// More aggressive brand identification function
-const identifyBrandPrefixes = (productNames) => {
-  if (!productNames || productNames.length <= 1) return {};
-
-  // Split all product names into word arrays
-  const productWords = productNames.map(name => name.split(' '));
-  
-  // Find minimum product name length to avoid out-of-bounds errors
-  const minLength = Math.min(...productWords.map(words => words.length));
-  
-  // Start with maximum possible prefix length (up to 4 words or minLength)
-  const maxPrefixLength = Math.min(4, minLength - 1); // Allow up to 4 words for brand names
-  
-  // Track all brand mappings found for different prefix lengths
-  const allMappings = {};
-  let validMappingsFound = false;
-  
-  // Try different prefix lengths to identify brand patterns
-  for (let prefixLength = maxPrefixLength; prefixLength > 0; prefixLength--) {
-    // Group products by their potential prefix
-    const prefixGroups = {};
-    
-    productWords.forEach(words => {
-      const prefix = words.slice(0, prefixLength).join(' ');
-      if (!prefixGroups[prefix]) prefixGroups[prefix] = 0;
-      prefixGroups[prefix]++;
-    });
-    
-    // Find prefixes that appear multiple times (likely brand names)
-    // Lower threshold to 5% to catch more brand patterns
-    const commonPrefixes = Object.entries(prefixGroups)
-      .filter(([prefix, count]) => {
-        // Consider a prefix common if it appears in at least 2 products
-        // and represents at least 5% of all products (lowered from 10%)
-        return count >= 2 && (count / productNames.length) >= 0.05;
-      })
-      .map(([prefix]) => prefix);
-    
-    if (commonPrefixes.length > 0) {
-      validMappingsFound = true;
-      
-      // Process each product name with the identified common prefixes
-      productNames.forEach(name => {
-        // Find if this product starts with any of the common prefixes
-        const matchedPrefix = commonPrefixes.find(prefix => 
-          name.startsWith(prefix + ' ')
-        );
-        
-        if (matchedPrefix) {
-          // Remove the prefix and trim any extra spaces
-          const unbranded = name.substring(matchedPrefix.length).trim();
-          
-          // Store the mapping - only override if we don't already have one
-          // or if we found a longer prefix (more specific brand)
-          if (!allMappings[name] || matchedPrefix.length > allMappings[name].brandName.length) {
-            allMappings[name] = {
-              original: name,
-              brandName: matchedPrefix,
-              displayName: unbranded
-            };
-          }
-        } else if (!allMappings[name]) {
-          // No common prefix found and no mapping exists yet
-          allMappings[name] = {
-            original: name,
-            brandName: '',
-            displayName: name
-          };
-        }
-      });
-    }
-  }
-  
-  // If still no valid mappings, try a more aggressive approach by looking at common first words
-  if (!validMappingsFound) {
-    // Count frequency of first words
-    const firstWordCounts = {};
-    productWords.forEach(words => {
-      if (words.length > 0) {
-        const firstWord = words[0];
-        firstWordCounts[firstWord] = (firstWordCounts[firstWord] || 0) + 1;
-      }
-    });
-    
-    // Find common first words
-    const commonFirstWords = Object.entries(firstWordCounts)
-      .filter(([word, count]) => count >= 2)
-      .map(([word]) => word);
-    
-    if (commonFirstWords.length > 0) {
-      productNames.forEach(name => {
-        const words = name.split(' ');
-        if (words.length > 1 && commonFirstWords.includes(words[0])) {
-          allMappings[name] = {
-            original: name,
-            brandName: words[0],
-            displayName: words.slice(1).join(' ')
-          };
-        } else {
-          allMappings[name] = {
-            original: name,
-            brandName: '',
-            displayName: name
-          };
-        }
-      });
-      validMappingsFound = true;
-    }
-  }
-  
-  // If no valid mappings found, try the simplest approach - just remove the first word
-  // from any product with 3+ words
-  if (!validMappingsFound) {
-    productNames.forEach(name => {
-      const words = name.split(' ');
-      if (words.length >= 3) {
-        allMappings[name] = {
-          original: name,
-          brandName: words[0],
-          displayName: words.slice(1).join(' ')
-        };
-      } else {
-        allMappings[name] = {
-          original: name,
-          brandName: '',
-          displayName: name
-        };
-      }
-    });
-  }
-  
-  return allMappings;
-};
-
-// Function to extract brand names from the mapping for possible use
-const extractBrandNames = (brandMapping) => {
-  if (!brandMapping) return [];
-  
-  // Get unique brand names that are not empty
-  const brands = Object.values(brandMapping)
-    .map(info => info.brandName)
-    .filter(Boolean);
-    
-  return [...new Set(brands)]; // Return unique brand names
-};
-
 const SalesDashboard = () => {
+  // Add state for brand detection module loading
+  const [brandDetectionLoaded, setBrandDetectionLoaded] = useState(false);
+  
   const [data, setData] = useState([]);
   const [offerData, setOfferData] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState(['all']);
@@ -191,6 +51,8 @@ const SalesDashboard = () => {
   const [redemptionTimeframe, setRedemptionTimeframe] = useState('daily');
   const [showTrendLine, setShowTrendLine] = useState(true);
   const [showInsightDetails, setShowInsightDetails] = useState(false);
+  // const [advancedFilteredData, setAdvancedFilteredData] = useState([]);
+  // const [useAdvancedFilters, setUseAdvancedFilters] = useState(false);
   
   // State for date comparison feature
   const [comparisonMode, setComparisonMode] = useState(false);
@@ -202,6 +64,49 @@ const SalesDashboard = () => {
   // Refs for child components to access their data
   const demographicRef = useRef(null);
   const offerInsightsRef = useRef(null);
+
+  // Add effect to dynamically load brand detection or use inline fallback
+  useEffect(() => {
+    // Define inline fallback functions in case the import fails
+    const fallbackIdentifyBrandPrefixes = (productNames) => {
+      if (!productNames || productNames.length <= 1) return {};
+      
+      const mappings = {};
+      productNames.forEach(name => {
+        const words = name.split(' ');
+        if (words.length >= 3) {
+          mappings[name] = {
+            original: name,
+            brandName: words[0],
+            displayName: words.slice(1).join(' ')
+          };
+        } else {
+          mappings[name] = {
+            original: name,
+            brandName: '',
+            displayName: name
+          };
+        }
+      });
+      return mappings;
+    };
+    
+    const fallbackExtractBrandNames = (brandMapping) => {
+      if (!brandMapping) return [];
+      const brands = Object.values(brandMapping)
+        .map(info => info.brandName)
+        .filter(Boolean);
+      return [...new Set(brands)];
+    };
+    
+    // Store these functions globally to use in file upload
+    window.BrandDetection = {
+      identifyBrandPrefixes: fallbackIdentifyBrandPrefixes,
+      extractBrandNames: fallbackExtractBrandNames
+    };
+    
+    setBrandDetectionLoaded(true);
+  }, []);
 
   // Add effect to handle clicking outside the export dropdown
   useEffect(() => {
@@ -320,12 +225,16 @@ const SalesDashboard = () => {
                   
                   setData(processedData);
                   
-                  // Add brand detection
+                  // Use the BrandDetection utility from the window object
                   const uniqueProducts = _.uniq(processedData.map(item => item.product_name)).filter(Boolean);
-                  const mapping = identifyBrandPrefixes(uniqueProducts);
-                  setBrandMapping(mapping);
-                  const brands = extractBrandNames(mapping);
-                  setBrandNames(brands);
+                  
+                  // Make sure the brand detection is loaded
+                  if (window.BrandDetection) {
+                    const mapping = window.BrandDetection.identifyBrandPrefixes(uniqueProducts);
+                    setBrandMapping(mapping);
+                    const brands = window.BrandDetection.extractBrandNames(mapping);
+                    setBrandNames(brands);
+                  }
                   
                   // Set initial date range
                   const dates = processedData.map(row => row.receipt_date);
@@ -380,6 +289,7 @@ const SalesDashboard = () => {
 
   // Get filtered data based on all selections
   const getFilteredData = (isComparison = false) => {
+    // Remove the advanced filters conditional
     return data.filter(item => {
       // Product filter
       const productMatch = selectedProducts.includes('all') || selectedProducts.includes(item.product_name);
@@ -1095,84 +1005,526 @@ const exportToCSV = (fileName) => {
   };
   
   // Generate PDF report - Simplified version, see full component for complete implementation
-    const generatePDF = (fileName) => {
-      // Create new PDF document
-      const doc = new jsPDF('l', 'mm', 'a4');
+  const generatePDF = (fileName) => {
+    // Create new PDF document
+    const doc = new jsPDF('l', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 15;
+    const contentWidth = pageWidth - (margin * 2);
+    
+    // Add Shopmium styled header
+    doc.setFillColor(...PDF_COLORS.shopmiumPink);
+    doc.rect(0, 0, pageWidth, 15, 'F');
+    
+    // Add detected brand name or client name
+    const displayBrandName = brandNames.length > 0 ? brandNames[0] : (clientName || 'Analysis');
+    doc.setFontSize(20);
+    doc.setTextColor(...PDF_COLORS.shopmiumPink);
+    doc.text(`${displayBrandName} Report`, margin, 25);
+    
+    // Add date
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, margin, 35);
+    
+    // Add headers with Shopmium styled design based on tab
+    if (activeTab === 'sales' && data.length > 0) {
+      doc.setFillColor(...PDF_COLORS.blue);
+      doc.rect(margin, 45, contentWidth, 10, 'F');
+      doc.setFontSize(12);
+      doc.setTextColor(255, 255, 255);
+      doc.text('Sales Analysis Summary', margin + 5, 52);
       
-      // Add Shopmium styled header
-      doc.setFillColor(...PDF_COLORS.shopmiumPink);
-      doc.rect(0, 0, doc.internal.pageSize.width, 15, 'F');
+      // Add Key Metrics section
+      let yPos = 65;
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Key Metrics', margin, yPos);
+      yPos += 10;
       
-      // Add client name and header
-      doc.setFontSize(20);
-      doc.setTextColor(...PDF_COLORS.shopmiumPink);
-      doc.text(`${clientName || 'Analysis'} Report`, 15, 25);
+      // Create metrics table
+      doc.autoTable({
+        startY: yPos,
+        head: [['Metric', 'Value']],
+        body: [
+          ['Total Redemptions', metrics?.totalUnits.toLocaleString()],
+          ['Average Per Day', metrics?.avgRedemptionsPerDay],
+          ['Date Range', `${metrics?.uniqueDates[0]} to ${metrics?.uniqueDates[metrics?.uniqueDates.length - 1]}`],
+          ['Days in Range', metrics?.daysInRange]
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: PDF_COLORS.shopmiumPink, textColor: [255, 255, 255] },
+        margin: { left: margin }
+      });
       
-      // Add date
+      yPos = doc.lastAutoTable.finalY + 15;
+      
+      // Add Retailer Distribution section
+      doc.setFontSize(14);
+      doc.text('Retailer Distribution', margin, yPos);
+      yPos += 10;
+      
+      // Create retailer distribution table
+      const retailerRows = retailerData.map(retailer => [
+        retailer.name,
+        retailer.value.toLocaleString(),
+        `${retailer.percentage.toFixed(1)}%`
+      ]);
+      
+      doc.autoTable({
+        startY: yPos,
+        head: [['Retailer', 'Units', 'Percentage']],
+        body: retailerRows,
+        theme: 'grid',
+        headStyles: { fillColor: PDF_COLORS.blue, textColor: [255, 255, 255] },
+        margin: { left: margin }
+      });
+      
+      yPos = doc.lastAutoTable.finalY + 15;
+      
+      // Check if we need a new page for Product Distribution
+      if (yPos > pageHeight - 50) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      // Add Product Distribution section
+      doc.setFontSize(14);
+      doc.text('Product Distribution', margin, yPos);
+      yPos += 10;
+      
+      // Create product distribution table
+      const productDistribution = getProductDistribution();
+      const productRows = productDistribution.slice(0, 10).map(product => [
+        product.displayName,
+        product.count.toLocaleString(),
+        `${product.percentage.toFixed(1)}%`
+      ]);
+      
+      doc.autoTable({
+        startY: yPos,
+        head: [['Product', 'Units', 'Percentage']],
+        body: productRows,
+        theme: 'grid',
+        headStyles: { fillColor: PDF_COLORS.amber, textColor: [0, 0, 0] },
+        margin: { left: margin }
+      });
+      
+      yPos = doc.lastAutoTable.finalY + 15;
+      
+      // NEW SECTION: Product by Retailer Distribution
+      // Create a matrix of products by retailers
+      
+      // Check if we need a new page for the cross-tabulation
+      if (yPos > pageHeight - 60) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      // Get filtered data
+      const filteredData = getFilteredData();
+      
+      // Get top 5 products and retailers for the matrix (to keep the table manageable)
+      const topProducts = productDistribution.slice(0, 5);
+      const topRetailers = retailerData.slice(0, 5);
+      
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Product Distribution by Retailer (%)', margin, yPos);
       doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 15, 35);
+      doc.text('(What percentage of each product came from each retailer)', margin, yPos + 7);
+      yPos += 15;
       
-      // Add headers with Shopmium styled design based on tab
-      if (activeTab === 'sales' && data.length > 0) {
-        doc.setFillColor(...PDF_COLORS.blue);
-        doc.rect(15, 45, doc.internal.pageSize.width - 30, 10, 'F');
-        doc.setFontSize(12);
-        doc.setTextColor(255, 255, 255);
-        doc.text('Sales Analysis Summary', 20, 52);
+      // Create a product-retailer matrix
+      const productRetailerMatrix = {};
+      const productTotals = {};
+      
+      // Initialize the matrix and totals
+      topProducts.forEach(product => {
+        productRetailerMatrix[product.name] = {};
+        productTotals[product.name] = 0;
         
-        // Add sales-specific content
-        // ...
-      } 
-      else if (activeTab === 'demographics' && data.length > 0) {
-        doc.setFillColor(...PDF_COLORS.purple);
-        doc.rect(15, 45, doc.internal.pageSize.width - 30, 10, 'F');
-        doc.setFontSize(12);
-        doc.setTextColor(255, 255, 255);
+        topRetailers.forEach(retailer => {
+          productRetailerMatrix[product.name][retailer.name] = 0;
+        });
+      });
+      
+      // Fill the matrix with counts
+      filteredData.forEach(item => {
+        // Only process items that are in our top products and retailers
+        const isTopProduct = topProducts.find(p => p.name === item.product_name);
+        const isTopRetailer = topRetailers.find(r => r.name === item.chain);
         
-        // Get demographic data if available
-        let demographicTitle = 'Demographic Analysis';
-        if (demographicRef.current) {
-          const demographicData = demographicRef.current.getVisibleData();
-          if (demographicData && demographicData.getCurrentQuestionText) {
-            const questionText = demographicData.getCurrentQuestionText;
-            demographicTitle = `Demographics: ${questionText.substring(0, 50)}${questionText.length > 50 ? '...' : ''}`;
+        if (isTopProduct && isTopRetailer) {
+          productRetailerMatrix[item.product_name][item.chain] = 
+            (productRetailerMatrix[item.product_name][item.chain] || 0) + 1;
+          productTotals[item.product_name] = (productTotals[item.product_name] || 0) + 1;
+        }
+      });
+      
+      // Create percentage matrix for the table
+      const percentageMatrix = [];
+      
+      // First, create the header row
+      const headerRow = ['Product / Retailer'];
+      topRetailers.forEach(retailer => {
+        headerRow.push(retailer.name);
+      });
+      headerRow.push('Total Units');
+      
+      // Then create the data rows with percentages
+      topProducts.forEach(product => {
+        const row = [product.displayName || product.name];
+        
+        topRetailers.forEach(retailer => {
+          const count = productRetailerMatrix[product.name][retailer.name] || 0;
+          const total = productTotals[product.name] || 1; // Avoid division by zero
+          const percentage = (count / total) * 100;
+          row.push(`${percentage.toFixed(1)}%`);
+        });
+        
+        row.push(productTotals[product.name].toLocaleString());
+        percentageMatrix.push(row);
+      });
+      
+      // Add a total row
+      const totalRow = ['All Products'];
+      topRetailers.forEach(retailer => {
+        const retailerTotal = filteredData.filter(item => 
+          item.chain === retailer.name && 
+          topProducts.some(p => p.name === item.product_name)
+        ).length;
+        
+        const allProductsTotal = filteredData.filter(item => 
+          topProducts.some(p => p.name === item.product_name)
+        ).length || 1;
+        
+        const percentage = (retailerTotal / allProductsTotal) * 100;
+        totalRow.push(`${percentage.toFixed(1)}%`);
+      });
+      
+      totalRow.push(filteredData.filter(item => 
+        topProducts.some(p => p.name === item.product_name)
+      ).length.toLocaleString());
+      
+      percentageMatrix.push(totalRow);
+      
+      // Draw the table
+      doc.autoTable({
+        startY: yPos,
+        head: [headerRow],
+        body: percentageMatrix,
+        theme: 'grid',
+        headStyles: { fillColor: PDF_COLORS.teal, textColor: [255, 255, 255] },
+        margin: { left: margin },
+        styles: { fontSize: 8, cellPadding: 2 }, // Smaller font for potentially wide table
+        columnStyles: { 0: { cellWidth: 50 } } // Fix width for first column
+      });
+      
+      yPos = doc.lastAutoTable.finalY + 15;
+      
+      // NEW SECTION: Retailer by Product Distribution
+      // For the reverse perspective - what percentage of each retailer's sales comes from each product
+      
+      // Check if we need a new page
+      if (yPos > pageHeight - 60) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      doc.setFontSize(14);
+      doc.text('Retailer Distribution by Product (%)', margin, yPos);
+      doc.setFontSize(10);
+      doc.text('(What percentage of each retailer\'s sales came from each product)', margin, yPos + 7);
+      yPos += 15;
+      
+      // Calculate retailer totals
+      const retailerTotals = {};
+      topRetailers.forEach(retailer => {
+        retailerTotals[retailer.name] = filteredData.filter(item => 
+          item.chain === retailer.name && 
+          topProducts.some(p => p.name === item.product_name)
+        ).length || 1; // Avoid division by zero
+      });
+      
+      // Create percentage matrix for the reversed table
+      const retailerProductMatrix = [];
+      
+      // Create the header row (Product names as columns)
+      const reverseHeaderRow = ['Retailer / Product'];
+      topProducts.forEach(product => {
+        reverseHeaderRow.push(product.displayName || product.name);
+      });
+      reverseHeaderRow.push('Total Units');
+      
+      // Create data rows for each retailer
+      topRetailers.forEach(retailer => {
+        const row = [retailer.name];
+        
+        topProducts.forEach(product => {
+          const count = productRetailerMatrix[product.name][retailer.name] || 0;
+          const total = retailerTotals[retailer.name];
+          const percentage = (count / total) * 100;
+          row.push(`${percentage.toFixed(1)}%`);
+        });
+        
+        row.push(retailerTotals[retailer.name].toLocaleString());
+        retailerProductMatrix.push(row);
+      });
+      
+      // Add a total row
+      const reverseTotalRow = ['All Retailers'];
+      topProducts.forEach(product => {
+        const productTotal = filteredData.filter(item => 
+          item.product_name === product.name && 
+          topRetailers.some(r => r.name === item.chain)
+        ).length;
+        
+        const allRetailersTotal = filteredData.filter(item => 
+          topRetailers.some(r => r.name === item.chain)
+        ).length || 1;
+        
+        const percentage = (productTotal / allRetailersTotal) * 100;
+        reverseTotalRow.push(`${percentage.toFixed(1)}%`);
+      });
+      
+      reverseTotalRow.push(filteredData.filter(item => 
+        topRetailers.some(r => r.name === item.chain)
+      ).length.toLocaleString());
+      
+      retailerProductMatrix.push(reverseTotalRow);
+      
+      // Draw the reversed table
+      doc.autoTable({
+        startY: yPos,
+        head: [reverseHeaderRow],
+        body: retailerProductMatrix,
+        theme: 'grid',
+        headStyles: { fillColor: PDF_COLORS.orange, textColor: [0, 0, 0] },
+        margin: { left: margin },
+        styles: { fontSize: 8, cellPadding: 2 }, // Smaller font for potentially wide table
+        columnStyles: { 0: { cellWidth: 40 } } // Fix width for first column
+      });
+      
+      // Add note about time analysis
+      yPos = doc.lastAutoTable.finalY + 15;
+      if (yPos < pageHeight - 20) {
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.text('Note: Time analysis charts available in the dashboard view', margin, yPos);
+      }
+    } 
+    else if (activeTab === 'demographics' && data.length > 0) {
+      // Demographics PDF code remains as before
+      doc.setFillColor(...PDF_COLORS.purple);
+      doc.rect(margin, 45, contentWidth, 10, 'F');
+      doc.setFontSize(12);
+      doc.setTextColor(255, 255, 255);
+      
+      // Get demographic data if available
+      let demographicTitle = 'Demographic Analysis';
+      let responseData = [];
+      let ageData = [];
+      let currentQuestion = '';
+      let selectedResponses = [];
+      
+      if (demographicRef.current) {
+        const demographicData = demographicRef.current.getVisibleData();
+        if (demographicData) {
+          responseData = demographicData.responseData || [];
+          ageData = demographicData.ageData || [];
+          currentQuestion = demographicData.getCurrentQuestionText || '';
+          selectedResponses = demographicData.selectedResponses || [];
+          
+          if (currentQuestion) {
+            demographicTitle = `Demographics: ${currentQuestion.substring(0, 50)}${currentQuestion.length > 50 ? '...' : ''}`;
           }
         }
-        
-        doc.text(demographicTitle, 20, 52);
-        
-        // Add demographics-specific content
-        // ...
       }
       
-      // Add Shopmium footer
-      const pageCount = doc.internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFillColor(...PDF_COLORS.shopmiumPink);
-        doc.rect(0, doc.internal.pageSize.height - 10, doc.internal.pageSize.width, 10, 'F');
-        doc.setFontSize(8);
-        doc.setTextColor(255, 255, 255);
-        doc.text(`Powered by Shopmium Analytics - Page ${i} of ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 4, { align: 'center' });
-      }
+      doc.text(demographicTitle, margin + 5, 52);
       
-      // Save the PDF with Shopmium brand styling
-      doc.save(`${fileName || 'shopmium-analysis-report'}.pdf`);
-    };
-    
-    // Calculate standard deviation - helper function
-    const calculateStandardDeviation = (values) => {
-      if (!values || values.length === 0) return 0;
+      // Add Question text
+      let yPos = 65;
+      doc.setFontSize(12);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Question:', margin, yPos);
+      yPos += 7;
       
-      const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-      const squareDiffs = values.map(value => {
-        const diff = value - avg;
-        return diff * diff;
+      // Handle long question text with text wrapping
+      const questionLines = doc.splitTextToSize(currentQuestion, contentWidth);
+      doc.setFontSize(10);
+      doc.text(questionLines, margin, yPos);
+      yPos += (questionLines.length * 7) + 10;
+      
+      // Add Response Distribution
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Response Distribution', margin, yPos);
+      yPos += 10;
+      
+      // Create response table
+      const responseRows = responseData.map(resp => [
+        resp.response,
+        resp.total.toLocaleString(),
+        `${Math.round(resp.percentage)}%`
+      ]);
+      
+      doc.autoTable({
+        startY: yPos,
+        head: [['Response', 'Count', 'Percentage']],
+        body: responseRows,
+        theme: 'grid',
+        headStyles: { fillColor: PDF_COLORS.purple, textColor: [255, 255, 255] },
+        margin: { left: margin }
       });
-      const avgSquareDiff = squareDiffs.reduce((sum, val) => sum + val, 0) / squareDiffs.length;
-      return Math.sqrt(avgSquareDiff);
-    };
+      
+      yPos = doc.lastAutoTable.finalY + 15;
+      
+      // If we have selected responses, add age breakdown
+      if (selectedResponses && selectedResponses.length > 0) {
+        // Check if we need a new page
+        if (yPos > pageHeight - 50) {
+          doc.addPage();
+          yPos = 20;
+        }
+        
+        doc.setFontSize(14);
+        doc.text(`Age Distribution: ${selectedResponses.join(', ')}`, margin, yPos);
+        yPos += 10;
+        
+        // Get age distribution data
+        if (demographicRef.current) {
+          const { ageDistribution } = demographicRef.current.getVisibleData();
+          
+          if (ageDistribution && ageDistribution.length > 0) {
+            // Create table header with dynamic columns for selected responses
+            const ageHeader = ['Age Group', 'Total Count'];
+            selectedResponses.forEach(resp => {
+              ageHeader.push(resp);
+              ageHeader.push(`% of Age Group`);
+            });
+            
+            // Create table rows
+            const ageRows = ageDistribution.map(ageGroup => {
+              const row = [ageGroup.ageGroup, ageGroup.count];
+              
+              selectedResponses.forEach(resp => {
+                row.push(ageGroup[resp] || 0);
+                row.push(ageGroup[`${resp}_percent`] ? 
+                  `${ageGroup[`${resp}_percent`].toFixed(1)}%` : '0.0%');
+              });
+              
+              return row;
+            });
+            
+            // Add the age distribution table
+            doc.autoTable({
+              startY: yPos,
+              head: [ageHeader],
+              body: ageRows,
+              theme: 'grid',
+              headStyles: { fillColor: PDF_COLORS.teal, textColor: [255, 255, 255] },
+              margin: { left: margin },
+              styles: { fontSize: 8 }, // Smaller font for potentially wide table
+              columnStyles: { 0: { cellWidth: 20 } } // Fix width for first column
+            });
+          }
+        }
+      }
+    } 
+    else if (activeTab === 'offers' && hasOfferData) {
+      // Offers PDF code remains as before
+      doc.setFillColor(...PDF_COLORS.green);
+      doc.rect(margin, 45, contentWidth, 10, 'F');
+      doc.setFontSize(12);
+      doc.setTextColor(255, 255, 255);
+      doc.text('Offer Insights', margin + 5, 52);
+      
+      // Get offer data if available
+      let yPos = 65;
+      let insightType = '';
+      let metrics = {};
+      let offerData = [];
+      
+      if (offerInsightsRef.current) {
+        const offerInsightsData = offerInsightsRef.current.getVisibleData();
+        if (offerInsightsData) {
+          insightType = offerInsightsData.insightType || '';
+          metrics = offerInsightsData.metrics || {};
+          offerData = offerInsightsData.offerData || [];
+          
+          // Add metrics section
+          doc.setFontSize(14);
+          doc.setTextColor(0, 0, 0);
+          doc.text('Key Metrics', margin, yPos);
+          yPos += 10;
+          
+          // Create metrics table
+          doc.autoTable({
+            startY: yPos,
+            head: [['Metric', 'Value']],
+            body: [
+              ['Total Hits', metrics.totalHits?.toLocaleString() || '0'],
+              ['Average Hits Per Day', metrics.averageHitsPerDay || '0'],
+              ['Period Length', `${metrics.periodDays || 0} days`]
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: PDF_COLORS.green, textColor: [255, 255, 255] },
+            margin: { left: margin }
+          });
+          
+          yPos = doc.lastAutoTable.finalY + 15;
+          
+          // Add Offer Distribution section if data available
+          if (offerData && offerData.length > 0) {
+            // Check if we need a new page
+            if (yPos > pageHeight - 50) {
+              doc.addPage();
+              yPos = 20;
+            }
+            
+            doc.setFontSize(14);
+            doc.text('Offer Distribution', margin, yPos);
+            yPos += 10;
+            
+            // Create offer distribution table
+            const offerRows = offerData.slice(0, 10).map(offer => [
+              offer.name,
+              offer.value.toLocaleString(),
+              `${offer.percentage.toFixed(1)}%`,
+              offer.averageHitsPerDay
+            ]);
+            
+            doc.autoTable({
+              startY: yPos,
+              head: [['Offer Name', 'Hits', 'Percentage', 'Avg. Hits/Day']],
+              body: offerRows,
+              theme: 'grid',
+              headStyles: { fillColor: PDF_COLORS.green, textColor: [255, 255, 255] },
+              margin: { left: margin },
+              columnStyles: { 0: { cellWidth: 80 } } // Wider column for offer names
+            });
+          }
+        }
+      }
+    }
+    
+    // Add Shopmium footer
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFillColor(...PDF_COLORS.shopmiumPink);
+      doc.rect(0, pageHeight - 10, pageWidth, 10, 'F');
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`Powered by Shopmium Analytics - Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 4, { align: 'center' });
+    }
+    
+    // Save the PDF with Shopmium brand styling
+    doc.save(`${fileName || 'shopmium-analysis-report'}.pdf`);
+  };
   
     // Prepare data for child components
     const metrics = data && data.length > 0 ? calculateMetrics() : null;
@@ -1187,68 +1539,74 @@ const exportToCSV = (fileName) => {
         <div className="max-w-7xl mx-auto">
         {/* Header Section */}
         <div className="mb-6 flex flex-col md:flex-row justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Sales Analytics Dashboard</h1>
-            <div className="mt-2">
-              <input 
-                type="text"
-                placeholder="Client name (for exports)"
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm"
-              />
-            </div>
-          </div>
-          
-          <div className="flex items-center mt-4 md:mt-0 space-x-4">
-            {/* Export Options - Side by side with file upload */}
-            {(data.length > 0 || hasOfferData) && (
-              <div className="relative export-dropdown">
-                <button
-                  onClick={() => setShowExportOptions(!showExportOptions)}
-                  className="bg-pink-600 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center"
-                >
-                  Export Data
-                  <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-                  </svg>
-                </button>
-                
-                {showExportOptions && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white shadow-lg rounded-md z-10">
-                    <button
-                      onClick={() => handleExport('csv')}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                    >
-                      Export to CSV
-                    </button>
-                    <button
-                      onClick={() => handleExport('pdf')}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                    >
-                      Export to PDF
-                    </button>
-                  </div>
-                )}
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Sales Analytics Dashboard</h1>
+          <div className="mt-2 flex items-center">
+            {brandNames.length > 0 && (
+              <div className="mr-3">
+                <span className="text-sm text-gray-500 mr-2">Detected Brand:</span>
+                <span className="font-medium text-pink-600">{brandNames[0]}</span>
               </div>
             )}
-            
-            {/* File Upload Section */}
-            <div className="flex flex-col">
-              <label className="block mb-2 text-sm font-medium text-gray-900">
-                Upload Data CSV
-              </label>
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleFileUpload}
-                className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-white p-2.5"
-              />
-              {loading && <p className="mt-1 text-sm text-gray-500">Loading data...</p>}
-              {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
-            </div>
+            <input 
+              type="text"
+              placeholder={brandNames.length > 0 ? "Override brand name" : "Client name (for exports)"}
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm"
+            />
           </div>
         </div>
+        
+        <div className="flex items-center mt-4 md:mt-0 space-x-4">
+          {/* Export Options - Side by side with file upload */}
+          {(data.length > 0 || hasOfferData) && (
+            <div className="relative export-dropdown">
+              <button
+                onClick={() => setShowExportOptions(!showExportOptions)}
+                className="bg-pink-600 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center"
+              >
+                Export Data
+                <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+              
+              {showExportOptions && (
+                <div className="absolute right-0 mt-2 w-48 bg-white shadow-lg rounded-md z-10">
+                  <button
+                    onClick={() => handleExport('csv')}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                  >
+                    Export to CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                  >
+                    Export to PDF
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* File Upload Section */}
+          <div className="flex flex-col">
+            <label className="block mb-2 text-sm font-medium text-gray-900">
+              Upload Data CSV
+            </label>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileUpload}
+              className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-white p-2.5"
+            />
+            {loading && <p className="mt-1 text-sm text-gray-500">Loading data...</p>}
+            {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
+          </div>
+        </div>
+      </div>
           
           {/* Main Content Area */}
           {(data.length > 0 || hasOfferData) ? (
@@ -1300,6 +1658,16 @@ const exportToCSV = (fileName) => {
                   >
                     Offer Insights
                   </button>
+                  {/* <button
+                    onClick={() => setActiveTab('advanced-filters')}
+                    className={`${
+                      activeTab === 'advanced-filters'
+                        ? 'border-pink-600 text-pink-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                  >
+                    Advanced Filters
+                  </button> */}
                 </nav>
               </div>
               
@@ -1350,6 +1718,7 @@ const exportToCSV = (fileName) => {
                     getProductDistribution={getProductDistribution}
                     calculateTrendLine={calculateTrendLine}
                     selectedProducts={selectedProducts}
+                    
                   />
                 )}
                 
@@ -1368,6 +1737,18 @@ const exportToCSV = (fileName) => {
                     ref={offerInsightsRef}
                   />
                 )}
+
+                {/* {activeTab === 'advanced-filters' && data.length > 0 && (
+                  <AdvancedFilterPanel
+                    data={data}
+                    onFilterChange={(filteredData, filters) => {
+                      setAdvancedFilteredData(filteredData);
+                      setUseAdvancedFilters(true);
+                    }}
+                    initialFilters={{}}
+                    showComparison={true}
+                  />
+                )} */}
                 
                 {/* Empty State */}
                 {(data.length === 0 && !hasOfferData) && (
