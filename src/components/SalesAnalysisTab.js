@@ -171,7 +171,10 @@ const SalesAnalysisTab = ({
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={getProductDistribution().slice(0, 10)}
+                  data={getProductDistribution().slice(0, 10).map(item => ({
+                    ...item,
+                    name: item.displayName
+                  }))}
                   dataKey="count"
                   nameKey="name"
                   cx="50%"
@@ -207,7 +210,7 @@ const SalesAnalysisTab = ({
                   <tbody className="bg-white divide-y divide-gray-200">
                     {getProductDistribution().slice(0, 10).map((product, index) => (
                       <tr key={index}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.displayName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.count.toLocaleString()}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.percentage.toFixed(1)}%</td>
                       </tr>
