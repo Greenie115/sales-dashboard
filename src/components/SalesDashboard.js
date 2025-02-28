@@ -507,18 +507,20 @@ const SalesDashboard = () => {
 
   // Handle export
   const handleExport = (type) => {
-    let exportName;
+    // Get the brand name and format it for the filename
+    const brandName = brandNames.length > 0 
+      ? brandNames[0] 
+      : clientName || 'Shopmium';
     
-    if (activeTab === 'demographics') {
-      exportName = clientName 
-        ? `${clientName.toLowerCase().replace(/\s+/g, '-')}-demographics`
-        : `demographics-data`;
-    } else {
-      exportName = clientName 
-        ? `${clientName.toLowerCase().replace(/\s+/g, '-')}-${activeTab}`
-        : `${activeTab}-data`;
-    }
-      
+    // Format today's date as YYYY-MM-DD
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Create the filename
+    let exportName = `${brandName} Shopmium Analysis ${today}`;
+    
+    // Sanitize the filename
+    exportName = exportName.replace(/[\\/:*?"<>|]/g, '-');
+    
     if (type === 'csv') {
       exportToCSV(exportName);
     } else if (type === 'pdf') {
@@ -526,29 +528,789 @@ const SalesDashboard = () => {
     }
   };
   
-  // Export to CSV function (implemented in the original code)
-  const exportToCSV = (fileName) => {
-    // Implementation remains the same as in the original code
-    // This is a complex implementation that should be kept intact
-    if ((activeTab !== 'sales' && activeTab !== 'demographics') || !data.length) {
-      alert('No data available to export.');
-      return;
+
+// Export to CSV function 
+// Function to create a product-retailer matrix from the filtered data
+const createProductRetailerMatrix = (usePercentages = false) => {
+  const filteredData = getFilteredData();
+  if (!filteredData || filteredData.length === 0) return null;
+  
+  // Get unique products and retailers
+  const uniqueProducts = _.uniq(filteredData.map(item => item.product_name)).filter(Boolean);
+  const uniqueRetailers = _.uniq(filteredData.map(item => item.chain)).filter(Boolean);
+  
+  // Use the product mapping if available to get display names
+  const productDisplayNames = {};
+  uniqueProducts.forEach(product => {
+    const productInfo = brandMapping[product] || { displayName: product };
+    productDisplayNames[product] = productInfo.displayName || product;
+  });
+  
+  // Initialize the data structure
+  const matrix = {
+    retailers: uniqueRetailers,
+    products: uniqueProducts,
+    data: {}, // Will be a nested object: data[product][retailer] = count
+    productTotals: {}, // Will store total count for each product
+    retailerTotals: {}, // Will store total count for each retailer
+    grandTotal: 0, // Overall total
+    percentages: {} // Will store percentage data: percentages[product][retailer] = percentage
+  };
+  
+  // Initialize the data structure with zeros
+  uniqueProducts.forEach(product => {
+    matrix.data[product] = {};
+    matrix.percentages[product] = {};
+    matrix.productTotals[product] = 0;
+    
+    uniqueRetailers.forEach(retailer => {
+      matrix.data[product][retailer] = 0;
+      matrix.percentages[product][retailer] = 0;
+      if (!matrix.retailerTotals[retailer]) {
+        matrix.retailerTotals[retailer] = 0;
+      }
+    });
+  });
+  
+  // Populate the matrix
+  filteredData.forEach(item => {
+    const product = item.product_name;
+    const retailer = item.chain;
+    
+    if (product && retailer && matrix.data[product] && matrix.data[product][retailer] !== undefined) {
+      matrix.data[product][retailer]++;
+      matrix.productTotals[product]++;
+      matrix.retailerTotals[retailer]++;
+      matrix.grandTotal++;
+    }
+  });
+  
+  // Calculate percentages 
+  uniqueProducts.forEach(product => {
+    uniqueRetailers.forEach(retailer => {
+      if (usePercentages) {
+        // Calculate percentage relative to the product's total (how much of this product is sold in each retailer)
+        if (matrix.productTotals[product] > 0) {
+          matrix.percentages[product][retailer] = (matrix.data[product][retailer] / matrix.productTotals[product]) * 100;
+        }
+      } else {
+        // Calculate percentage relative to the total for this retailer (share of each product within retailer)
+        if (matrix.retailerTotals[retailer] > 0) {
+          matrix.percentages[product][retailer] = (matrix.data[product][retailer] / matrix.retailerTotals[retailer]) * 100;
+        }
+      }
+    });
+  });
+  
+  // Sort products by total count (descending)
+  matrix.products = matrix.products.sort((a, b) => 
+    (matrix.productTotals[b] || 0) - (matrix.productTotals[a] || 0)
+  );
+  
+  // Sort retailers by total count (descending)
+  matrix.retailers = matrix.retailers.sort((a, b) => 
+    (matrix.retailerTotals[b] || 0) - (matrix.retailerTotals[a] || 0)
+  );
+  
+  // Limit to top 10 products and top 5 retailers for readability
+  matrix.products = matrix.products.slice(0, 10);
+  matrix.retailers = matrix.retailers.slice(0, 5);
+  
+  return matrix;
+};
+
+// Export to CSV function 
+const exportToCSV = (fileName) => {
+  if ((activeTab !== 'sales' && activeTab !== 'demographics' && activeTab !== 'offers') || 
+      (!data.length && !hasOfferData)) {
+    alert('No data available to export.');
+    return;
+  }
+  
+  try {
+    let csvContent = '';
+    let exportData = [];
+    let headers = [];
+    
+    // Determine which data to export based on active tab
+    if (activeTab === 'sales') {
+      // Create a product-retailer matrix for export
+      const productRetailerMatrix = createProductRetailerMatrix();
+      
+      // Export the product-retailer matrix in CSV format
+      if (productRetailerMatrix) {
+        // Get the retailer headers
+        const retailerHeaders = ['Product Name', ...productRetailerMatrix.retailers, 'Total'];
+        csvContent = retailerHeaders.join(',') + '\n';
+        
+        // Add product rows
+        productRetailerMatrix.products.forEach((product, productIndex) => {
+          const productRow = [product];
+          
+          // Add counts for each retailer
+          productRetailerMatrix.retailers.forEach(retailer => {
+            const count = productRetailerMatrix.data[product]?.[retailer] || 0;
+            productRow.push(count);
+          });
+          
+          // Add total for this product
+          productRow.push(productRetailerMatrix.productTotals[product] || 0);
+          
+          // Format row and add to CSV
+          const formattedRow = productRow.map(value => {
+            if (value === null || value === undefined) return '';
+            // Escape quotes and wrap in quotes if contains comma
+            let stringValue = String(value).replace(/"/g, '""');
+            if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+              stringValue = `"${stringValue}"`;
+            }
+            return stringValue;
+          });
+          
+          csvContent += formattedRow.join(',') + '\n';
+        });
+        
+        // Add totals row
+        const totalsRow = ['Total'];
+        productRetailerMatrix.retailers.forEach(retailer => {
+          totalsRow.push(productRetailerMatrix.retailerTotals[retailer] || 0);
+        });
+        totalsRow.push(productRetailerMatrix.grandTotal || 0);
+        
+        const formattedTotalsRow = totalsRow.map(value => {
+          if (value === null || value === undefined) return '';
+          let stringValue = String(value).replace(/"/g, '""');
+          if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+            stringValue = `"${stringValue}"`;
+          }
+          return stringValue;
+        });
+        
+        csvContent += formattedTotalsRow.join(',') + '\n';
+        
+        // Add additional summary data - retailer distribution
+        csvContent += '\n"Retailer Distribution"\n';
+        csvContent += 'Retailer,Units,Percentage\n';
+        
+        retailerData.forEach(item => {
+          const row = [
+            `"${item.name}"`,
+            item.value,
+            `${item.percentage.toFixed(1)}%`
+          ];
+          csvContent += row.join(',') + '\n';
+        });
+        
+        // Add product distribution
+        csvContent += '\n"Product Distribution"\n';
+        csvContent += 'Product,Units,Percentage\n';
+        
+        const productDist = getProductDistribution();
+        productDist.forEach(item => {
+          const row = [
+            `"${item.displayName}"`,
+            item.count,
+            `${item.percentage.toFixed(1)}%`
+          ];
+          csvContent += row.join(',') + '\n';
+        });
+        
+        // Add product-retailer distribution (percentages)
+        csvContent += '\n"Product/Retailer Distribution (% of product sales by retailer)"\n';
+        
+        // Create product-retailer matrix with percentages
+        const percentageMatrix = createProductRetailerMatrix(true);
+        
+        if (percentageMatrix) {
+          // First row with retailer names
+          const percentageHeaderRow = ['Product Name', ...percentageMatrix.retailers];
+          csvContent += percentageHeaderRow.join(',') + '\n';
+          
+          // Data rows with percentages
+          percentageMatrix.products.forEach(product => {
+            const productInfo = brandMapping[product] || { displayName: product };
+            const displayName = productInfo.displayName || product;
+            
+            const rowData = [displayName];
+            percentageMatrix.retailers.forEach(retailer => {
+              rowData.push(`${percentageMatrix.percentages[product][retailer].toFixed(1)}%`);
+            });
+            
+            csvContent += rowData.map(value => {
+              if (value === null || value === undefined) return '';
+              let stringValue = String(value).replace(/"/g, '""');
+              if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                stringValue = `"${stringValue}"`;
+              }
+              return stringValue;
+            }).join(',') + '\n';
+          });
+        }
+      } else {
+        // Fallback to standard export if matrix creation fails
+        exportData = getFilteredData();
+        // Select relevant columns for sales data
+        headers = ['receipt_date', 'product_name', 'chain', 'receipt_total'];
+        
+        // Add CSV header row
+        csvContent = headers.join(',') + '\n';
+        
+        // Add data rows
+        exportData.forEach(item => {
+          const row = headers.map(header => {
+            // Handle special cases, commas, quotes etc.
+            let value = item[header];
+            if (value === null || value === undefined) value = '';
+            // Escape quotes and wrap in quotes if contains comma
+            value = String(value).replace(/"/g, '""');
+            if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+              value = `"${value}"`;
+            }
+            return value;
+          });
+          csvContent += row.join(',') + '\n';
+        });
+      }
+    } else if (activeTab === 'demographics') {
+      // Get data from demographics component
+      const demographicData = demographicRef.current?.getVisibleData() || {};
+      
+      if (demographicData.ageData && demographicData.ageData.length > 0) {
+        // Export age distribution data
+        headers = ['age_group', 'count', 'percentage'];
+        csvContent = headers.join(',') + '\n';
+        
+        // Sort by defined age group order if available
+        const sortedAgeData = [...demographicData.ageData].sort((a, b) => {
+          const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
+          const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
+          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+          if (aIndex !== -1) return -1;
+          if (bIndex !== -1) return 1;
+          return a.name.localeCompare(b.name);
+        });
+        
+        sortedAgeData.forEach(item => {
+          csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
+        });
+        
+        // Add a spacer row and gender data
+        if (demographicData.genderData && demographicData.genderData.length > 0) {
+          csvContent += '\n"Gender Distribution"\n';
+          csvContent += 'gender,count,percentage\n';
+          
+          demographicData.genderData.forEach(item => {
+            csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
+          });
+        }
+      } else {
+        alert('No demographic data available to export.');
+        return;
+      }
+    } else if (activeTab === 'offers') {
+      // Get data from offer insights component
+      const offerData = offerInsightsRef.current?.getVisibleData() || {};
+      
+      if (offerData.metrics) {
+        headers = ['offer_name', 'total_hits', 'days_active', 'avg_hits_per_day', 'percentage'];
+        csvContent = headers.join(',') + '\n';
+        
+        if (offerData.offerData && offerData.offerData.length > 0) {
+          offerData.offerData.forEach(item => {
+            csvContent += `"${item.name}",${item.value},${item.days || 'N/A'},${item.averageHitsPerDay || 'N/A'},${item.percentage.toFixed(1)}\n`;
+          });
+        } else {
+          alert('No offer data available to export.');
+          return;
+        }
+      } else {
+        alert('No offer metrics available to export.');
+        return;
+      }
     }
     
-    // Existing exportToCSV implementation...
-    // The implementation is quite long so I've omitted it here for brevity,
-    // but you should keep the existing implementation from your code
-  };
+    // Create and download the CSV file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    saveAs(blob, `${fileName}.csv`);
+  } catch (error) {
+    console.error('Error exporting CSV:', error);
+    alert('Failed to export CSV. Check console for details.');
+  }
+};
 
-  // Generate PDF report (implementation in the original code)
-  const generatePDF = (fileName) => {
-    // Implementation remains the same as in the original code
-    // This is a complex implementation that should be kept intact
+// Generate PDF report
+const generatePDF = (fileName) => {
+  if ((activeTab !== 'sales' && activeTab !== 'demographics' && activeTab !== 'offers') || 
+      (!data.length && !hasOfferData)) {
+    alert('No data available to export.');
+    return;
+  }
+  
+  try {
+    // Initialize PDF document
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 15;
+    const contentWidth = pageWidth - (margin * 2);
     
-    // Existing generatePDF implementation...
-    // The implementation is quite long so I've omitted it here for brevity,
-    // but you should keep the existing implementation from your code
-  };
+    // Add header with branding and title
+    pdf.setFillColor(255, 0, 102); // Shopmium pink
+    pdf.rect(0, 0, pageWidth, 25, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(16);
+    pdf.text('Shopmium Analytics Report', margin, 15);
+    
+    // Add date and title
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(12);
+    pdf.text(`Generated: ${new Date().toLocaleString()}`, margin, 30);
+    
+    let yPos = 40;
+    
+    // Add client name if available
+    if (clientName) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.text(`Client: ${clientName}`, margin, yPos);
+      yPos += 10;
+    }
+    
+    // Add report title based on active tab
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(14);
+    if (activeTab === 'sales') {
+      pdf.text('Sales Analysis Report', margin, yPos);
+    } else if (activeTab === 'demographics') {
+      pdf.text('Demographics Analysis Report', margin, yPos);
+    } else if (activeTab === 'offers') {
+      pdf.text('Offer Insights Report', margin, yPos);
+    }
+    yPos += 10;
+    
+    // Add filter information
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    
+    if (activeTab === 'sales' || activeTab === 'demographics') {
+      if (!selectedProducts.includes('all')) {
+        const productText = `Products: ${selectedProducts.join(', ')}`;
+        pdf.text(productText, margin, yPos, { maxWidth: contentWidth });
+        yPos += 5 + (Math.ceil(pdf.getTextDimensions(productText, { maxWidth: contentWidth }).h));
+      }
+      
+      if (!selectedRetailers.includes('all')) {
+        const retailerText = `Retailers: ${selectedRetailers.join(', ')}`;
+        pdf.text(retailerText, margin, yPos, { maxWidth: contentWidth });
+        yPos += 5 + (Math.ceil(pdf.getTextDimensions(retailerText, { maxWidth: contentWidth }).h));
+      }
+      
+      if (dateRange !== 'all') {
+        const dateText = dateRange === 'month' 
+          ? `Month: ${selectedMonth}` 
+          : `Date Range: ${startDate} to ${endDate}`;
+        pdf.text(dateText, margin, yPos);
+        yPos += 10;
+      }
+    }
+    
+    // Add summary metrics
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.text('Summary Metrics', margin, yPos);
+    yPos += 8;
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    
+    if (activeTab === 'sales' || activeTab === 'demographics') {
+      if (metrics) {
+        pdf.text(`Total Redemptions: ${metrics.totalUnits.toLocaleString()}`, margin, yPos);
+        yPos += 6;
+        pdf.text(`Average Per Day: ${metrics.avgRedemptionsPerDay}`, margin, yPos);
+        yPos += 6;
+        pdf.text(`Date Range: ${metrics.uniqueDates[0]} to ${metrics.uniqueDates[metrics.uniqueDates.length - 1]} (${metrics.daysInRange} days)`, margin, yPos);
+        yPos += 12;
+      }
+    } else if (activeTab === 'offers') {
+      const offerData = offerInsightsRef.current?.getVisibleData() || {};
+      if (offerData.metrics) {
+        pdf.text(`Total Hits: ${offerData.metrics.totalHits.toLocaleString()}`, margin, yPos);
+        yPos += 6;
+        pdf.text(`Period Length: ${offerData.metrics.periodDays} days`, margin, yPos);
+        yPos += 6;
+        pdf.text(`Average Hits Per Day: ${offerData.metrics.averageHitsPerDay}`, margin, yPos);
+        yPos += 12;
+      }
+    }
+    
+    // Add detailed data as tables
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    
+    if (activeTab === 'sales') {
+      // Add retailer distribution table
+      pdf.text('Retailer Distribution', margin, yPos);
+      yPos += 8;
+      
+      const retailerTableData = retailerData.map(item => [
+        item.name,
+        item.value.toString(),
+        `${item.percentage.toFixed(1)}%`
+      ]);
+      
+      pdf.autoTable({
+        startY: yPos,
+        head: [['Retailer', 'Units', 'Percentage']],
+        body: retailerTableData,
+        margin: { left: margin, right: margin },
+        headStyles: { fillColor: [255, 0, 102] }
+      });
+      
+      yPos = pdf.lastAutoTable.finalY + 10;
+      
+      // Add product distribution table
+      if (yPos > pageHeight - 60) {
+        pdf.addPage();
+        yPos = 20;
+      }
+      
+      pdf.text('Product Distribution', margin, yPos);
+      yPos += 8;
+      
+      const productDist = getProductDistribution();
+      const productTableData = productDist.slice(0, 10).map(item => [
+        item.displayName,
+        item.count.toString(),
+        `${item.percentage.toFixed(1)}%`
+      ]);
+      
+      pdf.autoTable({
+        startY: yPos,
+        head: [['Product', 'Units', 'Percentage']],
+        body: productTableData,
+        margin: { left: margin, right: margin },
+        headStyles: { fillColor: [255, 0, 102] }
+      });
+      
+      yPos = pdf.lastAutoTable.finalY + 10;
+      
+      // Add product-retailer matrix
+      if (yPos > pageHeight - 80) {
+        pdf.addPage();
+        yPos = 20;
+      }
+      
+      pdf.text('Product by Retailer Matrix', margin, yPos);
+      yPos += 8;
+      
+      // Create the product-retailer matrix
+      const matrixData = createProductRetailerMatrix();
+      
+      if (matrixData) {
+        // Get formatted product names for display
+        const productDisplayNames = matrixData.products.map(product => {
+          const productInfo = brandMapping[product] || { displayName: product };
+          return productInfo.displayName || product;
+        });
+        
+        // Create the header row with retailer names
+        const matrixHead = [['Product', ...matrixData.retailers, 'Total']];
+        
+        // Create the data rows with clear product names
+        const matrixBody = matrixData.products.map((product, idx) => {
+          const displayName = productDisplayNames[idx];
+          const row = [displayName];
+          
+          // Add counts for each retailer
+          matrixData.retailers.forEach(retailer => {
+            row.push(matrixData.data[product][retailer] || 0);
+          });
+          
+          // Add total for this product
+          row.push(matrixData.productTotals[product] || 0);
+          
+          return row;
+        });
+        
+        // Add a total row
+        const totalRow = ['Total'];
+        matrixData.retailers.forEach(retailer => {
+          totalRow.push(matrixData.retailerTotals[retailer] || 0);
+        });
+        totalRow.push(matrixData.grandTotal || 0);
+        
+        matrixBody.push(totalRow);
+        
+        // Create the table
+        pdf.autoTable({
+          startY: yPos,
+          head: matrixHead,
+          body: matrixBody,
+          margin: { left: margin, right: margin },
+          headStyles: { fillColor: [255, 0, 102] },
+          willDrawCell: (data) => {
+            // Highlight the total row and total column
+            if (data.row.index === matrixBody.length - 1 || data.column.index === matrixHead[0].length - 1) {
+              pdf.setFillColor(240, 240, 240);
+              return true;
+            }
+            return false;
+          }
+        });
+        
+        yPos = pdf.lastAutoTable.finalY + 10;
+      }
+      
+      // Add product-retailer distribution heat map with better formatting
+      if (yPos > pageHeight - 80) {
+        pdf.addPage();
+        yPos = 20;
+      }
+      
+      pdf.text('Product/Retailer Distribution (% of product sales by retailer)', margin, yPos);
+      yPos += 8;
+      
+      // Create the product-retailer matrix with percentages
+      const percentageMatrix = createProductRetailerMatrix(true);
+      
+      if (percentageMatrix) {
+        // Get formatted product names for display
+        const productDisplayNames = percentageMatrix.products.map(product => {
+          const productInfo = brandMapping[product] || { displayName: product };
+          return productInfo.displayName || product;
+        });
+        
+        // Create the header row with retailer names
+        const percentageHead = [['Product', ...percentageMatrix.retailers]];
+        
+        // Create the data rows with percentages and clear product names
+        const percentageBody = percentageMatrix.products.map((product, idx) => {
+          const displayName = productDisplayNames[idx];
+          const row = [displayName];
+          
+          // Add percentages for each retailer
+          percentageMatrix.retailers.forEach(retailer => {
+            row.push(`${percentageMatrix.percentages[product][retailer].toFixed(1)}%`);
+          });
+          
+          return row;
+        });
+        
+        // Create the table with color coding for percentages
+        pdf.autoTable({
+          startY: yPos,
+          head: percentageHead,
+          body: percentageBody,
+          margin: { left: margin, right: margin },
+          headStyles: { fillColor: [128, 0, 128] }, // Purple for this table to distinguish
+          willDrawCell: (data) => {
+            // Skip header and first column
+            if (data.row.section === 'head' || data.column.index === 0) {
+              return false;
+            }
+            
+            // Get the percentage value
+            const cellValue = data.cell.text[0];
+            const percentage = parseFloat(cellValue);
+            
+            // Color coding based on percentage
+            if (!isNaN(percentage)) {
+              // Higher percentage = darker color
+              const intensity = Math.min(0.9, 0.1 + (percentage / 100) * 0.8);
+              pdf.setFillColor(255, 0, 102, intensity); // Shopmium pink with varying opacity
+              return true;
+            }
+            return false;
+          }
+        });
+      }
+    }
+    else if (activeTab === 'demographics') {
+      // Get data from demographics component
+      const demographicData = demographicRef.current?.getVisibleData() || {};
+      
+      // Add age distribution table
+      if (demographicData.ageData && demographicData.ageData.length > 0) {
+        pdf.text('Age Distribution', margin, yPos);
+        yPos += 8;
+        
+        // Sort by defined age group order if available
+        const sortedAgeData = [...demographicData.ageData].sort((a, b) => {
+          const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
+          const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
+          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+          if (aIndex !== -1) return -1;
+          if (bIndex !== -1) return 1;
+          return a.name.localeCompare(b.name);
+        });
+        
+        const ageTableData = sortedAgeData.map(item => [
+          item.name,
+          item.value.toString(),
+          `${item.percentage.toFixed(1)}%`
+        ]);
+        
+        pdf.autoTable({
+          startY: yPos,
+          head: [['Age Group', 'Count', 'Percentage']],
+          body: ageTableData,
+          margin: { left: margin, right: margin },
+          headStyles: { fillColor: [255, 0, 102] }
+        });
+        
+        yPos = pdf.lastAutoTable.finalY + 10;
+      }
+      
+      // Add gender distribution table
+      if (demographicData.genderData && demographicData.genderData.length > 0) {
+        if (yPos > pageHeight - 60) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        
+        pdf.text('Gender Distribution', margin, yPos);
+        yPos += 8;
+        
+        const genderTableData = demographicData.genderData.map(item => [
+          item.name,
+          item.value.toString(),
+          `${item.percentage.toFixed(1)}%`
+        ]);
+        
+        pdf.autoTable({
+          startY: yPos,
+          head: [['Gender', 'Count', 'Percentage']],
+          body: genderTableData,
+          margin: { left: margin, right: margin },
+          headStyles: { fillColor: [255, 0, 102] }
+        });
+        
+        yPos = pdf.lastAutoTable.finalY + 10;
+      }
+      
+      // Add response data if available
+      if (demographicData.responseData && demographicData.responseData.length > 0) {
+        if (yPos > pageHeight - 60) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        
+        pdf.text(`Question: ${demographicData.getCurrentQuestionText}`, margin, yPos, { maxWidth: contentWidth });
+        yPos += 10;
+        
+        const responseTableData = demographicData.responseData.map(item => [
+          item.response,
+          item.total.toString(),
+          `${Math.round(item.percentage)}%`
+        ]);
+        
+        pdf.autoTable({
+          startY: yPos,
+          head: [['Response', 'Count', 'Percentage']],
+          body: responseTableData,
+          margin: { left: margin, right: margin },
+          headStyles: { fillColor: [255, 0, 102] }
+        });
+      }
+    } else if (activeTab === 'offers') {
+      // Get data from offer insights component
+      const offerData = offerInsightsRef.current?.getVisibleData() || {};
+      
+      // Add offer distribution table
+      if (offerData.offerData && offerData.offerData.length > 0) {
+        pdf.text('Offer Performance', margin, yPos);
+        yPos += 8;
+        
+        const offerTableData = offerData.offerData.map(item => [
+          item.name.length > 30 ? item.name.substring(0, 30) + '...' : item.name,
+          item.value.toString(),
+          item.averageHitsPerDay || 'N/A',
+          `${item.percentage.toFixed(1)}%`
+        ]);
+        
+        pdf.autoTable({
+          startY: yPos,
+          head: [['Offer Name', 'Total Hits', 'Avg Hits/Day', 'Percentage']],
+          body: offerTableData,
+          margin: { left: margin, right: margin },
+          headStyles: { fillColor: [255, 0, 102] }
+        });
+        
+        yPos = pdf.lastAutoTable.finalY + 10;
+      }
+      
+      // Add demographic breakdown if available
+      if (offerData.ageData && offerData.ageData.length > 0) {
+        if (yPos > pageHeight - 60) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        
+        pdf.text('Age Distribution', margin, yPos);
+        yPos += 8;
+        
+        const ageTableData = offerData.ageData.map(item => [
+          item.name,
+          item.value.toString(),
+          `${item.percentage.toFixed(1)}%`
+        ]);
+        
+        pdf.autoTable({
+          startY: yPos,
+          head: [['Age Group', 'Count', 'Percentage']],
+          body: ageTableData,
+          margin: { left: margin, right: margin },
+          headStyles: { fillColor: [255, 0, 102] }
+        });
+        
+        yPos = pdf.lastAutoTable.finalY + 10;
+      }
+      
+      // Add gender breakdown if available
+      if (offerData.genderData && offerData.genderData.length > 0) {
+        if (yPos > pageHeight - 60) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        
+        pdf.text('Gender Distribution', margin, yPos);
+        yPos += 8;
+        
+        const genderTableData = offerData.genderData.map(item => [
+          item.name,
+          item.value.toString(),
+          `${item.percentage.toFixed(1)}%`
+        ]);
+        
+        pdf.autoTable({
+          startY: yPos,
+          head: [['Gender', 'Count', 'Percentage']],
+          body: genderTableData,
+          margin: { left: margin, right: margin },
+          headStyles: { fillColor: [255, 0, 102] }
+        });
+      }
+    }
+    
+    // Add footer
+    const totalPages = pdf.internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i);
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Page ${i} of ${totalPages} | Shopmium Analytics Report | ${new Date().toLocaleDateString()}`, 
+               pageWidth / 2, pageHeight - 10, { align: 'center' });
+    }
+    
+    // Save the PDF
+    pdf.save(`${fileName}.pdf`);
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    alert('Failed to generate PDF. Check console for details.');
+  }
+};
   
   // Prepare data for child components
   const metrics = data && data.length > 0 ? calculateMetrics() : null;
@@ -939,16 +1701,7 @@ const SalesDashboard = () => {
         ) : (
           <div className="bg-white shadow rounded-lg p-12">
             <div className="text-center">
-              <svg className="w-16 h-16 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <h3 className="mt-4 text-lg font-medium text-gray-900">Welcome to the Sales Dashboard</h3>
-              <p className="mt-1 text-sm text-gray-500">Upload your sales data CSV file to begin your analysis.</p>
-              
               <div className="mt-8 max-w-md mx-auto">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Upload Data File
-                </label>
                 <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
                   <div className="space-y-1 text-center">
                     <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 48 48">
@@ -972,9 +1725,9 @@ const SalesDashboard = () => {
                   </div>
                 </div>
                 <p className="mt-4 text-xs text-gray-500 text-center">
-                  Expected columns: receipt_date, product_name, chain, receipt_total
+                  Please upload an "items_purchased.CSV" for Sales Analysis 
                   <br />
-                  For offer insights, upload a file with "hits_offer" in the filename.
+                  or for Offer Insights, upload a "hits_offer.CSV"
                 </p>
               </div>
             </div>

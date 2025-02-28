@@ -145,7 +145,7 @@ const ExecutiveSummaryPanel = ({
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Executive Summary</h2>
+        <h2 className="text-xl font-bold text-gray-900">Summary</h2>
         <div className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
           {timeframe === 'all' ? 'All Time' : 
            timeframe === 'month' ? 'Monthly View' : 
