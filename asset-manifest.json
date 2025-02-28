@@ -1,19 +1,19 @@
 {
   "files": {
     "main.css": "/sales-dashboard/static/css/main.0bcd15db.css",
-    "main.js": "/sales-dashboard/static/js/main.823db9b1.js",
+    "main.js": "/sales-dashboard/static/js/main.e4ceb385.js",
     "static/js/239.0e316c6c.chunk.js": "/sales-dashboard/static/js/239.0e316c6c.chunk.js",
     "static/js/213.25b1b922.chunk.js": "/sales-dashboard/static/js/213.25b1b922.chunk.js",
     "static/js/732.3fa59159.chunk.js": "/sales-dashboard/static/js/732.3fa59159.chunk.js",
     "index.html": "/sales-dashboard/index.html",
     "main.0bcd15db.css.map": "/sales-dashboard/static/css/main.0bcd15db.css.map",
-    "main.823db9b1.js.map": "/sales-dashboard/static/js/main.823db9b1.js.map",
+    "main.e4ceb385.js.map": "/sales-dashboard/static/js/main.e4ceb385.js.map",
     "239.0e316c6c.chunk.js.map": "/sales-dashboard/static/js/239.0e316c6c.chunk.js.map",
     "213.25b1b922.chunk.js.map": "/sales-dashboard/static/js/213.25b1b922.chunk.js.map",
     "732.3fa59159.chunk.js.map": "/sales-dashboard/static/js/732.3fa59159.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.0bcd15db.css",
-    "static/js/main.823db9b1.js"
+    "static/js/main.e4ceb385.js"
   ]
 }
