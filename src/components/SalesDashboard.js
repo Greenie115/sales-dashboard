@@ -13,6 +13,24 @@ import SalesAnalysisTab from './SalesAnalysisTab';
 import DemographicInsights from './DemographicInsights';
 import OfferInsights from './OfferInsights';
 
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString; // Return original if invalid
+    
+    // Format as DD/MM/YYYY
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${day}/${month}/${year}`;
+  } catch (error) {
+    return dateString; // Return original on error
+  }
+};
+
 // Define the preferred sorting order for age groups (for PDF export)
 const AGE_GROUP_ORDER = [
   '16-24',
@@ -47,6 +65,7 @@ const SalesDashboard = () => {
   const [showExportOptions, setShowExportOptions] = useState(false);
   const [brandMapping, setBrandMapping] = useState({});
   const [brandNames, setBrandNames] = useState([]);
+  const [exportDemographicData, setExportDemographicData] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   
   // Analytics state
@@ -530,11 +549,10 @@ const SalesDashboard = () => {
   // Handle export
   const handleExport = (type) => {
     // Capture the demographic data in state before showing export options
-    // This ensures selections are preserved during export
     if (activeTab === 'demographics' && demographicRef.current) {
       const demographicData = demographicRef.current.getVisibleData();
-      // Store this for later use during export
-      localStorage.setItem('demographicExportData', JSON.stringify(demographicData));
+      // Store immediately in component state instead of localStorage
+      setExportDemographicData(demographicData);
     }
     
     // Get the brand name and format it for the filename
@@ -807,26 +825,16 @@ const exportToCSV = (fileName) => {
         });
       }
     } else if (activeTab === 'demographics') {
-      // Get data from demographics component - either from the current reference or from stored data
-      let demographicData;
-      try {
-        // Try to get data from localStorage first (preserves selected options)
-        const storedData = localStorage.getItem('demographicExportData');
-        if (storedData) {
-          demographicData = JSON.parse(storedData);
-          // Clear the storage after use
-          localStorage.removeItem('demographicExportData');
-        } else {
-          // Fall back to current ref if no stored data exists
-          demographicData = demographicRef.current?.getVisibleData() || {};
-        }
-      } catch (e) {
-        // If there's any error with localStorage, use the ref directly
-        demographicData = demographicRef.current?.getVisibleData() || {}; 
+      // Use the state variable instead of localStorage
+      let demographicData = exportDemographicData;
+      
+      // Fall back to current ref only if state variable is null
+      if (!demographicData && demographicRef.current) {
+        demographicData = demographicRef.current.getVisibleData() || {};
       }
       
       // Check if we have demographic data to export
-      if (demographicData.ageData && demographicData.ageData.length > 0) {
+      if (demographicData && demographicData.ageData && demographicData.ageData.length > 0) {
         // Export age distribution data
         headers = ['age_group', 'count', 'percentage'];
         csvContent = headers.join(',') + '\n';
@@ -1029,7 +1037,7 @@ const generatePDF = (fileName) => {
       if (dateRange !== 'all') {
         const dateText = dateRange === 'month' 
           ? `Month: ${selectedMonth}` 
-          : `Date Range: ${startDate} to ${endDate}`;
+          : `Date Range: ${formatDate(startDate)} to ${formatDate(endDate)}`;
         pdf.text(dateText, margin, yPos);
         yPos += 10;
       }
@@ -1044,16 +1052,15 @@ const generatePDF = (fileName) => {
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10);
     
-    if (activeTab === 'summary' || activeTab === 'sales' || activeTab === 'demographics') {
-      if (metrics) {
-        pdf.text(`Total Redemptions: ${metrics.totalUnits.toLocaleString()}`, margin, yPos);
-        yPos += 6;
-        pdf.text(`Average Per Day: ${metrics.avgRedemptionsPerDay}`, margin, yPos);
-        yPos += 6;
-        pdf.text(`Date Range: ${metrics.uniqueDates[0]} to ${metrics.uniqueDates[metrics.uniqueDates.length - 1]} (${metrics.daysInRange} days)`, margin, yPos);
-        yPos += 12;
-      }
-    } else if (activeTab === 'offers') {
+        if (metrics) {
+          pdf.text(`Total Redemptions: ${metrics.totalUnits.toLocaleString()}`, margin, yPos);
+          yPos += 6;
+          pdf.text(`Average Per Day: ${metrics.avgRedemptionsPerDay}`, margin, yPos);
+          yPos += 6;
+          pdf.text(`Date Range: ${formatDate(metrics.uniqueDates[0])} to ${formatDate(metrics.uniqueDates[metrics.uniqueDates.length - 1])} (${metrics.daysInRange} days)`, margin, yPos);
+          yPos += 12;
+        }
+     else if (activeTab === 'offers') {
       const offerData = offerInsightsRef.current?.getVisibleData() || {};
       if (offerData.metrics) {
         pdf.text(`Total Hits: ${offerData.metrics.totalHits.toLocaleString()}`, margin, yPos);
@@ -1248,11 +1255,11 @@ const generatePDF = (fileName) => {
       }
     }
     else if (activeTab === 'demographics') {
-      // Get data from demographics component
-      const demographicData = demographicRef.current?.getVisibleData() || {};
+      // Use only the state variable for demographic data
+      const demographicData = exportDemographicData;
       
-      // Add age distribution table
-      if (demographicData.ageData && demographicData.ageData.length > 0) {
+      // Check if we have demographic data to export
+      if (demographicData && demographicData.ageData && demographicData.ageData.length > 0) {
         pdf.text('Age Distribution', margin, yPos);
         yPos += 8;
         
@@ -1563,10 +1570,11 @@ const generatePDF = (fileName) => {
                 <div className="relative export-dropdown">
                   <button
                     onClick={() => {
-                      // If we're on demographics tab, store the data before showing export options
+                      // Capture the demographic data IMMEDIATELY when showing export options
                       if (activeTab === 'demographics' && demographicRef.current) {
                         const demographicData = demographicRef.current.getVisibleData();
-                        localStorage.setItem('demographicExportData', JSON.stringify(demographicData));
+                        // Store directly in state - no localStorage needed
+                        setExportDemographicData(demographicData);
                       }
                       setShowExportOptions(!showExportOptions);
                     }}
@@ -1750,16 +1758,16 @@ const generatePDF = (fileName) => {
                     Client: <span className="font-medium text-gray-900">{clientName}</span>
                   </div>
                 )}
-                {metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0 && (
-                  <>
-                    <span className="mx-2 text-gray-300">•</span>
-                    <div className="text-sm text-gray-500">
-                      Date range: <span className="font-medium text-gray-900">
-                        {metrics.uniqueDates[0]} to {metrics.uniqueDates[metrics.uniqueDates.length - 1]}
-                      </span>
-                    </div>
-                  </>
-                )}
+                  {metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0 && (
+                    <>
+                      <span className="mx-2 text-gray-300">•</span>
+                      <div className="text-sm text-gray-500">
+                        Date range: <span className="font-medium text-gray-900">
+                          {formatDate(metrics.uniqueDates[0])} to {formatDate(metrics.uniqueDates[metrics.uniqueDates.length - 1])}
+                        </span>
+                      </div>
+                    </>
+                  )}
               </div>
             </div>
             

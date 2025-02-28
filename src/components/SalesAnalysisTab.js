@@ -6,6 +6,24 @@ import {
   Area, AreaChart
 } from 'recharts';
 
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    
+    // Format as DD/MM/YYYY
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${day}/${month}/${year}`;
+  } catch (error) {
+    return dateString;
+  }
+};
+
 // Shopmium primary color with contrasting colors
 const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800', '#607D8B', '#673AB7', '#3F51B5'];
 
@@ -43,19 +61,21 @@ const SalesAnalysisTab = ({
   selectedProducts
 }) => {
   // State for controlling detailed views
-  const [expandedSection, setExpandedSection] = useState(null);
+  // Fix: Add expandedSection state with default to 'matrix' (always expanded)
+  const [expandedSection, setExpandedSection] = useState('matrix'); 
   const [activeRetailer, setActiveRetailer] = useState(null);
   const [activeProduct, setActiveProduct] = useState(null);
+  
+  // Fix: Add dummy toggleSection function that does nothing
+  const toggleSection = () => {
+    // Function kept for compatibility, but no longer toggles
+    return;
+  };
   
   // Helper function to calculate the percentage change between two values
   const calculateChange = (current, previous) => {
     if (!previous || previous === 0) return null;
     return ((current - previous) / previous) * 100;
-  };
-  
-  // Toggle section expansion
-  const toggleSection = (section) => {
-    setExpandedSection(expandedSection === section ? null : section);
   };
 
   // Get product distribution data
@@ -158,21 +178,21 @@ const SalesAnalysisTab = ({
               <h3 className="text-lg font-medium text-gray-900 mb-1">Date Range</h3>
               {!comparisonMode ? (
                 <div>
-                  <p className="text-sm text-gray-600 font-medium">{metrics?.uniqueDates[0]} to {metrics?.uniqueDates[metrics.uniqueDates.length - 1]}</p>
+                  <p className="text-sm text-gray-600 font-medium">{formatDate(metrics?.uniqueDates[0])} to {formatDate(metrics?.uniqueDates[metrics.uniqueDates.length - 1])}</p>
                   <p className="text-gray-600 text-sm">{metrics?.daysInRange} days</p>
                 </div>
               ) : (
                 <div>
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="text-sm text-gray-600 font-medium">{metrics?.uniqueDates[0]} to {metrics?.uniqueDates[metrics.uniqueDates.length - 1]}</p>
+                      <p className="text-sm text-gray-600 font-medium">{formatDate(metrics?.uniqueDates[0])} to {formatDate(metrics?.uniqueDates[metrics.uniqueDates.length - 1])}</p>
                       <p className="text-gray-600 text-xs">{metrics?.daysInRange} days</p>
                     </div>
                     <div className="text-xs font-medium text-green-700 px-2 py-1 rounded-full bg-green-50">Primary</div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-start">
                     <div>
-                      <p className="text-sm text-gray-600 font-medium">{comparisonMetrics?.uniqueDates[0]} to {comparisonMetrics?.uniqueDates[comparisonMetrics.uniqueDates.length - 1]}</p>
+                      <p className="text-sm text-gray-600 font-medium">{formatDate(comparisonMetrics?.uniqueDates[0])} to {formatDate(comparisonMetrics?.uniqueDates[comparisonMetrics.uniqueDates.length - 1])}</p>
                       <p className="text-gray-600 text-xs">{comparisonMetrics?.daysInRange} days</p>
                     </div>
                     <div className="text-xs font-medium text-green-500 px-2 py-1 rounded-full bg-green-50">Comparison</div>
@@ -195,13 +215,14 @@ const SalesAnalysisTab = ({
               </svg>
               Retailer Distribution
             </h3>
+            {/* Fix: Hide the button with className="hidden" */}
             <button 
               onClick={() => toggleSection('retailers')}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center focus:outline-none"
+              className="hidden text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center focus:outline-none"
             >
-              {expandedSection === 'retailers' ? 'View Less' : 'View More'}
+              Details
               <svg 
-                className={`w-4 h-4 ml-1 transition-transform duration-200 ${expandedSection === 'retailers' ? 'transform rotate-180' : ''}`} 
+                className="w-4 h-4 ml-1" 
                 fill="none" 
                 viewBox="0 0 24 24" 
                 stroke="currentColor"
@@ -211,7 +232,8 @@ const SalesAnalysisTab = ({
             </button>
           </div>
           
-          <div className={`transition-all duration-300 ${expandedSection === 'retailers' ? 'h-96' : 'h-64'}`}>
+          {/* Fix: Set fixed height */}
+          <div className="h-96">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -220,8 +242,8 @@ const SalesAnalysisTab = ({
                   nameKey="name"
                   cx="50%"
                   cy="50%"
-                  outerRadius={expandedSection === 'retailers' ? 120 : 80}
-                  innerRadius={expandedSection === 'retailers' ? 60 : 40}
+                  outerRadius={120}
+                  innerRadius={60}
                   paddingAngle={2}
                   onMouseEnter={(data, index) => setActiveRetailer(index)}
                   onMouseLeave={() => setActiveRetailer(null)}
@@ -263,33 +285,32 @@ const SalesAnalysisTab = ({
             </ResponsiveContainer>
           </div>
           
-          {expandedSection === 'retailers' && (
-            <div className="mt-4 overflow-auto max-h-64">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Retailer</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+          {/* Fix: Always show the table */}
+          <div className="mt-4 overflow-auto max-h-64">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Retailer</th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {retailerData.map((retailer, index) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                        <div className="text-sm font-medium text-gray-900">{retailer.name}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{retailer.value.toLocaleString()}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{retailer.percentage.toFixed(1)}%</td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {retailerData.map((retailer, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                          <div className="text-sm font-medium text-gray-900">{retailer.name}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{retailer.value.toLocaleString()}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{retailer.percentage.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
         
         {/* Product Distribution */}
@@ -301,13 +322,14 @@ const SalesAnalysisTab = ({
               </svg>
               Top Products
             </h3>
+            {/* Fix: Hide the button with className="hidden" */}
             <button 
               onClick={() => toggleSection('products')}
-              className="text-sm text-pink-600 hover:text-pink-800 font-medium flex items-center focus:outline-none"
+              className="hidden text-sm text-pink-600 hover:text-pink-800 font-medium flex items-center focus:outline-none"
             >
-              {expandedSection === 'products' ? 'View Less' : 'View More'}
+              Details
               <svg 
-                className={`w-4 h-4 ml-1 transition-transform duration-200 ${expandedSection === 'products' ? 'transform rotate-180' : ''}`} 
+                className="w-4 h-4 ml-1" 
                 fill="none" 
                 viewBox="0 0 24 24" 
                 stroke="currentColor"
@@ -317,7 +339,8 @@ const SalesAnalysisTab = ({
             </button>
           </div>
           
-          <div className={`transition-all duration-300 ${expandedSection === 'products' ? 'h-96' : 'h-64'}`}>
+          {/* Fix: Set fixed height */}
+          <div className="h-96">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -329,8 +352,8 @@ const SalesAnalysisTab = ({
                   nameKey="name"
                   cx="50%"
                   cy="50%"
-                  outerRadius={expandedSection === 'products' ? 120 : 80}
-                  innerRadius={expandedSection === 'products' ? 60 : 40}
+                  outerRadius={120}
+                  innerRadius={60}
                   paddingAngle={2}
                   onMouseEnter={(data, index) => setActiveProduct(index)}
                   onMouseLeave={() => setActiveProduct(null)}
@@ -372,33 +395,32 @@ const SalesAnalysisTab = ({
             </ResponsiveContainer>
           </div>
           
-          {expandedSection === 'products' && (
-            <div className="mt-4 overflow-auto max-h-64">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+          {/* Fix: Always show the table */}
+          <div className="mt-4 overflow-auto max-h-64">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {productDistribution.slice(0, 10).map((product, index) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                        <div className="text-sm font-medium text-gray-900">{product.displayName}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{product.count.toLocaleString()}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{product.percentage.toFixed(1)}%</td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {productDistribution.slice(0, 10).map((product, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                          <div className="text-sm font-medium text-gray-900">{product.displayName}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{product.count.toLocaleString()}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{product.percentage.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
       
@@ -507,24 +529,10 @@ const SalesAnalysisTab = ({
             </svg>
             Product/Retailer Distribution
           </h3>
-          <button 
-            onClick={() => toggleSection('matrix')}
-            className="text-sm text-purple-600 hover:text-purple-800 font-medium flex items-center focus:outline-none"
-          >
-            {expandedSection === 'matrix' ? 'View Less' : 'View More'}
-            <svg 
-              className={`w-4 h-4 ml-1 transition-transform duration-200 ${expandedSection === 'matrix' ? 'transform rotate-180' : ''}`} 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
         </div>
         
-        {/* Heat map visualization of product-retailer matrix */}
-        <div className={`max-h-96 overflow-auto transition-all duration-300 ${expandedSection === 'matrix' ? 'opacity-100' : 'opacity-100 max-h-48'}`}>
+        {/* Fix: Remove expandedSection conditional and make this always visible with a class */}
+        <div className="max-h-96 overflow-auto">
           <div className="inline-block min-w-full align-middle">
             <div className="overflow-hidden border border-gray-200 rounded-lg">
               <table className="min-w-full divide-y divide-gray-200">
@@ -553,9 +561,15 @@ const SalesAnalysisTab = ({
                         </div>
                       </td>
                       {retailerData.slice(0, 5).map((retailer, retailerIndex) => {
-                        // This would be replaced with actual data from a product-retailer matrix
-                        const randomValue = Math.floor(Math.random() * 100);
-                        const intensity = Math.min(0.9, 0.1 + (randomValue / 100) * 0.8);
+                        // Fix: Use data instead of filteredData
+                        const productItems = data.filter(item => item.product_name === product.name);
+                        const productRetailerItems = productItems.filter(item => item.chain === retailer.name);
+                        const percentage = productItems.length > 0 
+                          ? (productRetailerItems.length / productItems.length) * 100 
+                          : 0;
+                        
+                        const intensity = Math.min(0.9, 0.1 + (percentage / 100) * 0.8);
+                        
                         return (
                           <td 
                             key={retailerIndex} 
@@ -564,7 +578,7 @@ const SalesAnalysisTab = ({
                               backgroundColor: `rgba(${COLORS[productIndex % COLORS.length].slice(1).match(/.{1,2}/g).map(hex => parseInt(hex, 16)).join(', ')}, ${intensity})`
                             }}
                           >
-                            {randomValue}%
+                            {percentage.toFixed(1)}%
                           </td>
                         );
                       })}
