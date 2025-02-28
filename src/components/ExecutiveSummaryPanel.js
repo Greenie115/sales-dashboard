@@ -81,7 +81,8 @@ const ExecutiveSummaryPanel = ({
     if (topRetailers.length > 0) {
       insights.push({
         type: 'retailer',
-        text: `${topRetailers[0].name} is your top retailer with ${topRetailers[0].percentage.toFixed(1)}% of redemptions`
+        text: `${topRetailers[0].name} is your top retailer with ${topRetailers[0].percentage.toFixed(1)}% of redemptions`,
+        data: topRetailers[0].percentage.toFixed(1) + '%'
       });
     }
     
@@ -90,7 +91,8 @@ const ExecutiveSummaryPanel = ({
     if (bestDay) {
       insights.push({
         type: 'day',
-        text: `${bestDay.name} is your best performing day with ${bestDay.percentage.toFixed(1)}% of redemptions`
+        text: `${bestDay.name} is your best performing day with ${bestDay.percentage.toFixed(1)}% of redemptions`,
+        data: bestDay.percentage.toFixed(1) + '%'
       });
     }
     
@@ -103,6 +105,7 @@ const ExecutiveSummaryPanel = ({
       insights.push({
         type: 'trend',
         text: trendText,
+        data: Math.abs(trend.change).toFixed(1) + '%',
         status: trend.direction === 'up' ? 'positive' : 'negative'
       });
     }
@@ -119,9 +122,16 @@ const ExecutiveSummaryPanel = ({
   // Handle empty data
   if (!data || data.length === 0 || !stats || !metrics) {
     return (
-      <div className="p-4 bg-gray-50 rounded-lg text-center mb-6">
-        <h2 className="text-lg font-semibold text-gray-700">Executive Summary</h2>
-        <p className="text-gray-500 mt-2">Load sales data to view your executive summary</p>
+      <div className="p-6 bg-white rounded-lg shadow-sm mb-6 flex items-center justify-center border border-gray-200">
+        <div className="text-center">
+          <div className="mx-auto h-12 w-12 text-gray-400">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <h2 className="mt-2 text-lg font-semibold text-gray-700">Executive Summary</h2>
+          <p className="mt-1 text-gray-500">Load sales data to view your executive summary</p>
+        </div>
       </div>
     );
   }
@@ -133,10 +143,10 @@ const ExecutiveSummaryPanel = ({
   };
   
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-      <div className="flex justify-between items-center mb-4">
+    <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+      <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-gray-900">Executive Summary</h2>
-        <div className="text-sm text-gray-500">
+        <div className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
           {timeframe === 'all' ? 'All Time' : 
            timeframe === 'month' ? 'Monthly View' : 
            'Custom Date Range'}
@@ -144,17 +154,31 @@ const ExecutiveSummaryPanel = ({
       </div>
       
       {/* Key Metrics Section */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-pink-50 p-4 rounded-lg">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-gradient-to-r from-pink-50 to-pink-100 p-6 rounded-lg shadow-sm border border-pink-200">
           <h3 className="text-sm font-medium text-gray-500 mb-1">Total Redemptions</h3>
           {!comparisonMode ? (
-            <p className="text-2xl font-bold text-pink-600">{metrics.totalUnits.toLocaleString()}</p>
+            <div>
+              <p className="text-2xl font-bold text-pink-600">{metrics.totalUnits.toLocaleString()}</p>
+              <p className="text-xs text-gray-500 mt-1">Total units redeemed</p>
+            </div>
           ) : (
             <div className="flex items-baseline justify-between">
-              <p className="text-xl font-bold text-pink-600">{metrics.totalUnits.toLocaleString()}</p>
+              <div>
+                <p className="text-xl font-bold text-pink-600">{metrics.totalUnits.toLocaleString()}</p>
+                <p className="text-xs text-gray-500 mt-1">Current period</p>
+              </div>
               {comparisonMetrics && (
-                <div className={`ml-2 text-sm font-medium ${calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits) >= 0 ? '↑' : '↓'} 
+                <div className={`ml-2 text-sm font-medium ${calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits) >= 0 ? 'text-green-600' : 'text-red-600'} flex items-center`}>
+                  {calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits) >= 0 ? (
+                    <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
+                    </svg>
+                  )}
                   {Math.abs(calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits)).toFixed(1)}%
                 </div>
               )}
@@ -162,16 +186,30 @@ const ExecutiveSummaryPanel = ({
           )}
         </div>
         
-        <div className="bg-pink-50 p-4 rounded-lg">
+        <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg shadow-sm border border-blue-200">
           <h3 className="text-sm font-medium text-gray-500 mb-1">Average Per Day</h3>
           {!comparisonMode ? (
-            <p className="text-2xl font-bold text-pink-600">{metrics.avgRedemptionsPerDay}</p>
+            <div>
+              <p className="text-2xl font-bold text-blue-600">{metrics.avgRedemptionsPerDay}</p>
+              <p className="text-xs text-gray-500 mt-1">Units per day</p>
+            </div>
           ) : (
             <div className="flex items-baseline justify-between">
-              <p className="text-xl font-bold text-pink-600">{metrics.avgRedemptionsPerDay}</p>
+              <div>
+                <p className="text-xl font-bold text-blue-600">{metrics.avgRedemptionsPerDay}</p>
+                <p className="text-xs text-gray-500 mt-1">Current period</p>
+              </div>
               {comparisonMetrics && (
-                <div className={`ml-2 text-sm font-medium ${calculateChange(parseFloat(metrics.avgRedemptionsPerDay), parseFloat(comparisonMetrics.avgRedemptionsPerDay)) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {calculateChange(parseFloat(metrics.avgRedemptionsPerDay), parseFloat(comparisonMetrics.avgRedemptionsPerDay)) >= 0 ? '↑' : '↓'} 
+                <div className={`ml-2 text-sm font-medium ${calculateChange(parseFloat(metrics.avgRedemptionsPerDay), parseFloat(comparisonMetrics.avgRedemptionsPerDay)) >= 0 ? 'text-green-600' : 'text-red-600'} flex items-center`}>
+                  {calculateChange(parseFloat(metrics.avgRedemptionsPerDay), parseFloat(comparisonMetrics.avgRedemptionsPerDay)) >= 0 ? (
+                    <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
+                    </svg>
+                  )}
                   {Math.abs(calculateChange(parseFloat(metrics.avgRedemptionsPerDay), parseFloat(comparisonMetrics.avgRedemptionsPerDay))).toFixed(1)}%
                 </div>
               )}
@@ -179,58 +217,113 @@ const ExecutiveSummaryPanel = ({
           )}
         </div>
         
-        <div className="bg-pink-50 p-4 rounded-lg">
+        <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-6 rounded-lg shadow-sm border border-purple-200">
           <h3 className="text-sm font-medium text-gray-500 mb-1">Time Period</h3>
-          <p className="text-sm font-medium text-gray-600">
+          <p className="text-md font-medium text-purple-600">
             {metrics.uniqueDates[0]} to {metrics.uniqueDates[metrics.uniqueDates.length - 1]}
           </p>
-          <p className="text-sm text-gray-500">({metrics.daysInRange} days)</p>
+          <p className="text-xs text-gray-500 mt-1">{metrics.daysInRange} days</p>
         </div>
         
-        <div className="bg-pink-50 p-4 rounded-lg">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-6 rounded-lg shadow-sm border border-green-200">
           <h3 className="text-sm font-medium text-gray-500 mb-1">Trend (Last 7 Days)</h3>
           {stats.trend ? (
-            <div className="flex items-baseline">
-              <p className={`text-lg font-bold ${stats.trend.direction === 'up' ? 'text-green-600' : 'text-red-600'}`}>
-                {stats.trend.direction === 'up' ? '↑' : '↓'} {Math.abs(stats.trend.change).toFixed(1)}%
-              </p>
-              <p className="ml-2 text-sm text-gray-500">vs previous period</p>
+            <div>
+              <div className="flex items-center">
+                <p className={`text-lg font-bold ${stats.trend.direction === 'up' ? 'text-green-600' : 'text-red-600'}`}>
+                  {stats.trend.direction === 'up' ? (
+                    <svg className="h-5 w-5 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
+                    </svg>
+                  )}
+                  {Math.abs(stats.trend.change).toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">vs previous period</p>
             </div>
           ) : (
-            <p className="text-sm text-gray-500">Insufficient data for trend</p>
+            <div className="flex items-center">
+              <p className="text-md font-medium text-gray-500">Insufficient data</p>
+              <p className="text-xs text-gray-500 mt-1">Need 14+ days</p>
+            </div>
           )}
         </div>
       </div>
       
       {/* Key Insights Section */}
-      <div className="mb-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-3">Key Insights</h3>
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <ul className="space-y-2">
+      <div className="mb-8">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Key Insights</h3>
+        <div className="bg-gray-50 p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {stats.insights.map((insight, index) => (
-              <li key={index} className="flex items-start">
-                <div className={`flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center mr-2 ${
+              <div 
+                key={index} 
+                className={`rounded-lg p-4 shadow-sm border flex items-start ${
+                  insight.status === 'positive' ? 'bg-green-50 border-green-200' : 
+                  insight.status === 'negative' ? 'bg-red-50 border-red-200' : 
+                  'bg-white border-gray-200'
+                }`}
+              >
+                <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center mr-4 ${
                   insight.status === 'positive' ? 'bg-green-100 text-green-600' : 
                   insight.status === 'negative' ? 'bg-red-100 text-red-600' : 
+                  insight.type === 'retailer' ? 'bg-blue-100 text-blue-600' :
+                  insight.type === 'day' ? 'bg-purple-100 text-purple-600' :
                   'bg-pink-100 text-pink-600'
                 }`}>
-                  {insight.status === 'positive' ? '↑' : 
-                   insight.status === 'negative' ? '↓' : 
-                   '•'}
+                  {insight.status === 'positive' ? (
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  ) : insight.status === 'negative' ? (
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
+                    </svg>
+                  ) : insight.type === 'retailer' ? (
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                  ) : insight.type === 'day' ? (
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  ) : (
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  )}
                 </div>
-                <p className="text-sm text-gray-700">{insight.text}</p>
-              </li>
+                <div>
+                  <p className="text-sm font-medium text-gray-700">{insight.text}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {insight.type === 'retailer' ? 'Top retailer by volume' : 
+                     insight.type === 'day' ? 'Best performing day' : 
+                     insight.status === 'positive' ? 'Positive trend' : 
+                     insight.status === 'negative' ? 'Negative trend' : 
+                     'Insight'}
+                  </p>
+                </div>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       </div>
       
       {/* Charts Section - Mini Visualizations */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Top Retailers Mini Chart */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-900 mb-2">Top Retailers</h3>
-          <div className="h-48">
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 className="text-md font-medium text-gray-900 mb-4 flex items-center">
+            <svg className="h-5 w-5 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Top Retailers
+          </h3>
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -238,36 +331,97 @@ const ExecutiveSummaryPanel = ({
                   cx="50%"
                   cy="50%"
                   innerRadius={30}
-                  outerRadius={60}
+                  outerRadius={70}
                   paddingAngle={2}
                   dataKey="value"
+                  labelLine={false}
+                  label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
+                    const RADIAN = Math.PI / 180;
+                    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+                    return percent > 0.1 ? (
+                      <text 
+                        x={x} 
+                        y={y} 
+                        fill="#fff" 
+                        textAnchor="middle" 
+                        dominantBaseline="central"
+                        fontSize={12}
+                        fontWeight="bold"
+                      >
+                        {`${(percent * 100).toFixed(0)}%`}
+                      </text>
+                    ) : null;
+                  }}
                 >
                   {stats.topRetailers.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={COLORS[index % COLORS.length]} 
+                      stroke="#fff"
+                      strokeWidth={1}
+                    />
                   ))}
                 </Pie>
                 <Tooltip formatter={(value, name, props) => [value.toLocaleString(), props.payload.name]} />
-                <Legend layout="vertical" align="right" verticalAlign="middle" />
+                <Legend 
+                  layout="vertical" 
+                  align="right" 
+                  verticalAlign="middle"
+                  iconType="circle"
+                  formatter={(value, entry, index) => (
+                    <span className="text-xs text-gray-700">{value}</span>
+                  )}
+                />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
         
         {/* Day of Week Mini Chart */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-900 mb-2">Day of Week Distribution</h3>
-          <div className="h-48">
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 className="text-md font-medium text-gray-900 mb-4 flex items-center">
+            <svg className="h-5 w-5 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            Day of Week Distribution
+          </h3>
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={stats.dayDistribution}
                 layout="vertical"
-                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" />
-                <YAxis dataKey="name" type="category" scale="band" />
-                <Tooltip formatter={(value) => value.toLocaleString()} />
-                <Bar dataKey="value" fill="#0066CC" radius={[5, 5, 0, 0]} />
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  scale="band" 
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip 
+                  formatter={(value) => [value.toLocaleString(), 'Redemptions']}
+                  cursor={{ fill: 'rgba(0, 0, 0, 0.05)' }}
+                />
+                <Bar 
+                  dataKey="value" 
+                  fill="#0066CC" 
+                  radius={[0, 4, 4, 0]}
+                  barSize={20}
+                >
+                  {stats.dayDistribution.map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={`rgba(0, 102, 204, ${0.5 + (entry.percentage / 100) * 0.5})`}
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
