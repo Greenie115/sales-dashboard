@@ -65,50 +65,69 @@ const SalesDashboard = () => {
   const demographicRef = useRef(null);
   const offerInsightsRef = useRef(null);
 
-  // Add effect to dynamically load brand detection or use inline fallback
   useEffect(() => {
-    // Define inline fallback functions in case the import fails
-    const fallbackIdentifyBrandPrefixes = (productNames) => {
-      if (!productNames || productNames.length <= 1) return {};
-      
-      const mappings = {};
-      productNames.forEach(name => {
-        const words = name.split(' ');
-        if (words.length >= 3) {
-          mappings[name] = {
-            original: name,
-            brandName: words[0],
-            displayName: words.slice(1).join(' ')
-          };
-        } else {
-          mappings[name] = {
-            original: name,
-            brandName: '',
-            displayName: name
-          };
+    // Use the updated brand detection functions
+    const newIdentifyBrandPrefixes = (productNames) => {
+      if (!productNames || productNames.length === 0) return {};
+  
+      const result = {};
+      const splitNames = productNames.map(name => name.split(' '));
+  
+      productNames.forEach((name, index) => {
+        const words = splitNames[index];
+        let brandWords = [];
+  
+        // Go through each word position and compare against all other products
+        for (let i = 0; i < words.length; i++) {
+          // Get products that share the prefix up to (but not including) i
+          const candidates = splitNames.filter(otherWords => {
+            if (otherWords.length <= i) return false;
+            for (let j = 0; j < i; j++) {
+              if (otherWords[j] !== words[j]) return false;
+            }
+            return true;
+          });
+  
+          // Only include the current word if more than one product has it in this position
+          const allMatch = candidates.length > 1 && candidates.every(otherWords => otherWords[i] === words[i]);
+  
+          if (allMatch) {
+            brandWords.push(words[i]);
+          } else {
+            break;
+          }
         }
+  
+        const brandName = brandWords.join(' ');
+        const displayName = brandName.length ? name.substring(brandName.length).trim() : name;
+        
+        result[name] = {
+          original: name,
+          brandName,
+          displayName
+        };
       });
-      return mappings;
+  
+      return result;
     };
-    
-    const fallbackExtractBrandNames = (brandMapping) => {
+  
+    const newExtractBrandNames = (brandMapping) => {
       if (!brandMapping) return [];
       const brands = Object.values(brandMapping)
         .map(info => info.brandName)
         .filter(Boolean);
       return [...new Set(brands)];
     };
-    
-    // Store these functions globally to use in file upload
+  
+    // Set the global BrandDetection to use your new algorithm
     window.BrandDetection = {
-      identifyBrandPrefixes: fallbackIdentifyBrandPrefixes,
-      extractBrandNames: fallbackExtractBrandNames
+      identifyBrandPrefixes: newIdentifyBrandPrefixes,
+      extractBrandNames: newExtractBrandNames
     };
-    
+  
     setBrandDetectionLoaded(true);
   }, []);
-
-  // Add effect to handle clicking outside the export dropdown
+  
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (showExportOptions && !event.target.closest('.export-dropdown')) {
@@ -509,7 +528,7 @@ const SalesDashboard = () => {
   const handleExport = (type) => {
     // Get the brand name and format it for the filename
     const brandName = brandNames.length > 0 
-      ? brandNames[0] 
+      ? brandNames.join(', ')  
       : clientName || 'Shopmium';
     
     // Format today's date as YYYY-MM-DD
@@ -1533,14 +1552,15 @@ const generatePDF = (fileName) => {
                 {activeTab === 'offers' && 'Offer Insights'}
               </h1>
               <div className="mt-1 flex items-center">
-                {brandNames.length > 0 && (
-                  <>
-                    <div className="text-sm text-gray-500">
-                      Brand: <span className="font-medium text-gray-900">{brandNames[0]}</span>
-                    </div>
-                    <span className="mx-2 text-gray-300">•</span>
-                  </>
-                )}
+              {brandNames.length > 0 && (
+                <>
+                  <div className="text-sm text-gray-500">
+                    Brand: <span className="font-medium text-gray-900">{brandNames.join(', ')}</span>
+                  </div>
+                  <span className="mx-2 text-gray-300">•</span>
+                </>
+              )}
+
                 {clientName && (
                   <div className="text-sm text-gray-500">
                     Client: <span className="font-medium text-gray-900">{clientName}</span>
