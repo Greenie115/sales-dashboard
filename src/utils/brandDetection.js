@@ -1,62 +1,53 @@
 export const identifyBrandPrefixes = (productNames) => {
-  if (!productNames || productNames.length <= 1) return {};
-
-  // Build a trie where each node stores the number of products passing through it.
-  const trie = {};
-
-  // Insert each product (split by words) into the trie.
-  productNames.forEach(name => {
-    const words = name.split(' ');
-    let node = trie;
-    words.forEach(word => {
-      if (!node[word]) {
-        node[word] = { count: 0, children: {} };
-      }
-      node[word].count++;
-      node = node[word].children;
-    });
-  });
+  if (!productNames || productNames.length === 0) return {};
 
   const result = {};
+  // Pre-split names for efficiency
+  const splitNames = productNames.map(name => name.split(' '));
 
-  // For each product, traverse the trie until a word is unique.
-  productNames.forEach(name => {
-    const words = name.split(' ');
-    let node = trie;
-    const brandWords = [];
-    
-    // Walk the trie until the current word is not common (i.e. count < 2)
+  productNames.forEach((name, index) => {
+    const words = splitNames[index];
+    let brandWords = [];
+
+    // Iterate through each word position to build the common prefix
     for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      if (node[word] && node[word].count >= 2) {
-        brandWords.push(word);
-        node = node[word].children;
+      // Filter for products that share the prefix up to word index i
+      const candidates = splitNames.filter(otherWords => {
+        if (otherWords.length <= i) return false;
+        for (let j = 0; j < i; j++) {
+          if (otherWords[j] !== words[j]) return false;
+        }
+        return true;
+      });
+
+      // If more than one product shares the word at this position, it's part of the brand
+      const allMatch = candidates.length > 1 && candidates.every(otherWords => otherWords[i] === words[i]);
+
+      if (allMatch) {
+        brandWords.push(words[i]);
       } else {
         break;
       }
     }
 
     const brandName = brandWords.join(' ');
-    // Remove the brand prefix from the original name, if any.
-    const displayName = brandName.length > 0 ? name.substring(brandName.length).trim() : name;
+    // Calculate displayName by removing the brand words from the beginning
+    const displayName = brandWords.length > 0 ? words.slice(brandWords.length).join(' ') : name;
     
     result[name] = {
       original: name,
-      brandName: brandName,
-      displayName: displayName
+      brandName,
+      displayName
     };
   });
 
   return result;
 };
 
-// Function to extract unique brand names from the mapping if needed
 export const extractBrandNames = (brandMapping) => {
   if (!brandMapping) return [];
-  
   const brands = Object.values(brandMapping)
     .map(info => info.brandName)
     .filter(Boolean);
-    
   return [...new Set(brands)];
 };

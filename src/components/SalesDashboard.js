@@ -42,7 +42,7 @@ const SalesDashboard = () => {
   // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('sales');
+  const [activeTab, setActiveTab] = useState('summary'); // Changed default to 'summary'
   const [hasOfferData, setHasOfferData] = useState(false);
   const [showExportOptions, setShowExportOptions] = useState(false);
   const [brandMapping, setBrandMapping] = useState({});
@@ -131,7 +131,10 @@ const SalesDashboard = () => {
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (showExportOptions && !event.target.closest('.export-dropdown')) {
-        setShowExportOptions(false);
+        // Use setTimeout to prevent interference with selection in demographic component
+        setTimeout(() => {
+          setShowExportOptions(false);
+        }, 100);
       }
     };
     
@@ -280,8 +283,8 @@ const SalesDashboard = () => {
                   // Initialize with all products selected
                   setSelectedProducts(['all']);
                   
-                  // Always set active tab to sales when uploading sales data
-                  setActiveTab('sales');
+                  // Always set active tab to summary when uploading sales data
+                  setActiveTab('summary');
                 }
               }
             } else {
@@ -526,6 +529,14 @@ const SalesDashboard = () => {
 
   // Handle export
   const handleExport = (type) => {
+    // Capture the demographic data in state before showing export options
+    // This ensures selections are preserved during export
+    if (activeTab === 'demographics' && demographicRef.current) {
+      const demographicData = demographicRef.current.getVisibleData();
+      // Store this for later use during export
+      localStorage.setItem('demographicExportData', JSON.stringify(demographicData));
+    }
+    
     // Get the brand name and format it for the filename
     const brandName = brandNames.length > 0 
       ? brandNames.join(', ')  
@@ -545,6 +556,11 @@ const SalesDashboard = () => {
     } else if (type === 'pdf') {
       generatePDF(exportName);
     }
+    
+    // Hide the export dropdown with a slight delay to prevent interference
+    setTimeout(() => {
+      setShowExportOptions(false);
+    }, 100);
   };
   
 
@@ -640,7 +656,7 @@ const createProductRetailerMatrix = (usePercentages = false) => {
 
 // Export to CSV function 
 const exportToCSV = (fileName) => {
-  if ((activeTab !== 'sales' && activeTab !== 'demographics' && activeTab !== 'offers') || 
+  if ((activeTab !== 'summary' && activeTab !== 'sales' && activeTab !== 'demographics' && activeTab !== 'offers') || 
       (!data.length && !hasOfferData)) {
     alert('No data available to export.');
     return;
@@ -652,7 +668,7 @@ const exportToCSV = (fileName) => {
     let headers = [];
     
     // Determine which data to export based on active tab
-    if (activeTab === 'sales') {
+    if (activeTab === 'summary' || activeTab === 'sales') {
       // Create a product-retailer matrix for export
       const productRetailerMatrix = createProductRetailerMatrix();
       
@@ -791,9 +807,25 @@ const exportToCSV = (fileName) => {
         });
       }
     } else if (activeTab === 'demographics') {
-      // Get data from demographics component
-      const demographicData = demographicRef.current?.getVisibleData() || {};
+      // Get data from demographics component - either from the current reference or from stored data
+      let demographicData;
+      try {
+        // Try to get data from localStorage first (preserves selected options)
+        const storedData = localStorage.getItem('demographicExportData');
+        if (storedData) {
+          demographicData = JSON.parse(storedData);
+          // Clear the storage after use
+          localStorage.removeItem('demographicExportData');
+        } else {
+          // Fall back to current ref if no stored data exists
+          demographicData = demographicRef.current?.getVisibleData() || {};
+        }
+      } catch (e) {
+        // If there's any error with localStorage, use the ref directly
+        demographicData = demographicRef.current?.getVisibleData() || {}; 
+      }
       
+      // Check if we have demographic data to export
       if (demographicData.ageData && demographicData.ageData.length > 0) {
         // Export age distribution data
         headers = ['age_group', 'count', 'percentage'];
@@ -822,6 +854,45 @@ const exportToCSV = (fileName) => {
             csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
           });
         }
+        
+        // Add response data if available
+        if (demographicData.responseData && demographicData.responseData.length > 0) {
+          csvContent += '\n"Response Distribution"\n';
+          csvContent += 'response,count,percentage\n';
+          
+          demographicData.responseData.forEach(item => {
+            const formattedResponse = `"${item.response.replace(/"/g, '""')}"`;
+            csvContent += `${formattedResponse},${item.total},${item.percentage.toFixed(1)}\n`;
+          });
+          
+          // Add selected response age distributions if available
+          if (demographicData.ageDistribution && demographicData.ageDistribution.length > 0 && 
+              demographicData.selectedResponses && demographicData.selectedResponses.length > 0) {
+            
+            csvContent += '\n"Age Distribution by Response"\n';
+            
+            // Create header row with all selected responses
+            const ageHeaders = ['Age Group', 'Total Count', ...demographicData.selectedResponses.flatMap(resp => 
+              [`"${resp.replace(/"/g, '""')}"`, '% of Age Group', '% of Response']
+            )];
+            csvContent += ageHeaders.join(',') + '\n';
+            
+            // Add data rows
+            demographicData.ageDistribution.forEach(row => {
+              const rowData = [row.ageGroup, row.count];
+              
+              demographicData.selectedResponses.forEach(response => {
+                rowData.push(
+                  row[response] || 0,
+                  row[`${response}_percent`] ? `${row[`${response}_percent`].toFixed(1)}%` : '0.0%',
+                  row[`${response}_percent_of_total`] ? `${row[`${response}_percent_of_total`].toFixed(1)}%` : '0.0%'
+                );
+              });
+              
+              csvContent += rowData.join(',') + '\n';
+            });
+          }
+        }
       } else {
         alert('No demographic data available to export.');
         return;
@@ -831,13 +902,41 @@ const exportToCSV = (fileName) => {
       const offerData = offerInsightsRef.current?.getVisibleData() || {};
       
       if (offerData.metrics) {
-        headers = ['offer_name', 'total_hits', 'days_active', 'avg_hits_per_day', 'percentage'];
-        csvContent = headers.join(',') + '\n';
+        // Export offer metrics
+        csvContent = 'Offer Insights Summary\n';
+        csvContent += `Total Hits,${offerData.metrics.totalHits.toLocaleString()}\n`;
+        csvContent += `Period Length,${offerData.metrics.periodDays} days\n`;
+        csvContent += `Average Hits Per Day,${offerData.metrics.averageHitsPerDay}\n\n`;
         
+        // Export offer data
         if (offerData.offerData && offerData.offerData.length > 0) {
+          csvContent += '"Offer Performance"\n';
+          csvContent += 'Offer Name,Total Hits,Avg Hits/Day,Percentage\n';
+          
           offerData.offerData.forEach(item => {
-            csvContent += `"${item.name}",${item.value},${item.days || 'N/A'},${item.averageHitsPerDay || 'N/A'},${item.percentage.toFixed(1)}\n`;
+            const formattedOfferName = `"${item.name.replace(/"/g, '""')}"`;
+            csvContent += `${formattedOfferName},${item.value},${item.averageHitsPerDay || 'N/A'},${item.percentage.toFixed(1)}\n`;
           });
+          
+          // Add gender data if available
+          if (offerData.genderData && offerData.genderData.length > 0) {
+            csvContent += '\n"Gender Distribution"\n';
+            csvContent += 'Gender,Count,Percentage\n';
+            
+            offerData.genderData.forEach(item => {
+              csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
+            });
+          }
+          
+          // Add age data if available
+          if (offerData.ageData && offerData.ageData.length > 0) {
+            csvContent += '\n"Age Distribution"\n';
+            csvContent += 'Age Group,Count,Percentage\n';
+            
+            offerData.ageData.forEach(item => {
+              csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
+            });
+          }
         } else {
           alert('No offer data available to export.');
           return;
@@ -859,7 +958,7 @@ const exportToCSV = (fileName) => {
 
 // Generate PDF report
 const generatePDF = (fileName) => {
-  if ((activeTab !== 'sales' && activeTab !== 'demographics' && activeTab !== 'offers') || 
+  if ((activeTab !== 'summary' && activeTab !== 'sales' && activeTab !== 'demographics' && activeTab !== 'offers') || 
       (!data.length && !hasOfferData)) {
     alert('No data available to export.');
     return;
@@ -899,7 +998,9 @@ const generatePDF = (fileName) => {
     // Add report title based on active tab
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(14);
-    if (activeTab === 'sales') {
+    if (activeTab === 'summary') {
+      pdf.text('Executive Summary Report', margin, yPos);
+    } else if (activeTab === 'sales') {
       pdf.text('Sales Analysis Report', margin, yPos);
     } else if (activeTab === 'demographics') {
       pdf.text('Demographics Analysis Report', margin, yPos);
@@ -912,7 +1013,7 @@ const generatePDF = (fileName) => {
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10);
     
-    if (activeTab === 'sales' || activeTab === 'demographics') {
+    if (activeTab === 'summary' || activeTab === 'sales' || activeTab === 'demographics') {
       if (!selectedProducts.includes('all')) {
         const productText = `Products: ${selectedProducts.join(', ')}`;
         pdf.text(productText, margin, yPos, { maxWidth: contentWidth });
@@ -943,7 +1044,7 @@ const generatePDF = (fileName) => {
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10);
     
-    if (activeTab === 'sales' || activeTab === 'demographics') {
+    if (activeTab === 'summary' || activeTab === 'sales' || activeTab === 'demographics') {
       if (metrics) {
         pdf.text(`Total Redemptions: ${metrics.totalUnits.toLocaleString()}`, margin, yPos);
         yPos += 6;
@@ -968,7 +1069,7 @@ const generatePDF = (fileName) => {
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(12);
     
-    if (activeTab === 'sales') {
+    if (activeTab === 'summary' || activeTab === 'sales') {
       // Add retailer distribution table
       pdf.text('Retailer Distribution', margin, yPos);
       yPos += 8;
@@ -1232,6 +1333,57 @@ const generatePDF = (fileName) => {
           margin: { left: margin, right: margin },
           headStyles: { fillColor: [255, 0, 102] }
         });
+        
+        // Add age distribution by response if available
+        if (demographicData.ageDistribution && demographicData.ageDistribution.length > 0 && 
+            demographicData.selectedResponses && demographicData.selectedResponses.length > 0) {
+            
+          yPos = pdf.lastAutoTable.finalY + 10;
+          
+          if (yPos > pageHeight - 80) {
+            pdf.addPage();
+            yPos = 20;
+          }
+          
+          pdf.text(`Age Distribution by Response`, margin, yPos);
+          yPos += 8;
+          
+          // Create headers
+          const ageDistHeaders = ['Age Group', 'Total Count'];
+          demographicData.selectedResponses.forEach(resp => {
+            ageDistHeaders.push(resp);
+            ageDistHeaders.push('% of Age Group');
+            ageDistHeaders.push('% of Response');
+          });
+          
+          // Create data rows
+          const ageDistRows = demographicData.ageDistribution.map(row => {
+            const dataRow = [row.ageGroup, row.count];
+            
+            demographicData.selectedResponses.forEach(response => {
+              dataRow.push(
+                row[response] || 0,
+                row[`${response}_percent`] ? `${row[`${response}_percent`].toFixed(1)}%` : '0.0%',
+                row[`${response}_percent_of_total`] ? `${row[`${response}_percent_of_total`].toFixed(1)}%` : '0.0%'
+              );
+            });
+            
+            return dataRow;
+          });
+          
+          pdf.autoTable({
+            startY: yPos,
+            head: [ageDistHeaders],
+            body: ageDistRows,
+            margin: { left: margin, right: margin },
+            headStyles: { fillColor: [255, 0, 102] },
+            columnStyles: {
+              0: { cellWidth: 20 },
+              1: { cellWidth: 20 }
+            },
+            styles: { fontSize: 8 }
+          });
+        }
       }
     } else if (activeTab === 'offers') {
       // Get data from offer insights component
@@ -1360,6 +1512,16 @@ const generatePDF = (fileName) => {
                 <div className="flex space-x-4">
                   {/* Desktop Navigation */}
                   <button 
+                    onClick={() => setActiveTab('summary')}
+                    className={`px-3 py-2 rounded-md text-sm font-medium ${
+                      activeTab === 'summary' 
+                        ? 'bg-pink-100 text-pink-700' 
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    Summary
+                  </button>
+                  <button 
                     onClick={() => setActiveTab('sales')}
                     className={`px-3 py-2 rounded-md text-sm font-medium ${
                       activeTab === 'sales' 
@@ -1400,7 +1562,14 @@ const generatePDF = (fileName) => {
               {(data.length > 0 || hasOfferData) && (
                 <div className="relative export-dropdown">
                   <button
-                    onClick={() => setShowExportOptions(!showExportOptions)}
+                    onClick={() => {
+                      // If we're on demographics tab, store the data before showing export options
+                      if (activeTab === 'demographics' && demographicRef.current) {
+                        const demographicData = demographicRef.current.getVisibleData();
+                        localStorage.setItem('demographicExportData', JSON.stringify(demographicData));
+                      }
+                      setShowExportOptions(!showExportOptions);
+                    }}
                     className="bg-pink-600 px-4 py-2 rounded-md text-sm font-medium text-white hover:bg-pink-700 flex items-center"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1479,6 +1648,20 @@ const generatePDF = (fileName) => {
             <nav className="flex-1 px-4 space-y-2">
               <button
                 onClick={() => {
+                  setActiveTab('summary');
+                  setIsDrawerOpen(false);
+                }}
+                className={`w-full flex items-center px-4 py-2 text-sm font-medium rounded-md ${
+                  activeTab === 'summary' 
+                    ? 'bg-pink-100 text-pink-700' 
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Summary
+              </button>
+              
+              <button
+                onClick={() => {
                   setActiveTab('sales');
                   setIsDrawerOpen(false);
                 }}
@@ -1547,6 +1730,7 @@ const generatePDF = (fileName) => {
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
+                {activeTab === 'summary' && 'Executive Summary'}
                 {activeTab === 'sales' && 'Sales Analysis'}
                 {activeTab === 'demographics' && 'Demographics'}
                 {activeTab === 'offers' && 'Offer Insights'}
@@ -1629,19 +1813,8 @@ const generatePDF = (fileName) => {
         {/* Main Content Area */}
         {(data.length > 0 || hasOfferData) ? (
           <>
-            {/* Executive Summary */}
-            {(activeTab === 'sales' || activeTab === 'demographics') && data.length > 0 && (
-              <ExecutiveSummaryPanel 
-                data={getFilteredData()}
-                timeframe={dateRange}
-                comparisonMode={comparisonMode}
-                comparisonMetrics={comparisonMetrics}
-                metrics={metrics}
-              />
-            )}
-            
-            {/* Filter Section */}
-            {(activeTab === 'sales' || activeTab === 'demographics') && data.length > 0 && (
+            {/* Filter Panel - common across all tabs except offers */}
+            {(activeTab === 'summary' || activeTab === 'sales' || activeTab === 'demographics') && data.length > 0 && (
               <FilterPanel
                 data={data}
                 selectedProducts={selectedProducts}
@@ -1666,6 +1839,17 @@ const generatePDF = (fileName) => {
                 setComparisonStartDate={setComparisonStartDate}
                 setComparisonEndDate={setComparisonEndDate}
                 setComparisonMonth={setComparisonMonth}
+              />
+            )}
+            
+            {/* Summary Tab - only show ExecutiveSummaryPanel in this tab */}
+            {activeTab === 'summary' && data.length > 0 && (
+              <ExecutiveSummaryPanel 
+                data={getFilteredData()}
+                timeframe={dateRange}
+                comparisonMode={comparisonMode}
+                comparisonMetrics={comparisonMetrics}
+                metrics={metrics}
               />
             )}
             
