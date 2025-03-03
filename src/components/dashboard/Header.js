@@ -73,23 +73,6 @@ const Header = () => {
                 />
               </label>
             </div>
-            
-            {/* Export button */}
-            <div className="mr-4">
-              <button 
-                className={`${
-                  (salesData.length > 0 || offerData.length > 0) 
-                    ? 'bg-pink-600 text-white hover:bg-pink-700' 
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                } px-3 py-2 rounded-md text-sm font-medium flex items-center`}
-                disabled={!(salesData.length > 0 || offerData.length > 0)}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Export
-              </button>
-            </div>
           </div>
         </div>
       </div>

@@ -1,14 +1,12 @@
-// src/components/dashboard/tabs/SalesTab.js
-import React, { useState, useMemo } from 'react';
-import { useDashboard } from '../../../context/DashboardContext';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useData } from '../../../context/DataContext';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
   ComposedChart, Line, Area
 } from 'recharts';
 import _ from 'lodash';
-import { getProductDistribution, getRedemptionsOverTime, calculateTrendLine } from '../../../utils/dataProcessing';
-import { formatDate } from '../../../utils/exportUtils';
+import ExportButton from '../export/ExportButton';
 
 // Custom color palette
 const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800', '#607D8B', '#673AB7', '#3F51B5'];
@@ -32,14 +30,34 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 const SalesTab = () => {
-  const { state } = useDashboard();
-  const { filteredData, metrics, brandInfo, comparison } = state;
+  const { 
+    getFilteredData, 
+    calculateMetrics, 
+    brandMapping = {}, // Add default empty object
+    brandNames = [],   // Add default empty array
+    getProductDistribution,
+    getRedemptionsOverTime,
+    calculateTrendLine
+  } = useData();
   
   // Local state
   const [redemptionTimeframe, setRedemptionTimeframe] = useState('daily');
   const [showTrendLine, setShowTrendLine] = useState(true);
   const [activeRetailer, setActiveRetailer] = useState(null);
   const [activeProduct, setActiveProduct] = useState(null);
+  const [selectedRetailer, setSelectedRetailer] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [chartView, setChartView] = useState('pie'); // 'pie' or 'bar'
+  
+  // Get filtered data
+  const filteredData = useMemo(() => {
+    return getFilteredData ? getFilteredData() : [];
+  }, [getFilteredData]);
+  
+  // Get metrics
+  const metrics = useMemo(() => {
+    return calculateMetrics ? calculateMetrics() : null;
+  }, [calculateMetrics]);
   
   // Get retailer distribution
   const retailerData = useMemo(() => {
@@ -59,23 +77,55 @@ const SalesTab = () => {
   
   // Get product distribution
   const productDistribution = useMemo(() => {
-    return getProductDistribution(filteredData, brandInfo.brandMapping);
-  }, [filteredData, brandInfo.brandMapping]);
+    if (!getProductDistribution) return [];
+    return getProductDistribution(filteredData, brandMapping);
+  }, [filteredData, brandMapping, getProductDistribution]);
   
   // Get redemptions over time
   const redemptionsOverTime = useMemo(() => {
-    return getRedemptionsOverTime(filteredData, redemptionTimeframe);
-  }, [filteredData, redemptionTimeframe]);
+    return getRedemptionsOverTime ? getRedemptionsOverTime(filteredData, redemptionTimeframe) : [];
+  }, [filteredData, redemptionTimeframe, getRedemptionsOverTime]);
   
   // Calculate trend line
   const trendLineData = useMemo(() => {
-    return calculateTrendLine(redemptionsOverTime);
-  }, [redemptionsOverTime]);
+    return calculateTrendLine ? calculateTrendLine(redemptionsOverTime) : [];
+  }, [redemptionsOverTime, calculateTrendLine]);
   
-  // Helper function to calculate percentage change
-  const calculateChange = (current, previous) => {
-    if (!previous || previous === 0) return null;
-    return ((current - previous) / previous) * 100;
+  // Handle retailer selection for detailed view
+  const handleRetailerClick = useCallback((retailer) => {
+    setSelectedRetailer(prevRetailer => 
+      prevRetailer && prevRetailer.name === retailer.name ? null : retailer
+    );
+  }, []);
+
+  // Handle product selection for detailed view
+  const handleProductClick = useCallback((product) => {
+    setSelectedProduct(prevProduct => 
+      prevProduct && prevProduct.displayName === product.displayName ? null : product
+    );
+  }, []);
+
+  // Toggle chart view between pie and bar
+  const toggleChartView = useCallback(() => {
+    setChartView(prev => prev === 'pie' ? 'bar' : 'pie');
+  }, []);
+  
+  // Helper function to format date in "24 Feb 2025" style
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      
+      const day = date.getDate().toString();
+      const month = date.toLocaleString('default', { month: 'short' });
+      const year = date.getFullYear();
+      
+      return `${day} ${month} ${year}`;
+    } catch (error) {
+      return dateString;
+    }
   };
   
   // Handle empty data
@@ -89,9 +139,22 @@ const SalesTab = () => {
       </div>
     );
   }
+
+  // Get export data
+  const exportData = {
+    retailerData,
+    productDistribution,
+    brandMapping
+  };
   
   return (
     <div>
+      {/* Actions Bar with Export Button */}
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold text-gray-900">Sales Analysis</h2>
+        <ExportButton activeTab="sales" tabData={exportData} />
+      </div>
+      
       {/* Key Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
@@ -103,36 +166,7 @@ const SalesTab = () => {
             </div>
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-1">Total Redemptions</h3>
-              {!comparison.enabled ? (
-                <p className="text-3xl font-bold text-pink-600">{metrics?.totalUnits.toLocaleString()}</p>
-              ) : (
-                <div>
-                  <div className="flex justify-between items-center">
-                    <p className="text-2xl font-bold text-pink-600">{metrics?.totalUnits.toLocaleString()}</p>
-                    <div className="text-xs font-medium text-pink-700 px-2 py-1 rounded-full bg-pink-50">Primary</div>
-                  </div>
-                  {comparison.data && (
-                    <div className="flex justify-between items-center mt-2">
-                      <p className="text-xl font-bold text-pink-500">{comparison.data.length.toLocaleString()}</p>
-                      <div className="text-xs font-medium text-pink-500 px-2 py-1 rounded-full bg-pink-50">Comparison</div>
-                    </div>
-                  )}
-                  {comparison.data && (
-                    <div className={`mt-2 text-sm font-medium flex items-center ${calculateChange(metrics?.totalUnits, comparison.data.length) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {calculateChange(metrics?.totalUnits, comparison.data.length) >= 0 ? (
-                        <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
-                        </svg>
-                      )}
-                      {Math.abs(calculateChange(metrics?.totalUnits, comparison.data.length)).toFixed(1)}%
-                    </div>
-                  )}
-                </div>
-              )}
+              <p className="text-3xl font-bold text-pink-600">{metrics?.totalUnits.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -161,7 +195,10 @@ const SalesTab = () => {
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-1">Date Range</h3>
               <p className="text-md font-medium text-green-600">
-                {formatDate(metrics.uniqueDates[0])} to {formatDate(metrics.uniqueDates[metrics.uniqueDates.length - 1])}
+                {metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0 ? 
+                  `${formatDate(metrics.uniqueDates[0])} to ${formatDate(metrics.uniqueDates[metrics.uniqueDates.length - 1])}` :
+                  "No date range"
+                }
               </p>
               <p className="text-gray-600 text-sm">{metrics.daysInRange} days</p>
             </div>
@@ -180,57 +217,123 @@ const SalesTab = () => {
               </svg>
               Retailer Distribution
             </h3>
+            
+            {/* Toggle Chart Type Button */}
+            <button 
+              onClick={toggleChartView}
+              className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            >
+              {chartView === 'pie' ? (
+                <>
+                  <svg className="w-4 h-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" />
+                    <path d="M8 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1H9a1 1 0 01-1-1V4z" />
+                    <path d="M14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                  </svg>
+                  Bar Chart
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.5A1.5 1.5 0 017.5 7h-1A1.5 1.5 0 015 5.5V5a1 1 0 00-2 0v.5A3.5 3.5 0 006.5 9h1a3.5 3.5 0 003.5-3.5V5a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  Pie Chart
+                </>
+              )}
+            </button>
           </div>
           
           <div className="h-96">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
+              {chartView === 'pie' ? (
+                <PieChart>
+                  <Pie
+                    data={retailerData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={120}
+                    innerRadius={60}
+                    paddingAngle={2}
+                    onMouseEnter={(data, index) => setActiveRetailer(index)}
+                    onMouseLeave={() => setActiveRetailer(null)}
+                    onClick={(data) => handleRetailerClick(data)}
+                    label={({ name, percent }) => 
+                      percent > 0.05 ? `${name}: ${(percent * 100).toFixed(1)}%` : ''
+                    }
+                    labelLine={false}
+                  >
+                    {retailerData.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={COLORS[index % COLORS.length]}
+                        stroke="#fff"
+                        strokeWidth={1}
+                        style={{
+                          opacity: activeRetailer === null || activeRetailer === index ? 1 : 0.6,
+                          filter: activeRetailer === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
+                          transition: 'opacity 300ms, filter 300ms',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend
+                    layout="vertical"
+                    align="right"
+                    verticalAlign="middle"
+                    wrapperStyle={{ paddingLeft: '30px' }}
+                    iconType="circle"
+                    onMouseEnter={(data, index) => setActiveRetailer(index)}
+                    onMouseLeave={() => setActiveRetailer(null)}
+                    onClick={(data, index) => handleRetailerClick(retailerData[index])}
+                    formatter={(value, entry, index) => (
+                      <span 
+                        className={`text-sm ${activeRetailer === index ? 'font-bold text-gray-900' : 'text-gray-600'}`}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {value}
+                      </span>
+                    )}
+                  />
+                </PieChart>
+              ) : (
+                <BarChart
                   data={retailerData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={120}
-                  innerRadius={60}
-                  paddingAngle={2}
-                  onMouseEnter={(data, index) => setActiveRetailer(index)}
-                  onMouseLeave={() => setActiveRetailer(null)}
-                  label={({ name, percent }) => 
-                    percent > 0.05 ? `${name}: ${(percent * 100).toFixed(1)}%` : ''
-                  }
-                  labelLine={false}
-                >
-                  {retailerData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={COLORS[index % COLORS.length]}
-                      stroke="#fff"
-                      strokeWidth={1}
-                      style={{
-                        opacity: activeRetailer === null || activeRetailer === index ? 1 : 0.6,
-                        filter: activeRetailer === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
-                        transition: 'opacity 300ms, filter 300ms'
-                      }}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
+                  margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
                   layout="vertical"
-                  align="right"
-                  verticalAlign="middle"
-                  wrapperStyle={{ paddingLeft: '30px' }}
-                  iconType="circle"
-                  onMouseEnter={(data, index) => setActiveRetailer(index)}
-                  onMouseLeave={() => setActiveRetailer(null)}
-                  formatter={(value, entry, index) => (
-                    <span className={`text-sm ${activeRetailer === index ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
-                      {value}
-                    </span>
-                  )}
-                />
-              </PieChart>
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                  <XAxis type="number" />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    width={120}
+                    tick={{
+                      fontSize: 12,
+                    }}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend />
+                  <Bar 
+                    dataKey="value" 
+                    name="Units" 
+                    fill="#0066CC"
+                    onClick={(data) => handleRetailerClick(data)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {retailerData.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={COLORS[index % COLORS.length]}
+                        opacity={selectedRetailer && selectedRetailer.name !== entry.name ? 0.7 : 1}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              )}
             </ResponsiveContainer>
           </div>
           
@@ -245,7 +348,12 @@ const SalesTab = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {retailerData.map((retailer, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
+                  <tr 
+                    key={index} 
+                    className={`hover:bg-gray-50 ${selectedRetailer && selectedRetailer.name === retailer.name ? 'bg-blue-50' : ''}`}
+                    onClick={() => handleRetailerClick(retailer)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
@@ -259,6 +367,33 @@ const SalesTab = () => {
               </tbody>
             </table>
           </div>
+          
+          {/* Selected Retailer Details */}
+          {selectedRetailer && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-md">
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="text-md font-medium text-blue-800">Retailer: {selectedRetailer.name}</h4>
+                <button 
+                  onClick={() => setSelectedRetailer(null)}
+                  className="text-blue-500 hover:text-blue-700"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-sm text-gray-600">Units</span>
+                  <p className="text-lg font-semibold text-gray-900">{selectedRetailer.value.toLocaleString()}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-600">Percentage</span>
+                  <p className="text-lg font-semibold text-gray-900">{selectedRetailer.percentage.toFixed(1)}%</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         
         {/* Product Distribution */}
@@ -270,186 +405,304 @@ const SalesTab = () => {
               </svg>
               Top Products
             </h3>
+            
+            {/* Toggle Chart Type Button for Products */}
+            <button 
+              onClick={toggleChartView}
+              className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            >
+              {chartView === 'pie' ? (
+                <>
+                  <svg className="w-4 h-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" />
+                    <path d="M8 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1H9a1 1 0 01-1-1V4z" />
+                    <path d="M14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                  </svg>
+                  Bar Chart
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.5A1.5 1.5 0 017.5 7h-1A1.5 1.5 0 015 5.5V5a1 1 0 00-2 0v.5A3.5 3.5 0 006.5 9h1a3.5 3.5 0 003.5-3.5V5a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  Pie Chart
+                </>
+              )}
+            </button>
           </div>
           
-          <div className="h-96">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={productDistribution.slice(0, 10).map(item => ({
-                    ...item,
-                    name: item.displayName
-                  }))}
-                  dataKey="count"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={120}
-                  innerRadius={60}
-                  paddingAngle={2}
-                  onMouseEnter={(data, index) => setActiveProduct(index)}
-                  onMouseLeave={() => setActiveProduct(null)}
-                  label={({ name, percent }) => 
-                    percent > 0.05 ? `${name.length > 15 ? name.substring(0, 15) + '...' : name}: ${(percent * 100).toFixed(1)}%` : ''
-                  }
-                  labelLine={false}
-                >
-                  {productDistribution.slice(0, 10).map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={COLORS[index % COLORS.length]}
-                      stroke="#fff"
-                      strokeWidth={1}
-                      style={{
-                        opacity: activeProduct === null || activeProduct === index ? 1 : 0.6,
-                        filter: activeProduct === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
-                        transition: 'opacity 300ms, filter 300ms'
-                      }}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  layout="vertical"
-                  align="right"
-                  verticalAlign="middle"
-                  wrapperStyle={{ paddingLeft: '30px' }}
-                  iconType="circle"
-                  onMouseEnter={(data, index) => setActiveProduct(index)}
-                  onMouseLeave={() => setActiveProduct(null)}
-                  formatter={(value, entry, index) => (
-                    <span className={`text-sm ${activeProduct === index ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
-                      {value.length > 20 ? value.substring(0, 20) + '...' : value}
-                    </span>
+          {productDistribution && productDistribution.length > 0 ? (
+            <>
+              <div className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                  {chartView === 'pie' ? (
+                    <PieChart>
+                      <Pie
+                        data={productDistribution.slice(0, 10).map(item => ({
+                          ...item,
+                          name: item.displayName
+                        }))}
+                        dataKey="count"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={120}
+                        innerRadius={60}
+                        paddingAngle={2}
+                        onMouseEnter={(data, index) => setActiveProduct(index)}
+                        onMouseLeave={() => setActiveProduct(null)}
+                        onClick={(data) => handleProductClick(data)}
+                        label={({ name, percent }) => 
+                          percent > 0.05 ? `${name.length > 15 ? name.substring(0, 15) + '...' : name}: ${(percent * 100).toFixed(1)}%` : ''
+                        }
+                        labelLine={false}
+                      >
+                        {productDistribution.slice(0, 10).map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={COLORS[index % COLORS.length]}
+                            stroke="#fff"
+                            strokeWidth={1}
+                            style={{
+                              opacity: activeProduct === null || activeProduct === index ? 1 : 0.6,
+                              filter: activeProduct === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
+                              transition: 'opacity 300ms, filter 300ms',
+                              cursor: 'pointer'
+                            }}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend
+                        layout="vertical"
+                        align="right"
+                        verticalAlign="middle"
+                        wrapperStyle={{ paddingLeft: '30px' }}
+                        iconType="circle"
+                        onMouseEnter={(data, index) => setActiveProduct(index)}
+                        onMouseLeave={() => setActiveProduct(null)}
+                        onClick={(data, index) => handleProductClick(productDistribution[index])}
+                        formatter={(value, entry, index) => (
+                          <span 
+                            className={`text-sm ${activeProduct === index ? 'font-bold text-gray-900' : 'text-gray-600'}`}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {value.length > 20 ? value.substring(0, 20) + '...' : value}
+                          </span>
+                        )}
+                      />
+                    </PieChart>
+                  ) : (
+                    <BarChart
+                      data={productDistribution.slice(0, 10)}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                      layout="vertical"
+                    >
+                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                      <XAxis type="number" />
+                      <YAxis 
+                        dataKey="displayName" 
+                        type="category" 
+                        width={150}
+                        tick={{
+                          fontSize: 12
+                        }}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      <Bar 
+                        dataKey="count" 
+                        name="Units" 
+                        fill="#FF0066"
+                        onClick={(data) => handleProductClick(data)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {productDistribution.slice(0, 10).map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={COLORS[index % COLORS.length]}
+                            opacity={selectedProduct && selectedProduct.displayName !== entry.displayName ? 0.7 : 1}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
                   )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          
-          <div className="mt-4 overflow-auto max-h-64">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {productDistribution.slice(0, 10).map((product, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                        <div className="text-sm font-medium text-gray-900">{product.displayName}</div>
+                </ResponsiveContainer>
+              </div>
+              
+              <div className="mt-4 overflow-auto max-h-64">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
+                      <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
+                      <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {productDistribution.slice(0, 10).map((product, index) => (
+                      <tr 
+                        key={index} 
+                        className={`hover:bg-gray-50 ${selectedProduct && selectedProduct.displayName === product.displayName ? 'bg-pink-50' : ''}`}
+                        onClick={() => handleProductClick(product)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                            <div className="text-sm font-medium text-gray-900">{product.displayName}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{product.count.toLocaleString()}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{product.percentage.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Selected Product Details */}
+              {selectedProduct && (
+                <div className="mt-4 p-4 bg-pink-50 rounded-md">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="text-md font-medium text-pink-800">Product: {selectedProduct.displayName}</h4>
+                    <button 
+                      onClick={() => setSelectedProduct(null)}
+                      className="text-pink-500 hover:text-pink-700"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-sm text-gray-600">Units</span>
+                      <p className="text-lg font-semibold text-gray-900">{selectedProduct.count.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-gray-600">Percentage</span>
+                      <p className="text-lg font-semibold text-gray-900">{selectedProduct.percentage.toFixed(1)}%</p>
+                    </div>
+                    {selectedProduct.category && (
+                      <div className="col-span-2">
+                        <span className="text-sm text-gray-600">Category</span>
+                        <p className="text-md text-gray-900">{selectedProduct.category}</p>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{product.count.toLocaleString()}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{product.percentage.toFixed(1)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex justify-center items-center h-64">
+              <p className="text-gray-500">No product data available</p>
+            </div>
+          )}
         </div>
       </div>
       
       {/* Redemptions Over Time */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-8">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
-          <h3 className="text-lg font-medium text-gray-900 flex items-center mb-4 sm:mb-0">
-            <svg className="w-5 h-5 mr-2 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            Redemptions Over Time
-          </h3>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Timeframe</label>
-              <select
-                value={redemptionTimeframe}
-                onChange={(e) => setRedemptionTimeframe(e.target.value)}
-                className="block w-full pl-3 pr-10 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500"
-              >
-                <option value="hourly">Hourly</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <label className="inline-flex items-center">
-                <input
-                  type="checkbox"
-                  checked={showTrendLine}
-                  onChange={(e) => setShowTrendLine(e.target.checked)}
-                  className="rounded border-gray-300 text-green-600 focus:ring-green-500 h-4 w-4"
-                />
-                <span className="ml-2 text-sm text-gray-700">Show Trend Line</span>
-              </label>
+      {redemptionsOverTime && redemptionsOverTime.length > 0 ? (
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-8">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center mb-4 sm:mb-0">
+              <svg className="w-5 h-5 mr-2 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Redemptions Over Time
+            </h3>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Timeframe</label>
+                <select
+                  value={redemptionTimeframe}
+                  onChange={(e) => setRedemptionTimeframe(e.target.value)}
+                  className="block w-full pl-3 pr-10 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500"
+                >
+                  <option value="hourly">Hourly</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <label className="inline-flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={showTrendLine}
+                    onChange={(e) => setShowTrendLine(e.target.checked)}
+                    className="rounded border-gray-300 text-green-600 focus:ring-green-500 h-4 w-4"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">Show Trend Line</span>
+                </label>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div className="h-96">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart
-              data={redemptionsOverTime}
-              margin={{ top: 10, right: 30, left: 0, bottom: 30 }}
-            >
-              <defs>
-                <linearGradient id="colorRedemptions" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#FF0066" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#FF0066" stopOpacity={0.1}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis
-                dataKey="name"
-                angle={-45}
-                textAnchor="end"
-                height={70}
-                tick={{ fontSize: 12 }}
-                tickLine={false}
-                axisLine={{ stroke: '#E5E7EB' }}
-              />
-              <YAxis 
-                tick={{ fontSize: 12 }}
-                tickLine={false}
-                axisLine={{ stroke: '#E5E7EB' }}
-              />
-              <Tooltip 
-                content={<CustomTooltip />}
-                cursor={{ fill: 'rgba(0, 0, 0, 0.05)' }}
-              />
-              <Legend wrapperStyle={{ paddingTop: '10px' }} />
-              <Area 
-                type="monotone" 
-                dataKey="count" 
-                name="Redemptions" 
-                fill="url(#colorRedemptions)" 
-                stroke="#FF0066" 
-                strokeWidth={2} 
-                dot={{ stroke: '#FF0066', strokeWidth: 2, r: 4, fill: 'white' }}
-                activeDot={{ stroke: '#FF0066', strokeWidth: 2, r: 6, fill: 'white' }}
-              />
-              {showTrendLine && trendLineData.some(Boolean) && (
-                <Line
-                  type="monotone"
-                  dataKey="trend"
-                  data={trendLineData}
-                  name="Trend (7-day MA)"
-                  stroke="#0066CC"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={false}
+          
+          <div className="h-96">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={redemptionsOverTime}
+                margin={{ top: 10, right: 30, left: 0, bottom: 30 }}
+              >
+                <defs>
+                  <linearGradient id="colorRedemptions" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#FF0066" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#FF0066" stopOpacity={0.1}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  angle={-45}
+                  textAnchor="end"
+                  height={70}
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#E5E7EB' }}
                 />
-              )}
-            </ComposedChart>
-          </ResponsiveContainer>
+                <YAxis 
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#E5E7EB' }}
+                />
+                <Tooltip 
+                  content={<CustomTooltip />}
+                  cursor={{ fill: 'rgba(0, 0, 0, 0.05)' }}
+                />
+                <Legend wrapperStyle={{ paddingTop: '10px' }} />
+                <Area 
+                  type="monotone" 
+                  dataKey="count" 
+                  name="Redemptions" 
+                  fill="url(#colorRedemptions)" 
+                  stroke="#FF0066" 
+                  strokeWidth={2} 
+                  dot={{ stroke: '#FF0066', strokeWidth: 2, r: 4, fill: 'white' }}
+                  activeDot={{ stroke: '#FF0066', strokeWidth: 2, r: 6, fill: 'white' }}
+                />
+                {showTrendLine && trendLineData && trendLineData.some(Boolean) && (
+                  <Line
+                    type="monotone"
+                    dataKey="trend"
+                    data={trendLineData}
+                    name="Trend (7-day MA)"
+                    stroke="#0066CC"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={false}
+                  />
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-8 flex justify-center items-center h-64">
+          <p className="text-gray-500">No time series data available</p>
+        </div>
+      )}
     </div>
   );
 };
