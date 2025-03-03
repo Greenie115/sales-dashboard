@@ -1,48 +1,31 @@
-// context/DashboardContext.js
-import React, { createContext, useReducer, useContext } from 'react';
-
-// Initial state
-const initialState = {
-  data: [],
-  filteredData: [],
-  activeTab: 'summary',
-  // More state properties
-};
+import React, { createContext, useContext } from 'react';
+import { useData } from './DataContext';
 
 // Create context
 const DashboardContext = createContext();
 
-// Reducer function
-function dashboardReducer(state, action) {
-  switch (action.type) {
-    case 'SET_DATA':
-      return { ...state, data: action.payload };
-    // More action handlers
-    default:
-      return state;
-  }
-}
+// Custom hook to use the dashboard context
+export const useDashboard = () => useContext(DashboardContext);
 
-// Provider component
-export function DashboardProvider({ children }) {
-  const [state, dispatch] = useReducer(dashboardReducer, initialState);
+export const DashboardProvider = ({ children }) => {
+  // Get data from DataContext
+  const dataContext = useData();
   
-  // Actions to modify state
-  const actions = {
-    setData: (data) => {
-      dispatch({ type: 'SET_DATA', payload: data });
+  // Pass through all the values from DataContext
+  const value = {
+    state: {
+      ...dataContext
     },
-    // More actions
+    actions: {
+      ...dataContext
+    }
   };
-  
+
   return (
-    <DashboardContext.Provider value={{ state, actions }}>
+    <DashboardContext.Provider value={value}>
       {children}
     </DashboardContext.Provider>
   );
-}
+};
 
-// Custom hook
-export function useDashboard() {
-  return useContext(DashboardContext);
-}
+export default DashboardContext;
