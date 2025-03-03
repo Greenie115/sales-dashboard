@@ -1,11 +1,14 @@
+// src/App.js
 import React from 'react';
-import SalesDashboard from './components/SalesDashboard';
+import { DashboardProvider } from './context/DashboardContext';
+import DashboardContainer from './components/dashboard/DashboardContainer';
+import './index.css';
 
 function App() {
   return (
-    <div className="App">
-      <SalesDashboard />
-    </div>
+    <DashboardProvider>
+      <DashboardContainer />
+    </DashboardProvider>
   );
 }
 

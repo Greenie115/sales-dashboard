@@ -1,30 +1,16 @@
-import React, { useState } from 'react';
-import _ from 'lodash';
+// src/components/dashboard/tabs/SalesTab.js
+import React, { useState, useMemo } from 'react';
+import { useDashboard } from '../../../context/DashboardContext';
 import { 
-  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Line, 
-  Area, AreaChart
+  PieChart, Pie, Cell, ResponsiveContainer, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
+  ComposedChart, Line, Area
 } from 'recharts';
+import _ from 'lodash';
+import { getProductDistribution, getRedemptionsOverTime, calculateTrendLine } from '../../../utils/dataProcessing';
+import { formatDate } from '../../../utils/exportUtils';
 
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  
-  try {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return dateString;
-    
-    // Format as DD/MM/YYYY
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const year = date.getFullYear();
-    
-    return `${day}/${month}/${year}`;
-  } catch (error) {
-    return dateString;
-  }
-};
-
-// Shopmium primary color with contrasting colors
+// Custom color palette
 const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800', '#607D8B', '#673AB7', '#3F51B5'];
 
 // Custom tooltip component
@@ -45,41 +31,64 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-const SalesAnalysisTab = ({
-  data,
-  metrics,
-  comparisonMode,
-  comparisonMetrics,
-  retailerData,
-  redemptionsOverTime,
-  redemptionTimeframe,
-  setRedemptionTimeframe,
-  showTrendLine,
-  setShowTrendLine,
-  getProductDistribution,
-  calculateTrendLine,
-  selectedProducts
-}) => {
-  // State for controlling detailed views
-  // Fix: Add expandedSection state with default to 'matrix' (always expanded)
-  const [expandedSection, setExpandedSection] = useState('matrix'); 
+const SalesTab = () => {
+  const { state } = useDashboard();
+  const { filteredData, metrics, brandInfo, comparison } = state;
+  
+  // Local state
+  const [redemptionTimeframe, setRedemptionTimeframe] = useState('daily');
+  const [showTrendLine, setShowTrendLine] = useState(true);
   const [activeRetailer, setActiveRetailer] = useState(null);
   const [activeProduct, setActiveProduct] = useState(null);
   
-  // Fix: Add dummy toggleSection function that does nothing
-  const toggleSection = () => {
-    // Function kept for compatibility, but no longer toggles
-    return;
-  };
+  // Get retailer distribution
+  const retailerData = useMemo(() => {
+    if (!filteredData || filteredData.length === 0) return [];
+    
+    const groupedByRetailer = _.groupBy(filteredData, 'chain');
+    const totalUnits = filteredData.length;
+    
+    return Object.entries(groupedByRetailer)
+      .map(([chain, items]) => ({
+        name: chain || 'Unknown',
+        value: items.length,
+        percentage: (items.length / totalUnits) * 100
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredData]);
   
-  // Helper function to calculate the percentage change between two values
+  // Get product distribution
+  const productDistribution = useMemo(() => {
+    return getProductDistribution(filteredData, brandInfo.brandMapping);
+  }, [filteredData, brandInfo.brandMapping]);
+  
+  // Get redemptions over time
+  const redemptionsOverTime = useMemo(() => {
+    return getRedemptionsOverTime(filteredData, redemptionTimeframe);
+  }, [filteredData, redemptionTimeframe]);
+  
+  // Calculate trend line
+  const trendLineData = useMemo(() => {
+    return calculateTrendLine(redemptionsOverTime);
+  }, [redemptionsOverTime]);
+  
+  // Helper function to calculate percentage change
   const calculateChange = (current, previous) => {
     if (!previous || previous === 0) return null;
     return ((current - previous) / previous) * 100;
   };
-
-  // Get product distribution data
-  const productDistribution = getProductDistribution();
+  
+  // Handle empty data
+  if (!filteredData || filteredData.length === 0 || !metrics) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500 mb-4"></div>
+          <p className="text-gray-600">No data available for Sales Analysis</p>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div>
@@ -94,7 +103,7 @@ const SalesAnalysisTab = ({
             </div>
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-1">Total Redemptions</h3>
-              {!comparisonMode ? (
+              {!comparison.enabled ? (
                 <p className="text-3xl font-bold text-pink-600">{metrics?.totalUnits.toLocaleString()}</p>
               ) : (
                 <div>
@@ -102,13 +111,15 @@ const SalesAnalysisTab = ({
                     <p className="text-2xl font-bold text-pink-600">{metrics?.totalUnits.toLocaleString()}</p>
                     <div className="text-xs font-medium text-pink-700 px-2 py-1 rounded-full bg-pink-50">Primary</div>
                   </div>
-                  <div className="flex justify-between items-center mt-2">
-                    <p className="text-xl font-bold text-pink-500">{comparisonMetrics?.totalUnits.toLocaleString()}</p>
-                    <div className="text-xs font-medium text-pink-500 px-2 py-1 rounded-full bg-pink-50">Comparison</div>
-                  </div>
-                  {comparisonMetrics && (
-                    <div className={`mt-2 text-sm font-medium flex items-center ${calculateChange(metrics?.totalUnits, comparisonMetrics?.totalUnits) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {calculateChange(metrics?.totalUnits, comparisonMetrics?.totalUnits) >= 0 ? (
+                  {comparison.data && (
+                    <div className="flex justify-between items-center mt-2">
+                      <p className="text-xl font-bold text-pink-500">{comparison.data.length.toLocaleString()}</p>
+                      <div className="text-xs font-medium text-pink-500 px-2 py-1 rounded-full bg-pink-50">Comparison</div>
+                    </div>
+                  )}
+                  {comparison.data && (
+                    <div className={`mt-2 text-sm font-medium flex items-center ${calculateChange(metrics?.totalUnits, comparison.data.length) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {calculateChange(metrics?.totalUnits, comparison.data.length) >= 0 ? (
                         <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                         </svg>
@@ -117,7 +128,7 @@ const SalesAnalysisTab = ({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
                         </svg>
                       )}
-                      {Math.abs(calculateChange(metrics?.totalUnits, comparisonMetrics?.totalUnits)).toFixed(1)}%
+                      {Math.abs(calculateChange(metrics?.totalUnits, comparison.data.length)).toFixed(1)}%
                     </div>
                   )}
                 </div>
@@ -135,34 +146,7 @@ const SalesAnalysisTab = ({
             </div>
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-1">Average Per Day</h3>
-              {!comparisonMode ? (
-                <p className="text-3xl font-bold text-blue-600">{metrics?.avgRedemptionsPerDay}</p>
-              ) : (
-                <div>
-                  <div className="flex justify-between items-center">
-                    <p className="text-2xl font-bold text-blue-600">{metrics?.avgRedemptionsPerDay}</p>
-                    <div className="text-xs font-medium text-blue-700 px-2 py-1 rounded-full bg-blue-50">Primary</div>
-                  </div>
-                  <div className="flex justify-between items-center mt-2">
-                    <p className="text-xl font-bold text-blue-500">{comparisonMetrics?.avgRedemptionsPerDay}</p>
-                    <div className="text-xs font-medium text-blue-500 px-2 py-1 rounded-full bg-blue-50">Comparison</div>
-                  </div>
-                  {comparisonMetrics && (
-                    <div className={`mt-2 text-sm font-medium flex items-center ${calculateChange(parseFloat(metrics?.avgRedemptionsPerDay), parseFloat(comparisonMetrics?.avgRedemptionsPerDay)) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {calculateChange(parseFloat(metrics?.avgRedemptionsPerDay), parseFloat(comparisonMetrics?.avgRedemptionsPerDay)) >= 0 ? (
-                        <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
-                        </svg>
-                      )}
-                      {Math.abs(calculateChange(parseFloat(metrics?.avgRedemptionsPerDay), parseFloat(comparisonMetrics?.avgRedemptionsPerDay))).toFixed(1)}%
-                    </div>
-                  )}
-                </div>
-              )}
+              <p className="text-3xl font-bold text-blue-600">{metrics?.avgRedemptionsPerDay}</p>
             </div>
           </div>
         </div>
@@ -176,29 +160,10 @@ const SalesAnalysisTab = ({
             </div>
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-1">Date Range</h3>
-              {!comparisonMode ? (
-                <div>
-                  <p className="text-sm text-gray-600 font-medium">{formatDate(metrics?.uniqueDates[0])} to {formatDate(metrics?.uniqueDates[metrics.uniqueDates.length - 1])}</p>
-                  <p className="text-gray-600 text-sm">{metrics?.daysInRange} days</p>
-                </div>
-              ) : (
-                <div>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm text-gray-600 font-medium">{formatDate(metrics?.uniqueDates[0])} to {formatDate(metrics?.uniqueDates[metrics.uniqueDates.length - 1])}</p>
-                      <p className="text-gray-600 text-xs">{metrics?.daysInRange} days</p>
-                    </div>
-                    <div className="text-xs font-medium text-green-700 px-2 py-1 rounded-full bg-green-50">Primary</div>
-                  </div>
-                  <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-start">
-                    <div>
-                      <p className="text-sm text-gray-600 font-medium">{formatDate(comparisonMetrics?.uniqueDates[0])} to {formatDate(comparisonMetrics?.uniqueDates[comparisonMetrics.uniqueDates.length - 1])}</p>
-                      <p className="text-gray-600 text-xs">{comparisonMetrics?.daysInRange} days</p>
-                    </div>
-                    <div className="text-xs font-medium text-green-500 px-2 py-1 rounded-full bg-green-50">Comparison</div>
-                  </div>
-                </div>
-              )}
+              <p className="text-md font-medium text-green-600">
+                {formatDate(metrics.uniqueDates[0])} to {formatDate(metrics.uniqueDates[metrics.uniqueDates.length - 1])}
+              </p>
+              <p className="text-gray-600 text-sm">{metrics.daysInRange} days</p>
             </div>
           </div>
         </div>
@@ -215,24 +180,8 @@ const SalesAnalysisTab = ({
               </svg>
               Retailer Distribution
             </h3>
-            {/* Fix: Hide the button with className="hidden" */}
-            <button 
-              onClick={() => toggleSection('retailers')}
-              className="hidden text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center focus:outline-none"
-            >
-              Details
-              <svg 
-                className="w-4 h-4 ml-1" 
-                fill="none" 
-                viewBox="0 0 24 24" 
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
           </div>
           
-          {/* Fix: Set fixed height */}
           <div className="h-96">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -285,7 +234,6 @@ const SalesAnalysisTab = ({
             </ResponsiveContainer>
           </div>
           
-          {/* Fix: Always show the table */}
           <div className="mt-4 overflow-auto max-h-64">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -322,24 +270,8 @@ const SalesAnalysisTab = ({
               </svg>
               Top Products
             </h3>
-            {/* Fix: Hide the button with className="hidden" */}
-            <button 
-              onClick={() => toggleSection('products')}
-              className="hidden text-sm text-pink-600 hover:text-pink-800 font-medium flex items-center focus:outline-none"
-            >
-              Details
-              <svg 
-                className="w-4 h-4 ml-1" 
-                fill="none" 
-                viewBox="0 0 24 24" 
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
           </div>
           
-          {/* Fix: Set fixed height */}
           <div className="h-96">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -395,7 +327,6 @@ const SalesAnalysisTab = ({
             </ResponsiveContainer>
           </div>
           
-          {/* Fix: Always show the table */}
           <div className="mt-4 overflow-auto max-h-64">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -503,11 +434,11 @@ const SalesAnalysisTab = ({
                 dot={{ stroke: '#FF0066', strokeWidth: 2, r: 4, fill: 'white' }}
                 activeDot={{ stroke: '#FF0066', strokeWidth: 2, r: 6, fill: 'white' }}
               />
-              {showTrendLine && calculateTrendLine(redemptionsOverTime).some(Boolean) && (
+              {showTrendLine && trendLineData.some(Boolean) && (
                 <Line
                   type="monotone"
                   dataKey="trend"
-                  data={calculateTrendLine(redemptionsOverTime)}
+                  data={trendLineData}
                   name="Trend (7-day MA)"
                   stroke="#0066CC"
                   strokeWidth={2}
@@ -519,95 +450,8 @@ const SalesAnalysisTab = ({
           </ResponsiveContainer>
         </div>
       </div>
-      
-      {/* Product x Retailer Analysis */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-8">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-lg font-medium text-gray-900 flex items-center">
-            <svg className="w-5 h-5 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-            </svg>
-            Product/Retailer Distribution
-          </h3>
-        </div>
-        
-        {/* Fix: Remove expandedSection conditional and make this always visible with a class */}
-        <div className="max-h-96 overflow-auto">
-          <div className="inline-block min-w-full align-middle">
-            <div className="overflow-hidden border border-gray-200 rounded-lg">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
-                      Product / Retailer
-                    </th>
-                    {retailerData.slice(0, 5).map((retailer, index) => (
-                      <th key={index} scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {retailer.name}
-                      </th>
-                    ))}
-                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {productDistribution.slice(0, 6).map((product, productIndex) => (
-                    <tr key={productIndex} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white z-10 border-r border-gray-200">
-                        <div className="flex items-center">
-                          <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[productIndex % COLORS.length] }}></div>
-                          {product.displayName}
-                        </div>
-                      </td>
-                      {retailerData.slice(0, 5).map((retailer, retailerIndex) => {
-                        // Fix: Use data instead of filteredData
-                        const productItems = data.filter(item => item.product_name === product.name);
-                        const productRetailerItems = productItems.filter(item => item.chain === retailer.name);
-                        const percentage = productItems.length > 0 
-                          ? (productRetailerItems.length / productItems.length) * 100 
-                          : 0;
-                        
-                        const intensity = Math.min(0.9, 0.1 + (percentage / 100) * 0.8);
-                        
-                        return (
-                          <td 
-                            key={retailerIndex} 
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
-                            style={{ 
-                              backgroundColor: `rgba(${COLORS[productIndex % COLORS.length].slice(1).match(/.{1,2}/g).map(hex => parseInt(hex, 16)).join(', ')}, ${intensity})`
-                            }}
-                          >
-                            {percentage.toFixed(1)}%
-                          </td>
-                        );
-                      })}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-center border-l border-gray-200">
-                        {product.count.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="bg-gray-50 font-medium">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 sticky left-0 bg-gray-50 z-10 border-r border-gray-200">
-                      Total
-                    </td>
-                    {retailerData.slice(0, 5).map((retailer, index) => (
-                      <td key={index} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-center">
-                        {retailer.value.toLocaleString()}
-                      </td>
-                    ))}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-center border-l border-gray-200">
-                      {metrics?.totalUnits.toLocaleString()}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
 
-export default SalesAnalysisTab;
+export default SalesTab;

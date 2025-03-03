@@ -1,50 +1,23 @@
+// src/components/dashboard/tabs/SummaryTab.js
 import React, { useMemo } from 'react';
-import { useFilter } from '../../../context/FilterContext';
+import { useDashboard } from '../../../context/DashboardContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import _ from 'lodash';
 
-/**
- * SummaryTab component displays the executive summary
- * This is now a dedicated tab rather than part of the Sales tab
- */
+// Custom color palette
+const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800', '#607D8B', '#673AB7', '#3F51B5'];
+
 const SummaryTab = () => {
-  const { 
-    getFilteredData, 
-    dateRange, 
-    comparisonMode 
-  } = useFilter();
+  const { state } = useDashboard();
+  const { filteredData, metrics, comparison } = state;
   
-  // Get filtered data
-  const filteredData = getFilteredData();
-  
-  // Get comparison data if in comparison mode
-  const comparisonData = comparisonMode ? getFilteredData(true) : null;
-  
-  // Calculate metrics
-  const metrics = calculateMetrics(filteredData);
-  
-  // Calculate comparison metrics if needed
-  const comparisonMetrics = comparisonMode && comparisonData ? 
-    calculateMetrics(comparisonData) : null;
-  
-  // Calculate stats for visualizations
+  // Generate additional stats for charts and insights
   const stats = useMemo(() => {
     if (!filteredData || filteredData.length === 0) return null;
     
-    // Get top 5 retailers
+    // Get top retailers
     const retailerGroups = _.groupBy(filteredData, 'chain');
     const topRetailers = Object.entries(retailerGroups)
-      .map(([name, items]) => ({
-        name: name || 'Unknown',
-        value: items.length,
-        percentage: (items.length / filteredData.length) * 100
-      }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-    
-    // Get top 5 products
-    const productGroups = _.groupBy(filteredData, 'product_name');
-    const topProducts = Object.entries(productGroups)
       .map(([name, items]) => ({
         name: name || 'Unknown',
         value: items.length,
@@ -89,7 +62,7 @@ const SummaryTab = () => {
       };
     }
     
-    // Generate key insights based on the data
+    // Generate insights based on the data
     const insights = [];
     
     // Add insight about top retailer
@@ -127,15 +100,17 @@ const SummaryTab = () => {
     
     return {
       topRetailers,
-      topProducts,
       dayDistribution,
       trend,
       insights
     };
   }, [filteredData]);
   
-  // Shopmium primary color with contrasting colors
-  const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800', '#607D8B', '#673AB7', '#3F51B5'];
+  // Helper function to calculate the percentage change between two values
+  const calculateChange = (current, previous) => {
+    if (!previous || previous === 0) return null;
+    return ((current - previous) / previous) * 100;
+  };
   
   // Handle empty data
   if (!filteredData || filteredData.length === 0 || !stats || !metrics) {
@@ -155,21 +130,12 @@ const SummaryTab = () => {
   }
   
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Summary</h2>
-        <div className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
-          {dateRange === 'all' ? 'All Time' : 
-           dateRange === 'month' ? 'Monthly View' : 
-           'Custom Date Range'}
-        </div>
-      </div>
-      
+    <div>
       {/* Key Metrics Section */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-gradient-to-r from-pink-50 to-pink-100 p-6 rounded-lg shadow-sm border border-pink-200">
           <h3 className="text-sm font-medium text-gray-500 mb-1">Total Redemptions</h3>
-          {!comparisonMode ? (
+          {!comparison.enabled ? (
             <div>
               <p className="text-2xl font-bold text-pink-600">{metrics.totalUnits.toLocaleString()}</p>
               <p className="text-xs text-gray-500 mt-1">Total units redeemed</p>
@@ -180,9 +146,13 @@ const SummaryTab = () => {
                 <p className="text-xl font-bold text-pink-600">{metrics.totalUnits.toLocaleString()}</p>
                 <p className="text-xs text-gray-500 mt-1">Current period</p>
               </div>
-              {comparisonMetrics && (
-                <div className={`ml-2 text-sm font-medium ${calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits) >= 0 ? 'text-green-600' : 'text-red-600'} flex items-center`}>
-                  {calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits) >= 0 ? (
+              {comparison.data && (
+                <div className={`ml-2 text-sm font-medium flex items-center ${
+                  calculateChange(metrics.totalUnits, comparison.data.length) >= 0 
+                    ? 'text-green-600' 
+                    : 'text-red-600'
+                }`}>
+                  {calculateChange(metrics.totalUnits, comparison.data.length) >= 0 ? (
                     <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                     </svg>
@@ -191,7 +161,7 @@ const SummaryTab = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
                     </svg>
                   )}
-                  {Math.abs(calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits)).toFixed(1)}%
+                  {Math.abs(calculateChange(metrics.totalUnits, comparison.data.length)).toFixed(1)}%
                 </div>
               )}
             </div>
@@ -200,7 +170,7 @@ const SummaryTab = () => {
         
         <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg shadow-sm border border-blue-200">
           <h3 className="text-sm font-medium text-gray-500 mb-1">Average Per Day</h3>
-          {!comparisonMode ? (
+          {!comparison.enabled ? (
             <div>
               <p className="text-2xl font-bold text-blue-600">{metrics.avgRedemptionsPerDay}</p>
               <p className="text-xs text-gray-500 mt-1">Units per day</p>
@@ -211,20 +181,6 @@ const SummaryTab = () => {
                 <p className="text-xl font-bold text-blue-600">{metrics.avgRedemptionsPerDay}</p>
                 <p className="text-xs text-gray-500 mt-1">Current period</p>
               </div>
-              {comparisonMetrics && (
-                <div className={`ml-2 text-sm font-medium ${calculateChange(parseFloat(metrics.avgRedemptionsPerDay), parseFloat(comparisonMetrics.avgRedemptionsPerDay)) >= 0 ? 'text-green-600' : 'text-red-600'} flex items-center`}>
-                  {calculateChange(parseFloat(metrics.avgRedemptionsPerDay), parseFloat(comparisonMetrics.avgRedemptionsPerDay)) >= 0 ? (
-                    <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                    </svg>
-                  ) : (
-                    <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
-                    </svg>
-                  )}
-                  {Math.abs(calculateChange(parseFloat(metrics.avgRedemptionsPerDay), parseFloat(comparisonMetrics.avgRedemptionsPerDay))).toFixed(1)}%
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -327,7 +283,7 @@ const SummaryTab = () => {
       
       {/* Charts Section - Mini Visualizations */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Top Retailers Mini Chart */}
+        {/* Top Retailers Chart */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-md font-medium text-gray-900 mb-4 flex items-center">
             <svg className="h-5 w-5 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -392,7 +348,7 @@ const SummaryTab = () => {
           </div>
         </div>
         
-        {/* Day of Week Mini Chart */}
+        {/* Day of Week Distribution */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-md font-medium text-gray-900 mb-4 flex items-center">
             <svg className="h-5 w-5 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -423,6 +379,7 @@ const SummaryTab = () => {
                 />
                 <Bar 
                   dataKey="value" 
+                  name="Count"
                   fill="#0066CC" 
                   radius={[0, 4, 4, 0]}
                   barSize={20}
@@ -441,35 +398,6 @@ const SummaryTab = () => {
       </div>
     </div>
   );
-};
-
-// Helper function to calculate metrics
-const calculateMetrics = (filteredData) => {
-  if (!filteredData || filteredData.length === 0) return null;
-  
-  // Get unique dates
-  const uniqueDates = [...new Set(filteredData.map(item => item.receipt_date))].sort();
-  const daysInRange = uniqueDates.length;
-  
-  // Calculate total value
-  const totalValue = filteredData.reduce((sum, item) => sum + (item.receipt_total || 0), 0);
-  
-  // Calculate average per day
-  const avgPerDay = daysInRange > 0 ? filteredData.length / daysInRange : 0;
-  
-  return {
-    totalUnits: filteredData.length,
-    uniqueDates,
-    daysInRange,
-    totalValue,
-    avgRedemptionsPerDay: avgPerDay.toFixed(1)
-  };
-};
-
-// Helper function to calculate percentage change
-const calculateChange = (current, previous) => {
-  if (!previous || previous === 0) return null;
-  return ((current - previous) / previous) * 100;
 };
 
 export default SummaryTab;

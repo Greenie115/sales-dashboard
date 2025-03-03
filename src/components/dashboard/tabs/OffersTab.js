@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
+// src/components/dashboard/tabs/OffersTab.js
+import React, { useState, useEffect, useMemo } from 'react';
+import { useDashboard } from '../../../context/DashboardContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import _ from 'lodash';
 
@@ -8,10 +10,13 @@ const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50'
 // Default page size for tables
 const DEFAULT_PAGE_SIZE = 10;
 
-const OfferInsights = forwardRef(({ data }, ref) => {
-    
+const OffersTab = () => {
+  const { state, actions } = useDashboard();
+  const { offerData } = state;
+  
+  // Local state
   const [selectedOffers, setSelectedOffers] = useState(['all']);
-  const [insightType, setInsightType] = useState('demographic');
+  const [insightType, setInsightType] = useState('metrics');
   const [excludeFirstDays, setExcludeFirstDays] = useState(true);
   const [excludeLastDays, setExcludeLastDays] = useState(true);
   const [dateRange, setDateRange] = useState('all');
@@ -32,35 +37,35 @@ const OfferInsights = forwardRef(({ data }, ref) => {
     uniqueDates: [],
     availableMonths: []
   });
-
-  useImperativeHandle(ref, () => ({
-    getVisibleData: () => {
-      return {
-        insightType,
+  
+  // Update export data when relevant state changes
+  useEffect(() => {
+    const exportData = {
+      offerData: {
         metrics,
-        offerData,
-        genderData: demographicData.genderData,
-        ageData: demographicData.ageData,
+        offerData: filteredOfferData,
+        genderData,
+        ageData,
         timeData: {
-          hourData: timeDistribution.hourData,
-          dayData: timeDistribution.dayData,
-          trendData: timeDistribution.trendData
+          hourData,
+          dayData,
+          trendData
         },
         rankData,
         selectedOffers,
         excludeFirstDays,
         excludeLastDays
-      };
-    }
-  }));
+      }
+    };
+    
+    actions.setExportData(exportData);
+  }, [filteredOfferData, genderData, ageData, metrics]);
   
-  // Preprocess data when it changes (run once on component mount)
+  // Preprocess data when it changes
   useEffect(() => {
-    if (!data || data.length === 0) return;
+    if (!offerData || offerData.length === 0) return;
     
     // Start preprocessing
-    console.time('Data Preprocessing');
-    
     try {
       // Extract and preprocess dates
       const datesWithHits = [];
@@ -78,7 +83,7 @@ const OfferInsights = forwardRef(({ data }, ref) => {
       const uniqueDates = new Set();
       
       // Scan data once and build all required indexes
-      data.forEach(item => {
+      offerData.forEach(item => {
         // Handle offers
         if (item.offer_name) {
           uniqueOffers.add(item.offer_name);
@@ -146,39 +151,35 @@ const OfferInsights = forwardRef(({ data }, ref) => {
         uniqueDates: [...uniqueDates].sort(),
         availableMonths: [...months].sort()
       });
-      
-      console.timeEnd('Data Preprocessing');
     } catch (err) {
       console.error('Error during data preprocessing:', err);
     }
-  }, [data]);
-
+  }, [offerData]);
+  
   // Handle offer selection
-  const handleOfferSelection = useCallback((offer) => {
-    setSelectedOffers(prev => {
-      if (offer === 'all') {
-        return ['all'];
-      } else {
-        const newSelection = prev.includes('all') 
-          ? [offer]
-          : prev.includes(offer)
-            ? prev.filter(o => o !== offer)
-            : [...prev, offer];
-        
-        return newSelection.length ? newSelection : ['all'];
-      }
-    });
-  }, []);
-
-  // Memoized filtered data
-  const filteredData = useMemo(() => {
-    if (!data.length) return [];
-
+  const handleOfferSelection = (offer) => {
+    if (offer === 'all') {
+      setSelectedOffers(['all']);
+    } else {
+      const newSelection = selectedOffers.includes('all') 
+        ? [offer]
+        : selectedOffers.includes(offer)
+          ? selectedOffers.filter(o => o !== offer)
+          : [...selectedOffers, offer];
+      
+      setSelectedOffers(newSelection.length ? newSelection : ['all']);
+    }
+  };
+  
+  // Get filtered offer data
+  const filteredOfferData = useMemo(() => {
+    if (!offerData || !offerData.length) return [];
+    
     // If we have preprocessed data, use that for faster filtering
     const isAllOffers = selectedOffers.includes('all');
     let result = [];
-
-    // Start with offer filter - significant optimization if specific offers selected
+    
+    // Start with offer filter
     if (!isAllOffers && processedData.byOffer) {
       // Use preprocessed data for faster lookups
       selectedOffers.forEach(offer => {
@@ -188,9 +189,9 @@ const OfferInsights = forwardRef(({ data }, ref) => {
       });
     } else {
       // Fall back to full data if "All Offers" selected
-      result = [...data];
+      result = [...offerData];
     }
-
+    
     // Date filter
     if (dateRange !== 'all' && processedData.byDate) {
       const filteredByDate = [];
@@ -204,7 +205,6 @@ const OfferInsights = forwardRef(({ data }, ref) => {
         });
         
         // Find items that exist both in result and filteredByDate
-        // Need to handle the intersection
         if (result.length > 0) {
           const dateItemIds = new Set(filteredByDate.map(item => item.hit_id));
           result = result.filter(item => dateItemIds.has(item.hit_id));
@@ -230,25 +230,17 @@ const OfferInsights = forwardRef(({ data }, ref) => {
     }
     
     return result;
-  }, [
-    data, 
-    selectedOffers, 
-    dateRange, 
-    startDate, 
-    endDate, 
-    selectedMonth, 
-    processedData
-  ]);
-
-  // Apply exclusion rules for first/last days - Memoized
+  }, [offerData, selectedOffers, dateRange, startDate, endDate, selectedMonth, processedData]);
+  
+  // Apply exclusion rules for first/last days
   const exclusionAdjustedData = useMemo(() => {
-    if (!filteredData.length || (!excludeFirstDays && !excludeLastDays)) {
-      return filteredData;
+    if (!filteredOfferData.length || (!excludeFirstDays && !excludeLastDays)) {
+      return filteredOfferData;
     }
     
     try {
       // Group data by offer to apply exclusions per offer
-      const offerGroups = _.groupBy(filteredData, 'offer_name');
+      const offerGroups = _.groupBy(filteredOfferData, 'offer_name');
       
       // Process each offer group
       let adjustedData = [];
@@ -300,82 +292,52 @@ const OfferInsights = forwardRef(({ data }, ref) => {
       return adjustedData;
     } catch (err) {
       console.error('Error applying exclusions:', err);
-      return filteredData;
+      return filteredOfferData;
     }
-  }, [filteredData, excludeFirstDays, excludeLastDays]);
-
-  // Memoized demographic data
-  const demographicData = useMemo(() => {
-    const { byGender, byAgeGroup } = processedData;
+  }, [filteredOfferData, excludeFirstDays, excludeLastDays]);
+  
+  // Gender distribution
+  const genderData = useMemo(() => {
     const adjustedData = exclusionAdjustedData;
     
-    if (!adjustedData.length) {
-      return { genderData: [], ageData: [] };
-    }
+    if (!adjustedData.length) return [];
     
     try {
       // Gender distribution
       const genderGroups = _.groupBy(adjustedData.filter(item => item.gender), 'gender');
-      const genderData = Object.entries(genderGroups).map(([gender, items]) => ({
+      return Object.entries(genderGroups).map(([gender, items]) => ({
         name: gender,
         value: items.length,
         percentage: (items.length / adjustedData.length) * 100
       })).sort((a, b) => b.value - a.value);
-
+    } catch (err) {
+      console.error('Error calculating gender data:', err);
+      return [];
+    }
+  }, [exclusionAdjustedData]);
+  
+  // Age group distribution
+  const ageData = useMemo(() => {
+    const adjustedData = exclusionAdjustedData;
+    
+    if (!adjustedData.length) return [];
+    
+    try {
       // Age group distribution
       const ageGroups = _.groupBy(adjustedData.filter(item => item.age_group), 'age_group');
-      const ageData = Object.entries(ageGroups).map(([ageGroup, items]) => ({
+      return Object.entries(ageGroups).map(([ageGroup, items]) => ({
         name: ageGroup,
         value: items.length,
         percentage: (items.length / adjustedData.length) * 100
       })).sort((a, b) => b.value - a.value);
-
-      return { genderData, ageData };
     } catch (err) {
-      console.error('Error calculating demographic data:', err);
-      return { genderData: [], ageData: [] };
-    }
-  }, [exclusionAdjustedData, processedData]);
-
-  // Memoized offer data
-  const offerData = useMemo(() => {
-    if (!exclusionAdjustedData.length) return [];
-    
-    try {
-      const offerGroups = _.groupBy(exclusionAdjustedData, 'offer_name');
-      
-      return Object.entries(offerGroups)
-        .filter(([name]) => name) // Filter out undefined names
-        .map(([offerName, items]) => {
-          // For each offer, calculate average hits per day
-          const hitsByDate = _.groupBy(items, item => {
-            try {
-              const date = new Date(item.created_at);
-              return date.toISOString().split('T')[0];
-            } catch (e) {
-              return null;
-            }
-          });
-          
-          delete hitsByDate['null']; // Remove null date key if present
-          const dateCount = Object.keys(hitsByDate).length;
-          
-          return {
-            name: offerName || 'Unknown',
-            value: items.length,
-            percentage: (items.length / exclusionAdjustedData.length) * 100,
-            averageHitsPerDay: dateCount ? (items.length / dateCount).toFixed(2) : 0
-          };
-        })
-        .sort((a, b) => b.value - a.value);
-    } catch (err) {
-      console.error('Error calculating offer data:', err);
+      console.error('Error calculating age data:', err);
       return [];
     }
   }, [exclusionAdjustedData]);
-
-  // Memoized time distribution
-  const timeDistribution = useMemo(() => {
+  
+  // Time distribution
+  const { hourData, dayData, trendData } = useMemo(() => {
     if (!exclusionAdjustedData.length) {
       return { hourData: [], dayData: [], trendData: [] };
     }
@@ -429,8 +391,8 @@ const OfferInsights = forwardRef(({ data }, ref) => {
       return { hourData: [], dayData: [], trendData: [] };
     }
   }, [exclusionAdjustedData]);
-
-  // Memoized rank distribution
+  
+  // Rank distribution
   const rankData = useMemo(() => {
     if (!exclusionAdjustedData.length) return [];
     
@@ -452,8 +414,8 @@ const OfferInsights = forwardRef(({ data }, ref) => {
       return [];
     }
   }, [exclusionAdjustedData]);
-
-  // Memoized metrics
+  
+  // Metrics
   const metrics = useMemo(() => {
     if (!exclusionAdjustedData.length) {
       return {
@@ -475,7 +437,7 @@ const OfferInsights = forwardRef(({ data }, ref) => {
         }
       });
       
-      delete hitsByDate['null']; // Remove null date key if present
+      delete hitsByDate['null']; // Remove null date key
       
       // Calculate metrics
       const totalHits = exclusionAdjustedData.length;
@@ -528,15 +490,15 @@ const OfferInsights = forwardRef(({ data }, ref) => {
       };
     }
   }, [exclusionAdjustedData, selectedOffers]);
-
+  
   // Pagination helper
-  const getPaginatedData = useCallback((dataArray) => {
+  const getPaginatedData = (dataArray) => {
     const startIndex = (currentPage - 1) * pageSize;
     return dataArray.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, pageSize]);
-
+  };
+  
   // Pagination controls
-  const renderPagination = useCallback((totalItems) => {
+  const renderPagination = (totalItems) => {
     const totalPages = Math.ceil(totalItems / pageSize);
     if (totalPages <= 1) return null;
     
@@ -575,17 +537,25 @@ const OfferInsights = forwardRef(({ data }, ref) => {
         </div>
       </div>
     );
-  }, [currentPage, pageSize]);
-
-  // Extract values for rendering
-  const { genderData, ageData } = demographicData;
-  const { hourData, dayData, trendData } = timeDistribution;
-
+  };
+  
   // Reset pagination when changing tabs
   useEffect(() => {
     setCurrentPage(1);
   }, [insightType]);
-
+  
+  // Handle empty data
+  if (!offerData || offerData.length === 0) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500 mb-4"></div>
+          <p className="text-gray-600">No offer data available</p>
+        </div>
+      </div>
+    );
+  }
+  
   return (
     <div className="p-6 bg-white">
       <div className="mb-6">
@@ -608,7 +578,7 @@ const OfferInsights = forwardRef(({ data }, ref) => {
                 >
                   All Offers
                 </button>
-                {processedData.uniqueOffers.map(offer => (
+                {processedData.uniqueOffers.slice(0, 5).map(offer => (
                   <button
                     key={offer}
                     onClick={() => handleOfferSelection(offer)}
@@ -772,18 +742,8 @@ const OfferInsights = forwardRef(({ data }, ref) => {
           </div>
         </div>
 
-        {/* Loading placeholder */}
-        {!processedData.uniqueOffers.length && (
-          <div className="flex justify-center items-center h-64">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500 mb-4"></div>
-              <p className="text-gray-600">Processing data...</p>
-            </div>
-          </div>
-        )}
-
         {/* Key Metrics */}
-        {insightType === 'metrics' && processedData.uniqueOffers.length > 0 && (
+        {insightType === 'metrics' && (
           <div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="p-4 bg-white rounded-xl shadow-md">
@@ -801,134 +761,155 @@ const OfferInsights = forwardRef(({ data }, ref) => {
                 <p className="text-2xl font-bold text-pink-600">{metrics.averageHitsPerDay}</p>
               </div>
             </div>
+            
+            {/* Offer-specific metrics if multiple offers selected */}
+            {!selectedOffers.includes('all') && (
+              <div className="mb-6 p-4 bg-white rounded-xl shadow-md">
+                <h3 className="text-lg font-semibold text-gray-700 mb-4">Metrics by Offer</h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-pink-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Offer Name</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Total Hits</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Days Active</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Avg. Hits/Day</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {Object.entries(metrics.hitsPerOffer || {}).map(([offer, stats], idx) => (
+                        <tr 
+                          key={offer} 
+                          className="hover:bg-pink-50"
+                          style={{ borderLeft: `4px solid ${COLORS[idx % COLORS.length]}` }}
+                        >
+                          <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{offer}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{stats.totalHits}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{stats.days}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{stats.averagePerDay}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Offer-specific metrics if multiple offers selected */}
-        {insightType === 'metrics' && !selectedOffers.includes('all') && processedData.uniqueOffers.length > 0 && (
-          <div className="mb-6 p-4 bg-white rounded-xl shadow-md">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Metrics by Offer</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-pink-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Offer Name</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Total Hits</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Days Active</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Avg. Hits/Day</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {Object.entries(metrics.hitsPerOffer || {}).map(([offer, stats], idx) => (
-                    <tr 
-                      key={offer} 
-                      className="hover:bg-pink-50"
-                      style={{ borderLeft: `4px solid ${COLORS[idx % COLORS.length]}` }}
-                    >
-                      <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{offer}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{stats.totalHits}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{stats.days}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{stats.averagePerDay}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Content based on selected insight type */}
-        {insightType === 'demographic' && processedData.uniqueOffers.length > 0 && (
+        {/* Demographics */}
+        {insightType === 'demographic' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Gender Distribution */}
             <div className="p-4 bg-white rounded-xl shadow-md">
               <h3 className="text-lg font-semibold text-gray-700 mb-4">Gender Distribution</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={genderData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`}
-                      outerRadius={80}
-                      dataKey="value"
-                    >
-                      {genderData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [value, 'Count']} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-4">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-pink-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Gender</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Count</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Percentage</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {genderData.map((item, idx) => (
-                      <tr key={item.name} className="hover:bg-pink-50">
-                        <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.value}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.percentage.toFixed(1)}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              
+              {genderData.length > 0 ? (
+                <>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={genderData}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`}
+                          outerRadius={80}
+                          dataKey="value"
+                        >
+                          {genderData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => [value, 'Count']} />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  <div className="mt-4">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-pink-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Gender</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Count</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {genderData.map((item, idx) => (
+                          <tr key={item.name} className="hover:bg-pink-50">
+                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.value}</td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.percentage.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-64">
+                  <p className="text-gray-500">No gender data available</p>
+                </div>
+              )}
             </div>
 
             {/* Age Group Distribution */}
             <div className="p-4 bg-white rounded-xl shadow-md">
               <h3 className="text-lg font-semibold text-gray-700 mb-4">Age Group Distribution</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={ageData}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => [value, 'Count']} />
-                    <Legend />
-                    <Bar dataKey="value" name="Count" fill="#FF0066" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-4">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-pink-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Age Group</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Count</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Percentage</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {ageData.map((item, idx) => (
-                      <tr key={item.name} className="hover:bg-pink-50">
-                        <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.value}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.percentage.toFixed(1)}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              
+              {ageData.length > 0 ? (
+                <>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={ageData}
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip formatter={(value) => [value, 'Count']} />
+                        <Legend />
+                        <Bar dataKey="value" name="Count" fill="#FF0066" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  <div className="mt-4">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-pink-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Age Group</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Count</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {ageData.map((item, idx) => (
+                          <tr key={item.name} className="hover:bg-pink-50">
+                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.value}</td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.percentage.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-64">
+                  <p className="text-gray-500">No age data available</p>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {insightType === 'time' && processedData.uniqueOffers.length > 0 && (
+        {/* Time Analysis */}
+        {insightType === 'time' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Hour of Day Analysis */}
             <div className="p-4 bg-white rounded-xl shadow-md">
@@ -972,7 +953,8 @@ const OfferInsights = forwardRef(({ data }, ref) => {
           </div>
         )}
 
-        {insightType === 'rank' && processedData.uniqueOffers.length > 0 && (
+        {/* Rank Analysis */}
+        {insightType === 'rank' && (
           <div className="p-4 bg-white rounded-xl shadow-md">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Rank Distribution</h3>
             <div className="h-64">
@@ -1021,7 +1003,8 @@ const OfferInsights = forwardRef(({ data }, ref) => {
           </div>
         )}
 
-        {insightType === 'trends' && processedData.uniqueOffers.length > 0 && (
+        {/* Daily Trends */}
+        {insightType === 'trends' && (
           <div className="p-4 bg-white rounded-xl shadow-md">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Daily Hit Trends</h3>
             <div className="h-80">
@@ -1037,7 +1020,7 @@ const OfferInsights = forwardRef(({ data }, ref) => {
                     textAnchor="end"
                     height={70} 
                     tick={{ fontSize: 10 }}
-                    interval={Math.ceil(trendData.length / 20)} // Dynamic interval based on data size
+                    interval={Math.ceil(trendData.length / 20)} // Dynamic interval
                   />
                   <YAxis label={{ value: 'Hits', angle: -90, position: 'insideLeft' }} />
                   <Tooltip labelFormatter={(value) => `Date: ${value}`} />
@@ -1056,45 +1039,9 @@ const OfferInsights = forwardRef(({ data }, ref) => {
             </div>
           </div>
         )}
-
-        {/* Comparison Table */}
-        {insightType === 'metrics' && offerData.length > 1 && processedData.uniqueOffers.length > 0 && (
-          <div className="mt-6 p-4 bg-white rounded-xl shadow-md">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Offer Performance Comparison</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-pink-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Offer</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Total Hits</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Avg Hits/Day</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Share (%)</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {getPaginatedData(offerData).map((item, idx) => (
-                    <tr 
-                      key={item.name} 
-                      className="hover:bg-pink-50"
-                      style={{ borderLeft: `4px solid ${COLORS[idx % COLORS.length]}` }}
-                    >
-                      <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.value}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.averageHitsPerDay}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{item.percentage.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              
-              {/* Pagination for offer comparison table */}
-              {renderPagination(offerData.length)}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
-});
+};
 
-export default OfferInsights;
+export default OffersTab;
