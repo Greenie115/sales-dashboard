@@ -55,6 +55,91 @@ const SalesTab = () => {
     return calculateMetrics ? calculateMetrics() : null;
   }, [calculateMetrics]);
   
+  const exportSalesData = () => {
+    try {
+      // Create CSV content
+      let csvContent = 'Sales Analysis Report\n\n';
+      
+      // Add date range
+      if (metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0) {
+        csvContent += `Date Range: ${metrics.uniqueDates[0]} to ${metrics.uniqueDates[metrics.uniqueDates.length - 1]}\n`;
+        csvContent += `Total Days: ${metrics.daysInRange}\n`;
+      }
+      
+      // Add key metrics
+      if (metrics) {
+        csvContent += `Total Redemptions: ${metrics.totalUnits}\n`;
+        csvContent += `Average Per Day: ${metrics.avgRedemptionsPerDay}\n\n`;
+      }
+      
+      // Add retailer distribution
+      if (retailerData && retailerData.length > 0) {
+        csvContent += 'Retailer Distribution\n';
+        csvContent += 'Retailer,Units,Percentage\n';
+        
+        retailerData.forEach(item => {
+          csvContent += `"${item.name}",${item.value},${item.percentage.toFixed(1)}%\n`;
+        });
+        
+        csvContent += '\n';
+      }
+      
+      // Add product distribution
+      if (productDistribution && productDistribution.length > 0) {
+        csvContent += 'Product Distribution\n';
+        csvContent += 'Product,Units,Percentage\n';
+        
+        productDistribution.forEach(item => {
+          csvContent += `"${item.displayName || item.name}",${item.count},${item.percentage.toFixed(1)}%\n`;
+        });
+        
+        csvContent += '\n';
+      }
+      
+      // Add product distribution by retailer
+      if (filteredData && filteredData.length > 0 && productDistribution && productDistribution.length > 0) {
+        csvContent += 'Product Distribution by Retailer\n';
+        
+        // Process each product
+        productDistribution.forEach(product => {
+          csvContent += `\n"${product.displayName || product.name}" (Total: ${product.count})\n`;
+          csvContent += 'Retailer,Units,Percentage of Product Sales\n';
+          
+          // Get all records for this product
+          const productItems = filteredData.filter(item => item.product_name === product.name);
+          
+          // Group by retailer
+          const retailerGroups = _.groupBy(productItems, 'chain');
+          
+          // Calculate and sort by count
+          const retailerBreakdown = Object.entries(retailerGroups)
+            .map(([retailer, items]) => ({
+              retailer: retailer || 'Unknown',
+              count: items.length,
+              percentage: (items.length / productItems.length) * 100
+            }))
+            .sort((a, b) => b.count - a.count);
+          
+          // Add to CSV
+          retailerBreakdown.forEach(item => {
+            csvContent += `"${item.retailer}",${item.count},${item.percentage.toFixed(1)}%\n`;
+          });
+        });
+      }
+      
+      // Create download link
+      const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', 'Sales_Analysis_Report.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error exporting sales data:', error);
+      alert('An error occurred while exporting data. Please try again.');
+    }
+  };
   // Get retailer distribution
   const retailerData = useMemo(() => {
     if (!filteredData || filteredData.length === 0) return [];
@@ -108,6 +193,7 @@ const SalesTab = () => {
       return [];
     }
   }, [filteredData, brandMapping]);
+
   
   // Get redemptions over time with improved time handling
   const redemptionsOverTime = useMemo(() => {
@@ -273,11 +359,8 @@ const SalesTab = () => {
   // Handle empty data
   if (!filteredData || filteredData.length === 0 || !metrics) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500 mb-4"></div>
-          <p className="text-gray-600">No data available for Sales Analysis</p>
-        </div>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold">Sales Analysis</h2>
       </div>
     );
   }
@@ -342,9 +425,27 @@ const SalesTab = () => {
     if (dataLength <= 180) return 9; // Show every 10th tick
     return 14; // Show every 15th tick for large datasets
   };
+
+
+      
   return (
+    
     <div>
       {/* Key Metrics Cards */}
+      <div>
+      {/* Title Bar with Export Button */}
+      <div className="flex justify-end items-center mb-6">
+        <button
+          onClick={exportSalesData}
+          className="flex items-center px-4 py-2 text-sm font-medium text-white bg-pink-600 hover:bg-pink-700 rounded-md shadow-sm"
+        >
+          <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Export Data
+        </button>
+      </div>
+    </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
           <div className="flex items-start">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import _ from 'lodash';
 
 // Custom colors
@@ -17,7 +17,24 @@ const AGE_GROUP_ORDER = [
   'Under 18'
 ];
 
-const DemographicsTab = ({ surveyData, questions }) => {
+// Custom tooltip for bar charts
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-3 border border-gray-200 shadow-md rounded">
+        <p className="text-sm font-medium">{`${label}`}</p>
+        <p className="text-sm text-gray-600">{`Count: ${payload[0].value}`}</p>
+        <p className="text-sm text-gray-600">{`Percentage: ${((payload[0].value / payload[0].payload.total) * 100).toFixed(1)}%`}</p>
+      </div>
+    );
+  }
+  return null;
+};
+
+const DemographicsTab = () => {
+  // Get data from context instead of props
+  const { salesData } = useData();
+  
   // Use refs to track component mounting state
   const isMounted = useRef(true);
   
@@ -30,82 +47,66 @@ const DemographicsTab = ({ surveyData, questions }) => {
   const [questionText, setQuestionText] = useState('');
   const [responseData, setResponseData] = useState([]);
   const [selectedResponses, setSelectedResponses] = useState([]);
-  const [genderData, setGenderData] = useState([]);
-  const [uniqueResponses, setUniqueResponses] = useState([]);
+  const [questions, setQuestions] = useState([]);
   
-  // Define the getFilteredData function first
-  const getFilteredData = (data, questionNumber, selectedRespons) => {
-    if (!data || !questionNumber || !selectedRespons || selectedRespons.length === 0) {
-      return [];
-    }
-    
-    // Get selected response text values
-    const selectedResponseValues = selectedRespons.map(r => r.fullResponse);
-    
-    // Filter survey data for rows containing selected responses
-    return data.filter(row => {
-      const response = row[`Q${questionNumber}`];
-      return selectedResponseValues.includes(response);
-    });
-  };
-  
-  // Now use the function with the right parameters
-  const filteredData = selectedResponses.length > 0 ? 
-    getFilteredData(surveyData, selectedQuestionNumber, selectedResponses) : 
-    [];
-
-  // Helper to extract cleaner question content
-  const extractCleanQuestionContent = (data, questionKey) => {
-    const questionItems = data.filter(item => item[questionKey] && item[questionKey].trim() !== '');
-    
-    if (questionItems.length === 0) return '';
-    
-    // Get the most common question text
-    const questionTexts = _.countBy(questionItems, questionKey);
-    const mostCommonQuestionText = Object.entries(questionTexts)
-      .sort((a, b) => b[1] - a[1])[0][0];
-    
-    return mostCommonQuestionText;
-  };
-
-  // Helper to extract clean response values
-  const extractCleanResponses = (data, responseKey) => {
-    // Get all responses
-    const responses = data
-      .map(item => item[responseKey])
-      .filter(response => response && response.trim() !== '');
-    
-    if (responses.length === 0) return [];
-    
-    // Find unique responses by checking for common delimiters
-    const possibleDelimiters = [';', '|', ',', '/', '\\'];
-    let cleanResponses = [...responses];
-    
-    // Check if responses contain any of the delimiters
-    for (const delimiter of possibleDelimiters) {
-      if (responses.some(r => r.includes(delimiter))) {
-        // Extract individual responses by splitting by delimiter
-        const splitResponses = [];
-        responses.forEach(response => {
-          const parts = response.split(delimiter)
-            .map(part => part.trim())
-            .filter(part => part !== '');
-          splitResponses.push(...parts);
-        });
-        
-        cleanResponses = splitResponses;
-        break;
-      }
-    }
-    
-    // Get unique clean responses
-    return [...new Set(cleanResponses)];
-  };// Analyze available questions when data loads
-
+  // Extract questions from data
   useEffect(() => {
-    console.log("surveyData available:", surveyData ? surveyData.length : 0);
-    console.log("Sample survey data:", surveyData && surveyData.length > 0 ? surveyData[0] : "None");
-  }, [surveyData]);
+    if (salesData && salesData.length > 0) {
+      console.log("Extracting questions from salesData");
+      // Check what fields are in the data
+      const sampleRow = salesData[0];
+      console.log("Sample row:", sampleRow);
+      
+      // Look for question fields
+      const questionFields = [];
+      for (let i = 1; i <= 10; i++) {
+        const paddedNum = i.toString().padStart(2, '0');
+        const questionKey = `question_${paddedNum}`;
+        const propKey = `proposition_${paddedNum}`;
+        
+        if (sampleRow[questionKey] !== undefined || sampleRow[propKey] !== undefined) {
+          questionFields.push({
+            number: paddedNum,
+            questionKey,
+            propKey
+          });
+        }
+      }
+      
+      // Create question objects
+      const extractedQuestions = [];
+      questionFields.forEach(field => {
+        // Try to get the question text from the data
+        let questionText = `Question ${parseInt(field.number)}`;
+        
+        // Find the first row with a non-empty question text
+        for (const row of salesData) {
+          if (row[field.questionKey] && typeof row[field.questionKey] === 'string' && row[field.questionKey].trim() !== '') {
+            questionText = row[field.questionKey];
+            break;
+          }
+        }
+        
+        // Only add if there are propositions for this question
+        const hasPropositions = salesData.some(row => 
+          row[field.propKey] && 
+          typeof row[field.propKey] === 'string' && 
+          row[field.propKey].trim() !== ''
+        );
+        
+        if (hasPropositions) {
+          extractedQuestions.push({ 
+            number: field.number, 
+            text: questionText
+          });
+        }
+      });
+      
+      console.log("Extracted questions:", extractedQuestions);
+      setQuestions(extractedQuestions);
+      setAvailableQuestions(extractedQuestions.map(q => q.number));
+    }
+  }, [salesData]);
 
   // Set up mounted ref for cleanup
   useEffect(() => {
@@ -116,365 +117,236 @@ const DemographicsTab = ({ surveyData, questions }) => {
     };
   }, []);
   
-  useEffect(() => {
-    if (surveyData && surveyData.length > 0) {
-      // Extract available question numbers
-      const questionNums = questions.map(q => q.number.toString());
-      setAvailableQuestions(questionNums);
-    }
-  }, [surveyData, questions]);
+ // Process demographic data when responses are selected
+ useEffect(() => {
+  // Skip if unmounted
+  if (!isMounted.current) return;
   
-  // Process demographic data when responses are selected
-  useEffect(() => {
-    // Skip if unmounted
-    if (!isMounted.current) return;
+  console.log("Processing demographics useEffect triggered");
+  console.log("Selected responses:", selectedResponses.length);
+  
+  // Only process if we have selected responses and survey data
+  if (selectedResponses.length > 0 && salesData && salesData.length > 0) {
+    // Set processing flag to true
+    setIsProcessingDemographics(true);
     
-    console.log("Processing demographics useEffect triggered");
-    console.log("Selected responses:", selectedResponses.length);
-    
-    // Only process if we have selected responses and survey data
-    if (selectedResponses.length > 0 && surveyData && surveyData.length > 0) {
-      // Set processing flag to true
-      setIsProcessingDemographics(true);
+    // Use setTimeout to ensure React has time to render the loading state
+    setTimeout(() => {
+      // Skip if component unmounted during timeout
+      if (!isMounted.current) return;
       
-      // Use setTimeout to ensure React has time to render the loading state
-      setTimeout(() => {
-        // Skip if component unmounted during timeout
+      try {
+        console.log("Processing demographic data...");
+        // Get selected response text values
+        const selectedResponseValues = selectedResponses.map(r => r.fullResponse);
+        const propKey = `proposition_${selectedQuestionNumber}`;
+        
+        // Filter survey data for rows containing ANY of the selected responses
+        // Modified to check if any of the selected responses are present in each comma-separated response
+        const filteredData = salesData.filter(row => {
+          const responseStr = row[propKey];
+          if (!responseStr) return false;
+          
+          // Split by semicolon if it's a multiple-choice response 
+          const responses = responseStr.split(';').map(r => r.trim());
+          
+          // Check if any of the selected responses are in this row's responses
+          return responses.some(resp => selectedResponseValues.includes(resp));
+        });
+        
+        console.log(`Filtered data: ${filteredData.length} rows match selected responses`);
+        
+        // Gender breakdown
+        const genderCounts = {};
+        filteredData.forEach(row => {
+          const gender = row.gender || 'Not Specified';
+          genderCounts[gender] = (genderCounts[gender] || 0) + 1;
+        });
+        
+        const totalGender = Object.values(genderCounts).reduce((sum, count) => sum + count, 0);
+        
+        const genderData = Object.entries(genderCounts).map(([name, value]) => ({
+          name,
+          value,
+          total: totalGender,
+          percentage: ((value / totalGender) * 100).toFixed(1)
+        }));
+        
+        console.log("Gender data processed:", genderData.length);
+        
+        // Age breakdown
+        const ageCounts = {};
+        filteredData.forEach(row => {
+          // Log a sample row to debug data structure
+          if (!window.loggedSampleRow) {
+            console.log("Sample data row:", row);
+            window.loggedSampleRow = true;
+          }
+          
+          const age = row.age_group || 'Not Specified';
+          let ageGroup = age;
+          
+          // If the age is a number, convert it to a group
+          if (age && !isNaN(age)) {
+            const ageNum = parseInt(age, 10);
+            if (ageNum < 18) ageGroup = 'Under 18';
+            else if (ageNum < 25) ageGroup = '18-24';
+            else if (ageNum < 35) ageGroup = '25-34';
+            else if (ageNum < 45) ageGroup = '35-44';
+            else if (ageNum < 55) ageGroup = '45-54';
+            else if (ageNum < 65) ageGroup = '55-64';
+            else ageGroup = '65+';
+          }
+          
+          ageCounts[ageGroup] = (ageCounts[ageGroup] || 0) + 1;
+        });
+        
+        const totalAge = Object.values(ageCounts).reduce((sum, count) => sum + count, 0);
+        
+        const ageData = Object.entries(ageCounts).map(([name, value]) => ({
+          name,
+          value,
+          total: totalAge,
+          percentage: ((value / totalAge) * 100).toFixed(1)
+        }));
+        
+        // Sort age groups in a logical order if possible
+        ageData.sort((a, b) => {
+          const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
+          const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
+          
+          if (aIndex !== -1 && bIndex !== -1) {
+            return aIndex - bIndex;
+          }
+          
+          if (aIndex !== -1) return -1;
+          if (bIndex !== -1) return 1;
+          
+          return a.name.localeCompare(b.name);
+        });
+        
+        console.log("Age data processed:", ageData.length, ageData);
+        
+        // Skip update if component unmounted
         if (!isMounted.current) return;
         
-        try {
-          console.log("Processing demographic data...");
-          // Get selected response text values
-          const selectedResponseValues = selectedResponses.map(r => r.fullResponse);
-          
-          // Filter survey data for rows containing selected responses
-          const filteredData = surveyData.filter(row => {
-            const response = row[`Q${selectedQuestionNumber}`];
-            return selectedResponseValues.includes(response);
-          });
-          
-          console.log(`Filtered data: ${filteredData.length} rows match selected responses`);
-          
-          // Gender breakdown
-          const genderCounts = {};
-          filteredData.forEach(row => {
-            const gender = row.Gender || 'Not Specified';
-            genderCounts[gender] = (genderCounts[gender] || 0) + 1;
-          });
-          
-          const genderData = Object.entries(genderCounts).map(([name, value]) => ({
-            name,
-            value
-          }));
-          
-          console.log("Gender data processed:", genderData.length);
-          
-          // Age breakdown
-          const ageCounts = {};
-          filteredData.forEach(row => {
-            // Log a sample row to debug data structure
-            if (!window.loggedSampleRow) {
-              console.log("Sample data row:", row);
-              window.loggedSampleRow = true;
-            }
-            
-            const age = row.Age || 'Not Specified';
-            let ageGroup = 'Not Specified';
-            
-            // Create age groups
-            if (age && !isNaN(age)) {
-              // Handle both number and numeric string
-              const ageNum = typeof age === 'string' ? parseInt(age, 10) : age;
-              if (ageNum < 18) ageGroup = 'Under 18';
-              else if (ageNum < 25) ageGroup = '18-24';
-              else if (ageNum < 35) ageGroup = '25-34';
-              else if (ageNum < 45) ageGroup = '35-44';
-              else if (ageNum < 55) ageGroup = '45-54';
-              else if (ageNum < 65) ageGroup = '55-64';
-              else ageGroup = '65+';
-            } else if (typeof age === 'string' && age.trim() !== '') {
-              // If age is already provided as a group in string format
-              ageGroup = age;
-            }
-            
-            ageCounts[ageGroup] = (ageCounts[ageGroup] || 0) + 1;
-          });
-          
-          const ageData = Object.entries(ageCounts).map(([name, value]) => ({
-            name,
-            value
-          }));
-          
-          // Sort age groups in a logical order
-          const ageOrder = ['Under 18', '18-24', '25-34', '35-44', '45-54', '55-64', '65+', 'Not Specified'];
-          ageData.sort((a, b) => {
-            return ageOrder.indexOf(a.name) - ageOrder.indexOf(b.name);
-          });
-          
-          console.log("Age data processed:", ageData.length, ageData);
-          
-          // Skip update if component unmounted
-          if (!isMounted.current) return;
-          
-          // First update the data
-          setResponseByGender(genderData);
-          setResponseByAge(ageData);
-          
-          // Then remove processing flag to show the data
+        // First update the data
+        setResponseByGender(genderData);
+        setResponseByAge(ageData);
+        
+        // Then remove processing flag to show the data
+        setIsProcessingDemographics(false);
+      } catch (error) {
+        console.error("Error processing demographic data:", error);
+        // Reset processing flag even on error
+        if (isMounted.current) {
           setIsProcessingDemographics(false);
-        } catch (error) {
-          console.error("Error processing demographic data:", error);
-          // Reset processing flag even on error
-          if (isMounted.current) {
-            setIsProcessingDemographics(false);
-          }
         }
-      }, 100); // Short delay to ensure state updates properly
-    } else if (selectedResponses.length === 0) {
-      // Only clear if no responses are selected
-      console.log("No responses selected, clearing demographic data");
-      setResponseByGender([]);
-      setResponseByAge([]);
-      setIsProcessingDemographics(false);
-    }
-  }, [selectedResponses, surveyData, selectedQuestionNumber]);
-
-  // Analyze gender data by grouping and counting
-  const analyzeGenderData = () => {
-    if (!filteredData || filteredData.length === 0) return;
-    
-    const possibleGenderFields = ['gender', 'Gender', 'GENDER'];
-    let genderField = null;
-    
-    // Find the first valid gender field
-    for (const field of possibleGenderFields) {
-      if (filteredData[0] && filteredData[0][field] !== undefined) {
-        genderField = field;
-        break;
       }
+    }, 100); // Short delay to ensure state updates properly
+  } else if (selectedResponses.length === 0) {
+    // Only clear if no responses are selected
+    console.log("No responses selected, clearing demographic data");
+    setResponseByGender([]);
+    setResponseByAge([]);
+    setIsProcessingDemographics(false);
+  }
+}, [selectedResponses, salesData, selectedQuestionNumber]);
+  // Handle user changing the selected question
+  const handleQuestionChange = (e) => {
+    const questionNum = e.target.value;
+    console.log("Question selected:", questionNum);
+    setSelectedQuestionNumber(questionNum);
+    setSelectedResponses([]);
+    
+    if (questionNum) {
+      // Find the question text
+      const question = questions.find(q => q.number === questionNum);
+      setQuestionText(question ? question.text : `Question ${parseInt(questionNum)}`);
+      
+      // Analyze responses for this question
+      console.log("Analyzing responses for question:", questionNum);
+      analyzeResponses(questionNum);
+    } else {
+      setQuestionText('');
+      setResponseData([]);
     }
-    
-    if (!genderField) {
-      setGenderData([]);
-      return;
-    }
-    
-    const itemsWithGender = filteredData.filter(item => item[genderField] && item[genderField].trim() !== '');
-    
-    if (itemsWithGender.length === 0) {
-      setGenderData([]);
-      return;
-    }
-    
-    const genderGroups = _.groupBy(itemsWithGender, genderField);
-    const genderStats = Object.entries(genderGroups).map(([gender, items]) => ({
-      name: gender,
-      value: items.length,
-      percentage: ((items.length / itemsWithGender.length) * 100).toFixed(1)
-    })).sort((a, b) => b.value - a.value);
-    
-    setGenderData(genderStats);
   };
 
-  // Analyze responses for the selected question
-  const analyzeResponseData = () => {
-    if (!selectedQuestionNumber || !filteredData || filteredData.length === 0) return;
+  const analyzeResponses = (questionNum) => {
+    console.log("analyzeResponses called for question:", questionNum);
+    console.log("salesData available:", salesData ? salesData.length : 0);
     
-    // Determine the question and response keys to use
-    const questionKey = `question_${selectedQuestionNumber}`;
-    const propKey = `proposition_${selectedQuestionNumber}`;
-    
-    // Get the question text first
-    const question = extractCleanQuestionContent(filteredData, questionKey);
-    setQuestionText(question);
-    
-    // Determine where the responses are stored
-    const hasPropositionData = filteredData.some(item => item[propKey] && item[propKey].trim() !== '');
-    const responseKey = hasPropositionData ? propKey : questionKey;
-    
-    // Get clean response values
-    const cleanResponses = extractCleanResponses(filteredData, responseKey);
-    setUniqueResponses(cleanResponses);
-    
-    // For each clean response, count occurrences in the data
-    const responseCounts = {};
-    cleanResponses.forEach(response => {
-      responseCounts[response] = 0;
-    });
-    
-    // Count occurrences
-    filteredData.forEach(item => {
-      if (!item[responseKey]) return;
-      
-      const itemResponse = item[responseKey].trim();
-      
-      // Direct match
-      if (cleanResponses.includes(itemResponse)) {
-        responseCounts[itemResponse] += 1;
-        return;
-      }
-      
-      // Check if this response contains any of the clean responses
-      for (const cleanResponse of cleanResponses) {
-        // Look for the clean response as a substring, but ensure it's a full word
-        // by checking for word boundaries or common delimiters
-        const delimiters = [';', '|', ',', '/', '\\', ' '];
-        
-        for (const delimiter of delimiters) {
-          if (itemResponse.includes(`${delimiter}${cleanResponse}${delimiter}`) ||
-              itemResponse.includes(`${delimiter}${cleanResponse}`) ||
-              itemResponse.includes(`${cleanResponse}${delimiter}`) ||
-              itemResponse === cleanResponse) {
-            responseCounts[cleanResponse] += 1;
-            break;
-          }
-        }
-      }
-    });
-    
-    // Create response data for chart
-    const totalResponses = Object.values(responseCounts).reduce((a, b) => a + b, 0);
-    const responseArray = Object.entries(responseCounts)
-      .map(([response, count]) => ({
-        response: response.length > 50 ? `${response.substring(0, 47)}...` : response,
-        fullResponse: response,
-        count,
-        percentage: totalResponses > 0 ? (count / totalResponses * 100).toFixed(1) : '0.0'
-      }))
-      .sort((a, b) => b.count - a.count);
-    
-    setResponseData(responseArray);
-  };
-  // Analyze response breakdowns by gender
-  const analyzeResponseBreakdowns = () => {
-    if (!selectedQuestionNumber || !filteredData || filteredData.length === 0 || !selectedResponses.length) return;
-    
-    const questionKey = `question_${selectedQuestionNumber}`;
-    const propKey = `proposition_${selectedQuestionNumber}`;
-    const hasPropositionData = filteredData.some(item => item[propKey] && item[propKey].trim() !== '');
-    const responseKey = hasPropositionData ? propKey : questionKey;
-    
-    // Get gender field
-    const genderField = filteredData[0]?.gender !== undefined ? 'gender' : 
-                        filteredData[0]?.Gender !== undefined ? 'Gender' : null;
-    
-    if (!genderField) {
-      setResponseByGender([]);
+    if (!salesData || salesData.length === 0) {
+      console.log("No survey data available");
       return;
     }
     
-    // Filter data based on selected responses
-    const selectedResponseData = filteredData.filter(item => {
-      if (!item[responseKey] || !item[genderField]) return false;
+    // Log a sample row to understand data structure
+    console.log("Sample survey data row:", salesData[0]);
+    
+    // Define the key for this question's proposition
+    const propKey = `proposition_${questionNum}`;
+    
+    // Check if the proposition field exists in the data
+    const propExists = salesData.some(row => row[propKey] !== undefined);
+    console.log(`Proposition field ${propKey} exists in data:`, propExists);
+    
+    if (!propExists) {
+      console.log("Proposition field not found in data");
+      setResponseData([]);
+      return;
+    }
+    
+    // Filter responses that have non-empty propositions
+    const responses = salesData.filter(row => 
+      row[propKey] !== undefined && 
+      row[propKey] !== null && 
+      row[propKey] !== '');
+    
+    console.log(`Found ${responses.length} responses for question ${questionNum}`);
+    
+    if (responses.length === 0) {
+      console.log("No responses found for this question");
+      setResponseData([]);
+      return;
+    }
+    
+    // Set the total number of respondents
+    const totalResponses = responses.length;
+    
+    // Count occurrences of each INDIVIDUAL response
+    const individualResponseCounts = {};
+    
+    responses.forEach(row => {
+      const responseStr = row[propKey];
+      if (!responseStr) return;
       
-      const itemResponse = item[responseKey].trim();
+      // Split by semicolon if it's a multiple-choice response
+      const individualResponses = responseStr.split(';').map(r => r.trim());
       
-      // Check if this item's response matches any of the selected responses
-      return selectedResponses.some(selectedResponse => {
-        // Direct match
-        if (itemResponse === selectedResponse.fullResponse) return true;
-        
-        // Check for the response as part of a delimited list
-        const delimiters = [';', '|', ',', '/', '\\', ' '];
-        for (const delimiter of delimiters) {
-          if (itemResponse.includes(`${delimiter}${selectedResponse.fullResponse}${delimiter}`) ||
-              itemResponse.includes(`${delimiter}${selectedResponse.fullResponse}`) ||
-              itemResponse.includes(`${selectedResponse.fullResponse}${delimiter}`)) {
-            return true;
-          }
-        }
-        
-        return false;
+      // Count each individual response
+      individualResponses.forEach(response => {
+        // Skip empty responses
+        if (!response) return;
+        individualResponseCounts[response] = (individualResponseCounts[response] || 0) + 1;
       });
     });
     
-    // Group by gender
-    const genderGroups = _.groupBy(selectedResponseData, genderField);
-    const genderBreakdown = Object.entries(genderGroups)
-      .map(([gender, items]) => ({
-        name: gender,
-        value: items.length
-      }))
-      .sort((a, b) => b.value - a.value);
+    console.log("Individual response counts:", individualResponseCounts);
     
-    setResponseByGender(genderBreakdown);
-  };
-
-  // Handle user changing the selected question
-const handleQuestionChange = (e) => {
-  const questionNum = e.target.value;
-  console.log("Question selected:", questionNum);
-  setSelectedQuestionNumber(questionNum);
-  setSelectedResponses([]);
-  
-  if (questionNum) {
-    // Find the question text
-    const question = questions.find(q => q.number.toString() === questionNum);
-    setQuestionText(question ? question.text : '');
-    
-    // Analyze responses for this question
-    console.log("Analyzing responses for question:", questionNum);
-    analyzeResponses(questionNum);
-  } else {
-    setQuestionText('');
-    setResponseData([]);
-  }
-};
-
-const analyzeResponses = (questionNum) => {
-  console.log("analyzeResponses called for question:", questionNum);
-  console.log("surveyData available:", surveyData ? surveyData.length : 0);
-  
-  if (!surveyData || surveyData.length === 0) {
-    console.log("No survey data available");
-    return;
-  }
-  
-  // Log a sample row to understand data structure
-  console.log("Sample survey data row:", surveyData[0]);
-  
-  // Check if the question exists in the data
-  const questionExists = surveyData.some(row => row[`Q${questionNum}`] !== undefined);
-  console.log(`Question Q${questionNum} exists in data:`, questionExists);
-  
-  // Filter responses for the selected question
-  const responses = surveyData
-    .filter(row => {
-      const hasQuestion = row[`Q${questionNum}`] !== undefined && 
-                         row[`Q${questionNum}`] !== null && 
-                         row[`Q${questionNum}`] !== '';
-      return hasQuestion;
+    // Convert to array for display
+    const responseArray = Object.entries(individualResponseCounts).map(([fullResponse, count]) => {
+      const percentage = ((count / totalResponses) * 100).toFixed(1);
+      return { fullResponse, count, percentage };
     });
-  
-  console.log(`Found ${responses.length} responses for question ${questionNum}`);
-  
-  if (responses.length === 0) {
-    console.log("No responses found for this question");
-    setResponseData([]);
-    return;
-  }
-  
-  // Count occurrences of each response
-  const responseCounts = {};
-  responses.forEach(row => {
-    const response = row[`Q${questionNum}`];
-    responseCounts[response] = (responseCounts[response] || 0) + 1;
-  });
-  
-  console.log("Response counts:", responseCounts);
-  
-  // Convert to array for display
-  const responseArray = Object.entries(responseCounts).map(([fullResponse, count]) => {
-    const percentage = ((count / responses.length) * 100).toFixed(1);
-    return { fullResponse, count, percentage };
-  });
-  
-  // Sort by count (descending)
-  responseArray.sort((a, b) => b.count - a.count);
-  
-  console.log("Response array:", responseArray);
-  setResponseData(responseArray);
-};
+    
+    // Sort by count (descending)
+    responseArray.sort((a, b) => b.count - a.count);
+    
+    console.log("Response array:", responseArray);
+    setResponseData(responseArray);
+  };
 
   // Handle user selecting a response
   const handleResponseClick = (response) => {
@@ -542,8 +414,21 @@ const analyzeResponses = (questionNum) => {
       document.body.removeChild(link);
     }
   };
-
-
+  
+  // If no data or no questions, show empty state
+  if (!salesData || salesData.length === 0 || availableQuestions.length === 0) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-center">
+          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No survey data available</h3>
+          <p className="mt-1 text-gray-500">Please upload data with question and proposition fields.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="demographics-tab p-4">
@@ -570,14 +455,16 @@ const analyzeResponses = (questionNum) => {
             className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm rounded-md"
           >
             <option value="">Select a question</option>
-            {availableQuestions.map(num => (
-              <option key={num} value={num}>Question {num}</option>
+            {questions.map(q => (
+              <option key={q.number} value={q.number}>
+                {q.text.length > 70 ? q.text.substring(0, 70) + "..." : q.text}
+              </option>
             ))}
           </select>
           
           {questionText && (
             <div className="mt-3 p-3 bg-white rounded border border-gray-200">
-              <p className="text-sm text-gray-700"><span className="font-medium">Question text:</span> {questionText}</p>
+              <p className="text-sm text-gray-700"><span className="font-medium">Question:</span> {questionText}</p>
             </div>
           )}
         </div>
@@ -586,7 +473,7 @@ const analyzeResponses = (questionNum) => {
       {/* Response Analysis */}
       {selectedQuestionNumber && (
         <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <h3 className="text-lg font-medium mb-4">Response Analysis for Question {selectedQuestionNumber}</h3>
+          <h3 className="text-lg font-medium mb-4">Response Analysis for Question {parseInt(selectedQuestionNumber)}</h3>
           <p className="mb-2 text-sm text-gray-600">Select one or more responses to see demographic breakdowns</p>
           
           {responseData.length > 0 ? (
@@ -633,75 +520,125 @@ const analyzeResponses = (questionNum) => {
                   {responseByGender.length > 0 && (
                     <div className="mt-6">
                       <h5 className="text-md font-medium mb-3">Gender Breakdown</h5>
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
-                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
-                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                              {responseByGender.map((item, index) => {
-                                const total = responseByGender.reduce((sum, i) => sum + i.value, 0);
-                                const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
-                                
-                                return (
-                                  <tr key={index}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                      <div className="flex items-center">
-                                        <div className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                                        {item.name}
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{item.value}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{percentage}%</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                      
+                      {/* Gender Breakdown - Chart and Table side by side */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Gender Bar Chart */}
+                        <div className="h-80">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={responseByGender}
+                              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="name" />
+                              <YAxis />
+                              <Tooltip content={<CustomTooltip />} />
+                              <Legend />
+                              <Bar dataKey="value" name="Count">
+                                {responseByGender.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                        
+                        {/* Gender Table */}
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
+                                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
+                                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {responseByGender.map((item, index) => {
+                                  const total = responseByGender.reduce((sum, i) => sum + i.value, 0);
+                                  const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
+                                  
+                                  return (
+                                    <tr key={index}>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <div className="flex items-center">
+                                          <div className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                          {item.name}
+                                        </div>
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{item.value}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{percentage}%</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
                     </div>
                   )}
                   
-                  {/* Age Breakdown - with forced rendering */}
+                  {/* Age Breakdown */}
                   <div className="mt-6">
                     <h5 className="text-md font-medium mb-3">Age Breakdown</h5>
                     {responseByAge.length > 0 ? (
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Age Group</th>
-                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
-                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                              {responseByAge.map((item, index) => {
-                                const total = responseByAge.reduce((sum, i) => sum + i.value, 0);
-                                const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
-                                
-                                return (
-                                  <tr key={index}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                      <div className="flex items-center">
-                                        <div className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: COLORS[(index + 4) % COLORS.length] }}></div>
-                                        {item.name}
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{item.value}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{percentage}%</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Age Bar Chart */}
+                        <div className="h-80">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={responseByAge}
+                              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="name" />
+                              <YAxis />
+                              <Tooltip content={<CustomTooltip />} />
+                              <Legend />
+                              <Bar dataKey="value" name="Count">
+                                {responseByAge.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={COLORS[(index + 4) % COLORS.length]} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                        
+                        {/* Age Table */}
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Age Group</th>
+                                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
+                                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {responseByAge.map((item, index) => {
+                                  const total = responseByAge.reduce((sum, i) => sum + i.value, 0);
+                                  const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
+                                  
+                                  return (
+                                    <tr key={index}>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <div className="flex items-center">
+                                          <div className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: COLORS[(index + 4) % COLORS.length] }}></div>
+                                          {item.name}
+                                        </div>
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{item.value}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{percentage}%</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -750,6 +687,7 @@ const analyzeResponses = (questionNum) => {
         </div>
       )}
     </div>
-  )};
+  );
+};
 
 export default DemographicsTab;

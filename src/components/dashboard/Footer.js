@@ -26,7 +26,7 @@ const Footer = () => {
         </div>
         <div className="mt-8 md:mt-0 md:order-1">
           <p className="text-center text-sm text-gray-500">
-            &copy; {currentYear} Sales Dashboard. All rights reserved.
+            &copy; {currentYear} Insights Dashboard. All rights reserved.
           </p>
         </div>
       </div>

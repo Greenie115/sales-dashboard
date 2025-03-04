@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { useData } from '../../context/DataContext';
-
+import shopmiumLogo from '../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg'
 /**
  * Header component - simplified without navigation tabs
  */
+
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -32,8 +33,8 @@ const Header = () => {
           {/* Logo and brand */}
           <div className="flex items-center">
             <div className="flex-shrink-0 flex items-center">
-              <div className="h-8 w-8 rounded-full bg-pink-600 flex items-center justify-center text-white font-bold">S</div>
-              <span className="ml-2 text-xl font-semibold text-gray-900">Sales Dashboard</span>
+              <img src={require('../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg')} class="w-12 h-12 rounded-lg"/>
+              <span className="ml-2 text-xl font-semibold text-gray-900">Insights Dashboard</span>
             </div>
           </div>
           
