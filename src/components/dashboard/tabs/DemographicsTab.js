@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import _ from 'lodash';
 
 // Custom colors
@@ -17,23 +17,42 @@ const AGE_GROUP_ORDER = [
   'Under 18'
 ];
 
-const DemographicsTab = () => {
-  const { getFilteredData } = useData();
+const DemographicsTab = ({ surveyData, questions }) => {
+  // Use refs to track component mounting state
+  const isMounted = useRef(true);
   
-  // Local state
+  // State variables
+  const [responseByGender, setResponseByGender] = useState([]);
+  const [responseByAge, setResponseByAge] = useState([]); 
+  const [isProcessingDemographics, setIsProcessingDemographics] = useState(false);
+  const [availableQuestions, setAvailableQuestions] = useState([]);
   const [selectedQuestionNumber, setSelectedQuestionNumber] = useState('');
+  const [questionText, setQuestionText] = useState('');
   const [responseData, setResponseData] = useState([]);
-  const [ageDistribution, setAgeDistribution] = useState([]);
+  const [selectedResponses, setSelectedResponses] = useState([]);
   const [genderData, setGenderData] = useState([]);
   const [uniqueResponses, setUniqueResponses] = useState([]);
-  const [availableQuestions, setAvailableQuestions] = useState([]);
-  const [questionText, setQuestionText] = useState('');
-  const [selectedResponse, setSelectedResponse] = useState(null);
-  const [responseByAge, setResponseByAge] = useState([]);
-  const [responseByGender, setResponseByGender] = useState([]);
-
-  // Get filtered data
-  const filteredData = getFilteredData ? getFilteredData() : [];
+  
+  // Define the getFilteredData function first
+  const getFilteredData = (data, questionNumber, selectedRespons) => {
+    if (!data || !questionNumber || !selectedRespons || selectedRespons.length === 0) {
+      return [];
+    }
+    
+    // Get selected response text values
+    const selectedResponseValues = selectedRespons.map(r => r.fullResponse);
+    
+    // Filter survey data for rows containing selected responses
+    return data.filter(row => {
+      const response = row[`Q${questionNumber}`];
+      return selectedResponseValues.includes(response);
+    });
+  };
+  
+  // Now use the function with the right parameters
+  const filteredData = selectedResponses.length > 0 ? 
+    getFilteredData(surveyData, selectedQuestionNumber, selectedResponses) : 
+    [];
 
   // Helper to extract cleaner question content
   const extractCleanQuestionContent = (data, questionKey) => {
@@ -81,75 +100,144 @@ const DemographicsTab = () => {
     
     // Get unique clean responses
     return [...new Set(cleanResponses)];
-  };
+  };// Analyze available questions when data loads
 
-  // Analyze available questions when data loads
   useEffect(() => {
-    if (filteredData && filteredData.length > 0) {
-      // Get available questions
-      const questions = [];
-      const firstItem = filteredData[0];
+    console.log("surveyData available:", surveyData ? surveyData.length : 0);
+    console.log("Sample survey data:", surveyData && surveyData.length > 0 ? surveyData[0] : "None");
+  }, [surveyData]);
+
+  // Set up mounted ref for cleanup
+  useEffect(() => {
+    isMounted.current = true;
+    
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+  
+  useEffect(() => {
+    if (surveyData && surveyData.length > 0) {
+      // Extract available question numbers
+      const questionNums = questions.map(q => q.number.toString());
+      setAvailableQuestions(questionNums);
+    }
+  }, [surveyData, questions]);
+  
+  // Process demographic data when responses are selected
+  useEffect(() => {
+    // Skip if unmounted
+    if (!isMounted.current) return;
+    
+    console.log("Processing demographics useEffect triggered");
+    console.log("Selected responses:", selectedResponses.length);
+    
+    // Only process if we have selected responses and survey data
+    if (selectedResponses.length > 0 && surveyData && surveyData.length > 0) {
+      // Set processing flag to true
+      setIsProcessingDemographics(true);
       
-      if (firstItem) {
-        // Get all keys that might contain questions
-        const questionKeys = Object.keys(firstItem).filter(key => 
-          key.startsWith('question_') || 
-          key.startsWith('proposition_')
-        );
+      // Use setTimeout to ensure React has time to render the loading state
+      setTimeout(() => {
+        // Skip if component unmounted during timeout
+        if (!isMounted.current) return;
         
-        // Group keys by question number
-        const questionGroups = {};
-        questionKeys.forEach(key => {
-          const parts = key.split('_');
-          if (parts.length >= 2) {
-            const num = parts[1];
-            if (!questionGroups[num]) {
-              questionGroups[num] = [];
-            }
-            questionGroups[num].push(key);
-          }
-        });
-        
-        // Create list of valid question numbers
-        Object.entries(questionGroups).forEach(([num, keys]) => {
-          // Check if at least one item has data for this question
-          const hasData = filteredData.some(item => 
-            keys.some(key => item[key] && item[key].trim() !== '')
-          );
+        try {
+          console.log("Processing demographic data...");
+          // Get selected response text values
+          const selectedResponseValues = selectedResponses.map(r => r.fullResponse);
           
-          if (hasData) {
-            questions.push(num);
+          // Filter survey data for rows containing selected responses
+          const filteredData = surveyData.filter(row => {
+            const response = row[`Q${selectedQuestionNumber}`];
+            return selectedResponseValues.includes(response);
+          });
+          
+          console.log(`Filtered data: ${filteredData.length} rows match selected responses`);
+          
+          // Gender breakdown
+          const genderCounts = {};
+          filteredData.forEach(row => {
+            const gender = row.Gender || 'Not Specified';
+            genderCounts[gender] = (genderCounts[gender] || 0) + 1;
+          });
+          
+          const genderData = Object.entries(genderCounts).map(([name, value]) => ({
+            name,
+            value
+          }));
+          
+          console.log("Gender data processed:", genderData.length);
+          
+          // Age breakdown
+          const ageCounts = {};
+          filteredData.forEach(row => {
+            // Log a sample row to debug data structure
+            if (!window.loggedSampleRow) {
+              console.log("Sample data row:", row);
+              window.loggedSampleRow = true;
+            }
+            
+            const age = row.Age || 'Not Specified';
+            let ageGroup = 'Not Specified';
+            
+            // Create age groups
+            if (age && !isNaN(age)) {
+              // Handle both number and numeric string
+              const ageNum = typeof age === 'string' ? parseInt(age, 10) : age;
+              if (ageNum < 18) ageGroup = 'Under 18';
+              else if (ageNum < 25) ageGroup = '18-24';
+              else if (ageNum < 35) ageGroup = '25-34';
+              else if (ageNum < 45) ageGroup = '35-44';
+              else if (ageNum < 55) ageGroup = '45-54';
+              else if (ageNum < 65) ageGroup = '55-64';
+              else ageGroup = '65+';
+            } else if (typeof age === 'string' && age.trim() !== '') {
+              // If age is already provided as a group in string format
+              ageGroup = age;
+            }
+            
+            ageCounts[ageGroup] = (ageCounts[ageGroup] || 0) + 1;
+          });
+          
+          const ageData = Object.entries(ageCounts).map(([name, value]) => ({
+            name,
+            value
+          }));
+          
+          // Sort age groups in a logical order
+          const ageOrder = ['Under 18', '18-24', '25-34', '35-44', '45-54', '55-64', '65+', 'Not Specified'];
+          ageData.sort((a, b) => {
+            return ageOrder.indexOf(a.name) - ageOrder.indexOf(b.name);
+          });
+          
+          console.log("Age data processed:", ageData.length, ageData);
+          
+          // Skip update if component unmounted
+          if (!isMounted.current) return;
+          
+          // First update the data
+          setResponseByGender(genderData);
+          setResponseByAge(ageData);
+          
+          // Then remove processing flag to show the data
+          setIsProcessingDemographics(false);
+        } catch (error) {
+          console.error("Error processing demographic data:", error);
+          // Reset processing flag even on error
+          if (isMounted.current) {
+            setIsProcessingDemographics(false);
           }
-        });
-        
-        setAvailableQuestions(questions.sort((a, b) => parseInt(a) - parseInt(b)));
-        
-        // Set default selected question
-        if (questions.length > 0 && !selectedQuestionNumber) {
-          setSelectedQuestionNumber(questions[0]);
         }
-      }
-      
-      // Analyze gender and age data
-      analyzeGenderData();
-      analyzeAgeDistribution();
+      }, 100); // Short delay to ensure state updates properly
+    } else if (selectedResponses.length === 0) {
+      // Only clear if no responses are selected
+      console.log("No responses selected, clearing demographic data");
+      setResponseByGender([]);
+      setResponseByAge([]);
+      setIsProcessingDemographics(false);
     }
-  }, [filteredData, selectedQuestionNumber]);
-
-  // Recalculate response analysis whenever the selected question changes
-  useEffect(() => {
-    if (selectedQuestionNumber && filteredData && filteredData.length > 0) {
-      analyzeResponseData();
-      setSelectedResponse(null); // Reset selected response when question changes
-    }
-  }, [selectedQuestionNumber, filteredData]);
-
-  // Analyze response breakdowns when a response is selected
-  useEffect(() => {
-    if (selectedResponse && selectedQuestionNumber && filteredData && filteredData.length > 0) {
-      analyzeResponseBreakdowns(selectedResponse);
-    }
-  }, [selectedResponse, selectedQuestionNumber, filteredData]);
+  }, [selectedResponses, surveyData, selectedQuestionNumber]);
 
   // Analyze gender data by grouping and counting
   const analyzeGenderData = () => {
@@ -186,62 +274,6 @@ const DemographicsTab = () => {
     })).sort((a, b) => b.value - a.value);
     
     setGenderData(genderStats);
-  };
-
-  // Analyze age distribution
-  const analyzeAgeDistribution = () => {
-    if (!filteredData || filteredData.length === 0) return;
-    
-    // Check possible age field names
-    const possibleAgeFields = ['age_group', 'ageGroup', 'age', 'Age', 'AGE'];
-    let ageField = null;
-    
-    // Find the first valid age field
-    for (const field of possibleAgeFields) {
-      if (filteredData[0] && filteredData[0][field] !== undefined) {
-        ageField = field;
-        break;
-      }
-    }
-    
-    if (!ageField) {
-      setAgeDistribution([]);
-      return;
-    }
-    
-    const itemsWithAge = filteredData.filter(item => item[ageField] && item[ageField].toString().trim() !== '');
-    
-    if (itemsWithAge.length === 0) {
-      setAgeDistribution([]);
-      return;
-    }
-    
-    const ageGroups = _.groupBy(itemsWithAge, ageField);
-    
-    // Get all unique age groups from data
-    const uniqueAgeGroups = Object.keys(ageGroups);
-    
-    // Create age stats using both predefined order and any additional groups found in data
-    const allAgeGroups = [...new Set([...AGE_GROUP_ORDER, ...uniqueAgeGroups])];
-    
-    const ageStats = allAgeGroups
-      .map(group => ({
-        ageGroup: group,
-        count: ageGroups[group] ? ageGroups[group].length : 0
-      }))
-      .filter(item => item.count > 0) // Filter out groups with no data
-      .sort((a, b) => {
-        // Sort by the predefined order, or alphabetically for custom groups
-        const indexA = AGE_GROUP_ORDER.indexOf(a.ageGroup);
-        const indexB = AGE_GROUP_ORDER.indexOf(b.ageGroup);
-        
-        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-        if (indexA !== -1) return -1;
-        if (indexB !== -1) return 1;
-        return a.ageGroup.localeCompare(b.ageGroup);
-      });
-    
-    setAgeDistribution(ageStats);
   };
 
   // Analyze responses for the selected question
@@ -313,203 +345,205 @@ const DemographicsTab = () => {
     
     setResponseData(responseArray);
   };
-
-  // Analyze response breakdowns by age and gender
-  const analyzeResponseBreakdowns = (selectedResponseObj) => {
-    if (!selectedQuestionNumber || !filteredData || filteredData.length === 0 || !selectedResponseObj) return;
+  // Analyze response breakdowns by gender
+  const analyzeResponseBreakdowns = () => {
+    if (!selectedQuestionNumber || !filteredData || filteredData.length === 0 || !selectedResponses.length) return;
     
     const questionKey = `question_${selectedQuestionNumber}`;
     const propKey = `proposition_${selectedQuestionNumber}`;
     const hasPropositionData = filteredData.some(item => item[propKey] && item[propKey].trim() !== '');
     const responseKey = hasPropositionData ? propKey : questionKey;
     
-    // Get age field
-    const ageField = filteredData[0]?.age_group !== undefined ? 'age_group' : 
-                     filteredData[0]?.ageGroup !== undefined ? 'ageGroup' : null;
-    
     // Get gender field
     const genderField = filteredData[0]?.gender !== undefined ? 'gender' : 
                         filteredData[0]?.Gender !== undefined ? 'Gender' : null;
     
-    // Filter data for the selected response
+    if (!genderField) {
+      setResponseByGender([]);
+      return;
+    }
+    
+    // Filter data based on selected responses
     const selectedResponseData = filteredData.filter(item => {
-      if (!item[responseKey]) return false;
+      if (!item[responseKey] || !item[genderField]) return false;
       
       const itemResponse = item[responseKey].trim();
       
-      // Direct match
-      if (itemResponse === selectedResponseObj.fullResponse) return true;
-      
-      // Check for the response as part of a delimited list
-      const delimiters = [';', '|', ',', '/', '\\', ' '];
-      for (const delimiter of delimiters) {
-        if (itemResponse.includes(`${delimiter}${selectedResponseObj.fullResponse}${delimiter}`) ||
-            itemResponse.includes(`${delimiter}${selectedResponseObj.fullResponse}`) ||
-            itemResponse.includes(`${selectedResponseObj.fullResponse}${delimiter}`)) {
-          return true;
+      // Check if this item's response matches any of the selected responses
+      return selectedResponses.some(selectedResponse => {
+        // Direct match
+        if (itemResponse === selectedResponse.fullResponse) return true;
+        
+        // Check for the response as part of a delimited list
+        const delimiters = [';', '|', ',', '/', '\\', ' '];
+        for (const delimiter of delimiters) {
+          if (itemResponse.includes(`${delimiter}${selectedResponse.fullResponse}${delimiter}`) ||
+              itemResponse.includes(`${delimiter}${selectedResponse.fullResponse}`) ||
+              itemResponse.includes(`${selectedResponse.fullResponse}${delimiter}`)) {
+            return true;
+          }
         }
-      }
-      
-      return false;
+        
+        return false;
+      });
     });
     
-    // Age breakdown
-    if (ageField) {
-      const ageGroups = _.groupBy(
-        selectedResponseData.filter(item => item[ageField]), 
-        ageField
-      );
-      
-      // Get all unique age groups
-      const uniqueAgeGroups = [...new Set([...AGE_GROUP_ORDER, ...Object.keys(ageGroups)])];
-      
-      // Create age breakdown data
-      const ageBreakdown = uniqueAgeGroups
-        .map(group => ({
-          name: group,
-          value: ageGroups[group] ? ageGroups[group].length : 0
-        }))
-        .filter(item => item.value > 0) // Filter out groups with no data
-        .sort((a, b) => {
-          // Sort by the predefined order, or alphabetically for custom groups
-          const indexA = AGE_GROUP_ORDER.indexOf(a.name);
-          const indexB = AGE_GROUP_ORDER.indexOf(b.name);
-          
-          if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-          if (indexA !== -1) return -1;
-          if (indexB !== -1) return 1;
-          return a.name.localeCompare(b.name);
-        });
-      
-      setResponseByAge(ageBreakdown);
-    } else {
-      setResponseByAge([]);
-    }
+    // Group by gender
+    const genderGroups = _.groupBy(selectedResponseData, genderField);
+    const genderBreakdown = Object.entries(genderGroups)
+      .map(([gender, items]) => ({
+        name: gender,
+        value: items.length
+      }))
+      .sort((a, b) => b.value - a.value);
     
-    // Gender breakdown
-    if (genderField) {
-      const genderGroups = _.groupBy(
-        selectedResponseData.filter(item => item[genderField]), 
-        genderField
-      );
-      
-      // Create gender breakdown data
-      const genderBreakdown = Object.entries(genderGroups)
-        .map(([gender, items]) => ({
-          name: gender,
-          value: items.length
-        }))
-        .sort((a, b) => b.value - a.value);
-      
-      setResponseByGender(genderBreakdown);
-    } else {
-      setResponseByGender([]);
-    }
+    setResponseByGender(genderBreakdown);
   };
 
   // Handle user changing the selected question
-  const handleQuestionChange = (e) => {
-    setSelectedQuestionNumber(e.target.value);
-    setSelectedResponse(null);
-  };
+const handleQuestionChange = (e) => {
+  const questionNum = e.target.value;
+  console.log("Question selected:", questionNum);
+  setSelectedQuestionNumber(questionNum);
+  setSelectedResponses([]);
+  
+  if (questionNum) {
+    // Find the question text
+    const question = questions.find(q => q.number.toString() === questionNum);
+    setQuestionText(question ? question.text : '');
+    
+    // Analyze responses for this question
+    console.log("Analyzing responses for question:", questionNum);
+    analyzeResponses(questionNum);
+  } else {
+    setQuestionText('');
+    setResponseData([]);
+  }
+};
+
+const analyzeResponses = (questionNum) => {
+  console.log("analyzeResponses called for question:", questionNum);
+  console.log("surveyData available:", surveyData ? surveyData.length : 0);
+  
+  if (!surveyData || surveyData.length === 0) {
+    console.log("No survey data available");
+    return;
+  }
+  
+  // Log a sample row to understand data structure
+  console.log("Sample survey data row:", surveyData[0]);
+  
+  // Check if the question exists in the data
+  const questionExists = surveyData.some(row => row[`Q${questionNum}`] !== undefined);
+  console.log(`Question Q${questionNum} exists in data:`, questionExists);
+  
+  // Filter responses for the selected question
+  const responses = surveyData
+    .filter(row => {
+      const hasQuestion = row[`Q${questionNum}`] !== undefined && 
+                         row[`Q${questionNum}`] !== null && 
+                         row[`Q${questionNum}`] !== '';
+      return hasQuestion;
+    });
+  
+  console.log(`Found ${responses.length} responses for question ${questionNum}`);
+  
+  if (responses.length === 0) {
+    console.log("No responses found for this question");
+    setResponseData([]);
+    return;
+  }
+  
+  // Count occurrences of each response
+  const responseCounts = {};
+  responses.forEach(row => {
+    const response = row[`Q${questionNum}`];
+    responseCounts[response] = (responseCounts[response] || 0) + 1;
+  });
+  
+  console.log("Response counts:", responseCounts);
+  
+  // Convert to array for display
+  const responseArray = Object.entries(responseCounts).map(([fullResponse, count]) => {
+    const percentage = ((count / responses.length) * 100).toFixed(1);
+    return { fullResponse, count, percentage };
+  });
+  
+  // Sort by count (descending)
+  responseArray.sort((a, b) => b.count - a.count);
+  
+  console.log("Response array:", responseArray);
+  setResponseData(responseArray);
+};
 
   // Handle user selecting a response
   const handleResponseClick = (response) => {
-    setSelectedResponse(response === selectedResponse ? null : response);
+    console.log("Response clicked:", response.fullResponse);
+    const isSelected = selectedResponses.some(r => r.fullResponse === response.fullResponse);
+    
+    if (isSelected) {
+      console.log("Deselecting response");
+      setSelectedResponses(prev => {
+        const newSelection = prev.filter(r => r.fullResponse !== response.fullResponse);
+        console.log("New selection count:", newSelection.length);
+        return newSelection;
+      });
+    } else {
+      console.log("Selecting response");
+      setSelectedResponses(prev => {
+        const newSelection = [...prev, response];
+        console.log("New selection count:", newSelection.length);
+        return newSelection;
+      });
+    }
   };
 
   // Export data to CSV
   const exportToCSV = () => {
-    if (!filteredData || filteredData.length === 0 || !selectedQuestionNumber) return;
-    
-    try {
+    if (selectedQuestionNumber && responseData.length > 0) {
       // Create CSV content
-      let csvContent = 'data:text/csv;charset=utf-8,';
+      let csvContent = 'Response,Count,Percentage\n';
       
-      // Add question info
-      csvContent += `"Question ${selectedQuestionNumber}: ${questionText.replace(/"/g, '""')}"\n\n`;
-      
-      // Add response data
-      csvContent += 'Response,Count,Percentage\n';
       responseData.forEach(item => {
-        csvContent += `"${item.fullResponse.replace(/"/g, '""')}",${item.count},${item.percentage}%\n`;
+        csvContent += `"${item.fullResponse}",${item.count},${item.percentage}%\n`;
       });
       
-      // Add age distribution
-      if (ageDistribution.length > 0) {
-        csvContent += '\nAge Distribution\n';
-        csvContent += 'Age Group,Count\n';
-        ageDistribution.forEach(item => {
-          csvContent += `${item.ageGroup},${item.count}\n`;
-        });
-      }
-      
-      // Add gender distribution
-      if (genderData.length > 0) {
-        csvContent += '\nGender Distribution\n';
+      // Add gender breakdown if available
+      if (selectedResponses.length > 0 && responseByGender.length > 0) {
+        csvContent += '\nGender Breakdown\n';
         csvContent += 'Gender,Count,Percentage\n';
-        genderData.forEach(item => {
-          csvContent += `${item.name},${item.value},${item.percentage}%\n`;
+        
+        const total = responseByGender.reduce((sum, item) => sum + item.value, 0);
+        responseByGender.forEach(item => {
+          const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
+          csvContent += `"${item.name}",${item.value},${percentage}%\n`;
         });
       }
       
-      // Add selected response breakdowns
-      if (selectedResponse) {
-        csvContent += `\nBreakdown for Response: "${selectedResponse.fullResponse.replace(/"/g, '""')}"\n`;
+      // Add age breakdown if available
+      if (selectedResponses.length > 0 && responseByAge.length > 0) {
+        csvContent += '\nAge Breakdown\n';
+        csvContent += 'Age Group,Count,Percentage\n';
         
-        if (responseByAge.length > 0) {
-          csvContent += '\nAge Breakdown\n';
-          csvContent += 'Age Group,Count\n';
-          responseByAge.forEach(item => {
-            csvContent += `${item.name},${item.value}\n`;
-          });
-        }
-        
-        if (responseByGender.length > 0) {
-          csvContent += '\nGender Breakdown\n';
-          csvContent += 'Gender,Count\n';
-          responseByGender.forEach(item => {
-            csvContent += `${item.name},${item.value}\n`;
-          });
-        }
+        const total = responseByAge.reduce((sum, item) => sum + item.value, 0);
+        responseByAge.forEach(item => {
+          const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
+          csvContent += `"${item.name}",${item.value},${percentage}%\n`;
+        });
       }
-      
-      // Create filename
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `demographics_question${selectedQuestionNumber}_${timestamp}.csv`;
       
       // Create download link
-      const encodedUri = encodeURI(csvContent);
+      const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
       const link = document.createElement('a');
       link.setAttribute('href', encodedUri);
-      link.setAttribute('download', filename);
+      link.setAttribute('download', `Question_${selectedQuestionNumber}_Responses.csv`);
       document.body.appendChild(link);
-      
-      // Trigger download
       link.click();
-      
-      // Clean up
       document.body.removeChild(link);
-    } catch (error) {
-      console.error("Error exporting data:", error);
-      alert("Error exporting data. See console for details.");
     }
   };
 
-  // If no data, show loading/empty state
-  if (!filteredData || filteredData.length === 0) {
-    return (
-      <div className="p-4 text-center">
-        <div className="py-10">
-          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No demographic data</h3>
-          <p className="mt-1 text-sm text-gray-500">Please load data with demographic information.</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="demographics-tab p-4">
@@ -549,75 +583,11 @@ const DemographicsTab = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Gender Distribution */}
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-4">Gender Distribution</h3>
-          {genderData.length > 0 ? (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={genderData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    paddingAngle={5}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    labelLine={true}
-                  >
-                    {genderData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => [`${value} users`, `Count`]} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-60 bg-gray-50 rounded">
-              <p className="text-gray-500">No gender data available</p>
-            </div>
-          )}
-        </div>
-
-        {/* Age Distribution */}
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-4">Age Distribution</h3>
-          {ageDistribution.length > 0 ? (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={ageDistribution}
-                  layout="vertical"
-                  margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                  <XAxis type="number" />
-                  <YAxis dataKey="ageGroup" type="category" />
-                  <Tooltip formatter={(value) => [`${value} users`, 'Count']} />
-                  <Legend />
-                  <Bar dataKey="count" name="Users" fill="#82ca9d" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-60 bg-gray-50 rounded">
-              <p className="text-gray-500">No age distribution data available</p>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Response Analysis */}
       {selectedQuestionNumber && (
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <h3 className="text-lg font-medium mb-4">Response Analysis for Question {selectedQuestionNumber}</h3>
-          <p className="mb-2 text-sm text-gray-600">Click on a response to see its breakdown by age and gender</p>
+          <p className="mb-2 text-sm text-gray-600">Select one or more responses to see demographic breakdowns</p>
           
           {responseData.length > 0 ? (
             <div className="overflow-hidden">
@@ -629,7 +599,7 @@ const DemographicsTab = () => {
                         key={index} 
                         onClick={() => handleResponseClick(item)}
                         className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                          selectedResponse && selectedResponse.fullResponse === item.fullResponse
+                          selectedResponses.some(r => r.fullResponse === item.fullResponse)
                             ? 'bg-pink-50 border-pink-300'
                             : 'bg-white border-gray-200 hover:bg-gray-50'
                         }`}
@@ -651,85 +621,135 @@ const DemographicsTab = () => {
               </div>
               
               {/* Response Breakdowns */}
-              {selectedResponse && (
+              {selectedResponses.length > 0 && (
                 <div className="mt-8 border-t border-gray-200 pt-6">
                   <h4 className="text-lg font-medium mb-4 text-pink-600">
-                    Breakdown for "{selectedResponse.fullResponse}"
+                    {selectedResponses.length === 1 
+                      ? `Breakdown for "${selectedResponses[0].fullResponse}"` 
+                      : `Breakdown for ${selectedResponses.length} selected responses`}
                   </h4>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Age Breakdown */}
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <h5 className="text-md font-medium mb-3">Age Breakdown</h5>
-                      {responseByAge.length > 0 ? (
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={responseByAge}
-                              layout="vertical"
-                              margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
-                            >
-                              <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                              <XAxis type="number" />
-                              <YAxis dataKey="name" type="category" />
-                              <Tooltip formatter={(value) => [`${value} responses`, 'Count']} />
-                              <Bar dataKey="value" name="Count" fill="#FF0066" />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center h-40 bg-white rounded">
-                          <p className="text-gray-500">No age breakdown available</p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Gender Breakdown */}
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                  {/* Gender Breakdown */}
+                  {responseByGender.length > 0 && (
+                    <div className="mt-6">
                       <h5 className="text-md font-medium mb-3">Gender Breakdown</h5>
-                      {responseByGender.length > 0 ? (
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={responseByGender}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={40}
-                                outerRadius={80}
-                                fill="#8884d8"
-                                paddingAngle={5}
-                                dataKey="value"
-                                label={({ name, percent }) => `${name}`}
-                              >
-                                {responseByGender.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                              </Pie>
-                              <Tooltip formatter={(value) => [`${value} responses`, 'Count']} />
-                              <Legend />
-                            </PieChart>
-                          </ResponsiveContainer>
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
+                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
+                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {responseByGender.map((item, index) => {
+                                const total = responseByGender.reduce((sum, i) => sum + i.value, 0);
+                                const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
+                                
+                                return (
+                                  <tr key={index}>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                      <div className="flex items-center">
+                                        <div className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                        {item.name}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{item.value}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{percentage}%</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                      ) : (
-                        <div className="flex items-center justify-center h-40 bg-white rounded">
-                        <p className="text-gray-500">No gender breakdown available</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Age Breakdown - with forced rendering */}
+                  <div className="mt-6">
+                    <h5 className="text-md font-medium mb-3">Age Breakdown</h5>
+                    {responseByAge.length > 0 ? (
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Age Group</th>
+                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
+                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {responseByAge.map((item, index) => {
+                                const total = responseByAge.reduce((sum, i) => sum + i.value, 0);
+                                const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
+                                
+                                return (
+                                  <tr key={index}>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                      <div className="flex items-center">
+                                        <div className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: COLORS[(index + 4) % COLORS.length] }}></div>
+                                        {item.name}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{item.value}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{percentage}%</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 p-4 rounded-lg flex items-center justify-center h-20">
+                        <p className="text-gray-500">
+                          {selectedResponses.length > 0 
+                            ? isProcessingDemographics ? "Loading age data..." : "No age data available"
+                            : "Select a response to view age breakdown"}
+                        </p>
                       </div>
                     )}
                   </div>
                 </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-60 bg-gray-50 rounded">
+              <p className="text-gray-500">No response data available for this question</p>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Explanation text at the bottom */}
+      {selectedResponses.length > 0 && (
+        <div className="bg-blue-50 p-4 rounded-lg shadow mt-4 border border-blue-200">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-blue-800">How to interpret this data</h3>
+              <div className="mt-2 text-sm text-blue-700">
+                <p>
+                  The demographic breakdowns show the distribution of genders and age groups among respondents who
+                  selected the highlighted response(s).
+                </p>
+                <p className="mt-1">
+                  You can select multiple responses to compare demographic distributions across different answers.
+                </p>
               </div>
-            )}
+            </div>
           </div>
-        ) : (
-          <div className="flex items-center justify-center h-60 bg-gray-50 rounded">
-            <p className="text-gray-500">No response data available for this question</p>
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-);
-};
+        </div>
+      )}
+    </div>
+  )};
 
 export default DemographicsTab;
