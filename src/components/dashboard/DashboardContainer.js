@@ -1,34 +1,26 @@
 import React from 'react';
-import { DashboardProvider } from '../../context/DashboardContext';
-import { DataProvider } from '../../context/DataContext';
-import { FilterProvider } from '../../context/FilterContext';
-import { DemographicsProvider } from '../../context/DemographicsContext';
 import { ExportProvider } from '../../context/ExportContext';
 import Header from './Header';
-import MainContent from './MainContent';
 import Footer from './Footer';
+import MainContent from './MainContent';
 
 /**
- * Main dashboard container component that wraps the entire application
- * with context providers and renders the main structure
+ * Main container for the dashboard
+ * Wraps the application with necessary providers
  */
-const DashboardContainer = () => {
+const DashboardContainer = ({ children }) => {
   return (
-    <DashboardProvider>
-      <DataProvider>
-        <FilterProvider>
-          <DemographicsProvider>
-            <ExportProvider>
-              <div className="min-h-screen bg-gray-50">
-                <Header />
-                <MainContent />
-                <Footer />
-              </div>
-            </ExportProvider>
-          </DemographicsProvider>
-        </FilterProvider>
-      </DataProvider>
-    </DashboardProvider>
+    <ExportProvider>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Header />
+        <main className="flex-grow">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {children || <MainContent />}
+          </div>
+        </main>
+        <Footer />
+      </div>
+    </ExportProvider>
   );
 };
 

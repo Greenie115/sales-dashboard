@@ -1,9 +1,7 @@
+// src/components/dashboard/EmptyState.js
 import React, { useRef } from 'react';
 import { useData } from '../../context/DataContext';
 
-/**
- * EmptyState component displayed when no data is loaded
- */
 const EmptyState = () => {
   const fileInputRef = useRef(null);
   const { handleFileUpload, loading } = useData();
@@ -17,10 +15,10 @@ const EmptyState = () => {
   };
 
   return (
-    <div className="bg-white shadow rounded-lg p-12">
+    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-12">
       <div className="text-center">
         <svg 
-          className="mx-auto h-16 w-16 text-gray-400" 
+          className="mx-auto h-16 w-16 text-gray-400 dark:text-gray-500" 
           fill="none" 
           stroke="currentColor" 
           viewBox="0 0 48 48" 
@@ -33,14 +31,14 @@ const EmptyState = () => {
             strokeWidth="2"
           />
         </svg>
-        <h3 className="mt-4 text-lg font-medium text-gray-900">No data loaded</h3>
-        <p className="mt-2 text-sm text-gray-500">
+        <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">No data loaded</h3>
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
           Get started by uploading a CSV file with your sales or offer data.
         </p>
         <div className="mt-6">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-pink-600 hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500"
+            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-pink-600 hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 dark:focus:ring-offset-gray-800"
             disabled={loading}
           >
             <svg 
@@ -67,7 +65,7 @@ const EmptyState = () => {
             onChange={handleFileChange}
           />
         </div>
-        <p className="mt-4 text-xs text-gray-500">
+        <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
           For sales analysis, upload a file with transaction data.<br />
           For offer insights, upload a file with offer engagement data.
         </p>

@@ -47,7 +47,7 @@ const MainContent = () => {
       {/* Filter Panel - Appears on all tabs */}
       <FilterPanel activeTab={activeTab} />
       
-      <div className="bg-white shadow rounded-lg">
+      <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
         {/* Tab navigation */}
         <div className="border-b border-gray-200">
           <nav className="flex -mb-px">
@@ -100,7 +100,7 @@ const MainContent = () => {
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                 {activeTab === 'summary' && 'Executive Summary'}
                 {activeTab === 'sales' && 'Sales Analysis'}
                 {activeTab === 'demographics' && 'Demographics'}

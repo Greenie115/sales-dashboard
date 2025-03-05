@@ -1,9 +1,7 @@
+// src/components/dashboard/Header.js
 import React, { useState, useRef } from 'react';
 import { useData } from '../../context/DataContext';
-import shopmiumLogo from '../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg'
-/**
- * Header component - simplified without navigation tabs
- */
+import ThemeToggle from '../ThemeToggle';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -27,30 +25,39 @@ const Header = () => {
   };
 
   return (
-    <header className="bg-white shadow-sm">
+    <header className="bg-white dark:bg-gray-800 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           {/* Logo and brand */}
           <div className="flex items-center">
             <div className="flex-shrink-0 flex items-center">
-              <img src={require('../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg')} class="w-12 h-12 rounded-lg"/>
-              <span className="ml-2 text-xl font-semibold text-gray-900">Insights Dashboard</span>
+              <img 
+                src={require('../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg')} 
+                className="w-12 h-12 rounded-lg"
+                alt="Logo"
+              />
+              <span className="ml-2 text-xl font-semibold text-gray-900 dark:text-white">Insights Dashboard</span>
             </div>
           </div>
           
           {/* Actions and user menu */}
           <div className="flex items-center">
+            {/* Dark mode toggle */}
+            <div className="mr-4">
+              <ThemeToggle />
+            </div>
+            
             {/* Show data status */}
             {salesData && salesData.length > 0 ? (
-              <span className="mr-4 text-sm text-green-600 font-medium hidden md:block">
+              <span className="mr-4 text-sm text-green-600 dark:text-green-400 font-medium hidden md:block">
                 {salesData.length} records loaded
               </span>
             ) : offerData && offerData.length > 0 ? (
-              <span className="mr-4 text-sm text-green-600 font-medium hidden md:block">
+              <span className="mr-4 text-sm text-green-600 dark:text-green-400 font-medium hidden md:block">
                 {offerData.length} offer records loaded
               </span>
             ) : (
-              <span className="mr-4 text-sm text-gray-500 font-medium hidden md:block">
+              <span className="mr-4 text-sm text-gray-500 dark:text-gray-400 font-medium hidden md:block">
                 No data loaded
               </span>
             )}
@@ -58,7 +65,7 @@ const Header = () => {
             {/* Upload button */}
             <div className="mr-2">
               <label 
-                className="cursor-pointer bg-pink-50 text-pink-700 hover:bg-pink-100 px-3 py-2 rounded-md text-sm font-medium flex items-center"
+                className="cursor-pointer bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-800/40 px-3 py-2 rounded-md text-sm font-medium flex items-center"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -2,6 +2,7 @@
 import React from 'react';
 import { formatDate } from '../../utils/exportUtils';
 
+
 const PageTitle = ({ 
   activeTab, 
   brandNames, 
@@ -22,7 +23,7 @@ const PageTitle = ({
             {brandNames.length > 0 && (
               <>
                 <div className="text-sm text-gray-500">
-                  Brand: <span className="font-medium text-gray-900">{brandNames.join(', ')}</span>
+                  Brand: <span className="font-medium text-gray-900 dark:text-white">{brandNames.join(', ')}</span>
                 </div>
                 <span className="mx-2 text-gray-300">•</span>
               </>

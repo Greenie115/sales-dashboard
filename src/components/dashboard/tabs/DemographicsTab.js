@@ -3,8 +3,9 @@ import { useData } from '../../../context/DataContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import _ from 'lodash';
 
-// Custom colors
-const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
+// Custom colors for light and dark mode
+const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
+const DARK_COLORS = ['#FF4D94', '#4D94FF', '#FFD54F', '#4DD0E1', '#CE93D8', '#81C784', '#FFB74D'];
 
 // Define the preferred sorting order for age groups
 const AGE_GROUP_ORDER = [
@@ -17,14 +18,17 @@ const AGE_GROUP_ORDER = [
   'Under 18'
 ];
 
-// Custom tooltip for bar charts
+// Custom tooltip for bar charts with dark mode support
 const CustomTooltip = ({ active, payload, label }) => {
+  // Get darkMode from context - make sure it's accessible here
+  const { darkMode } = useData();
+  
   if (active && payload && payload.length) {
     return (
-      <div className="bg-white p-3 border border-gray-200 shadow-md rounded">
-        <p className="text-sm font-medium">{`${label}`}</p>
-        <p className="text-sm text-gray-600">{`Count: ${payload[0].value}`}</p>
-        <p className="text-sm text-gray-600">{`Percentage: ${((payload[0].value / payload[0].payload.total) * 100).toFixed(1)}%`}</p>
+      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} p-3 border shadow-md rounded`}>
+        <p className={`text-sm font-medium ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{`${label}`}</p>
+        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{`Count: ${payload[0].value}`}</p>
+        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{`Percentage: ${((payload[0].value / payload[0].payload.total) * 100).toFixed(1)}%`}</p>
       </div>
     );
   }
@@ -32,8 +36,8 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 const DemographicsTab = () => {
-  // Get data from context instead of props
-  const { salesData } = useData();
+  // Get data from context including dark mode
+  const { salesData, darkMode } = useData();
   
   // Use refs to track component mounting state
   const isMounted = useRef(true);
@@ -418,22 +422,22 @@ const DemographicsTab = () => {
   // If no data or no questions, show empty state
   if (!salesData || salesData.length === 0 || availableQuestions.length === 0) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-900 text-gray-200' : 'text-gray-900'}`}>
         <div className="text-center">
-          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className={`mx-auto h-12 w-12 ${darkMode ? 'text-gray-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No survey data available</h3>
-          <p className="mt-1 text-gray-500">Please upload data with question and proposition fields.</p>
+          <h3 className={`mt-2 text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>No survey data available</h3>
+          <p className={`mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Please upload an items_purchased.CSV file for sales data.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="demographics-tab p-4">
+    <div className={`demographics-tab p-4 ${darkMode ? 'bg-gray-900 text-white' : ''}`}>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold">Demographics Insights</h2>
+        <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : ''}`}>Demographics Insights</h2>
         <button
           onClick={exportToCSV}
           className="flex items-center px-4 py-2 text-sm font-medium text-white bg-pink-600 hover:bg-pink-700 rounded-md shadow-sm"
@@ -446,25 +450,41 @@ const DemographicsTab = () => {
       </div>
       
       {availableQuestions.length > 0 && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-          <label htmlFor="question-select" className="block text-sm font-medium text-gray-700 mb-2">Select Question:</label>
+        <div className={`mb-6 p-4 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded-lg`}>
+          <label htmlFor="question-select" className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Select Question:</label>
+          
+          {/* Enhanced dropdown with proper dark mode styling */}
           <select 
             id="question-select" 
             value={selectedQuestionNumber} 
             onChange={handleQuestionChange}
-            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm rounded-md"
+            className={`mt-1 block w-full pl-3 pr-10 py-2 text-base ${
+              darkMode 
+                ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                : 'border-gray-300 bg-white text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+            } sm:text-sm rounded-md`}
+            style={{
+              boxShadow: darkMode ? 'none' : undefined
+            }}
           >
-            <option value="">Select a question</option>
+            {/* Add dark mode styling to option elements */}
+            <option value="" className={darkMode ? 'bg-gray-700 text-white' : ''}>Select a question</option>
             {questions.map(q => (
-              <option key={q.number} value={q.number}>
+              <option 
+                key={q.number} 
+                value={q.number}
+                className={darkMode ? 'bg-gray-700 text-white' : ''}
+              >
                 {q.text.length > 70 ? q.text.substring(0, 70) + "..." : q.text}
               </option>
             ))}
           </select>
           
           {questionText && (
-            <div className="mt-3 p-3 bg-white rounded border border-gray-200">
-              <p className="text-sm text-gray-700"><span className="font-medium">Question:</span> {questionText}</p>
+            <div className={`mt-3 p-3 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} rounded border`}>
+              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <span className="font-medium">Question:</span> {questionText}
+              </p>
             </div>
           )}
         </div>
@@ -472,9 +492,9 @@ const DemographicsTab = () => {
 
       {/* Response Analysis */}
       {selectedQuestionNumber && (
-        <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <h3 className="text-lg font-medium mb-4">Response Analysis for Question {parseInt(selectedQuestionNumber)}</h3>
-          <p className="mb-2 text-sm text-gray-600">Select one or more responses to see demographic breakdowns</p>
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} p-4 rounded-lg shadow mb-6`}>
+          <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : ''}`}>Response Analysis for Question {parseInt(selectedQuestionNumber)}</h3>
+          <p className={`mb-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Select one or more responses to see demographic breakdowns</p>
           
           {responseData.length > 0 ? (
             <div className="overflow-hidden">
@@ -487,18 +507,35 @@ const DemographicsTab = () => {
                         onClick={() => handleResponseClick(item)}
                         className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                           selectedResponses.some(r => r.fullResponse === item.fullResponse)
-                            ? 'bg-pink-50 border-pink-300'
-                            : 'bg-white border-gray-200 hover:bg-gray-50'
+                            ? darkMode 
+                              ? 'bg-pink-900 border-pink-700' 
+                              : 'bg-pink-50 border-pink-300'
+                            : darkMode
+                              ? 'bg-gray-700 border-gray-600 hover:bg-gray-600'
+                              : 'bg-white border-gray-200 hover:bg-gray-50'
                         }`}
                       >
                         <div className="flex justify-between items-center">
                           <div className="flex items-center">
-                            <div className="w-4 h-4 rounded-full mr-3" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                            <span className="text-sm font-medium text-gray-900">{item.fullResponse}</span>
+                            <div 
+                              className="w-4 h-4 rounded-full mr-3" 
+                              style={{ 
+                                backgroundColor: darkMode 
+                                  ? DARK_COLORS[index % DARK_COLORS.length] 
+                                  : LIGHT_COLORS[index % LIGHT_COLORS.length] 
+                              }}
+                            ></div>
+                            <span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                              {item.fullResponse}
+                            </span>
                           </div>
                           <div className="flex items-center space-x-4">
-                            <span className="text-sm font-medium text-gray-900">{item.count}</span>
-                            <span className="text-sm font-medium text-gray-500">{item.percentage}%</span>
+                            <span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                              {item.count}
+                            </span>
+                            <span className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {item.percentage}%
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -509,8 +546,8 @@ const DemographicsTab = () => {
               
               {/* Response Breakdowns */}
               {selectedResponses.length > 0 && (
-                <div className="mt-8 border-t border-gray-200 pt-6">
-                  <h4 className="text-lg font-medium mb-4 text-pink-600">
+                <div className={`mt-8 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} pt-6`}>
+                  <h4 className={`text-lg font-medium mb-4 ${darkMode ? 'text-pink-400' : 'text-pink-600'}`}>
                     {selectedResponses.length === 1 
                       ? `Breakdown for "${selectedResponses[0].fullResponse}"` 
                       : `Breakdown for ${selectedResponses.length} selected responses`}
@@ -519,25 +556,40 @@ const DemographicsTab = () => {
                   {/* Gender Breakdown */}
                   {responseByGender.length > 0 && (
                     <div className="mt-6">
-                      <h5 className="text-md font-medium mb-3">Gender Breakdown</h5>
+                      <h5 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : ''}`}>Gender Breakdown</h5>
                       
                       {/* Gender Breakdown - Chart and Table side by side */}
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Gender Bar Chart */}
+                        {/* Gender Bar Chart - Direct implementation with dark mode */}
                         <div className="h-80">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart
                               data={responseByGender}
                               margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
                             >
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="name" />
-                              <YAxis />
+                              <CartesianGrid 
+                                strokeDasharray="3 3" 
+                                stroke={darkMode ? '#444444' : '#e5e5e5'} 
+                              />
+                              <XAxis 
+                                dataKey="name" 
+                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
+                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                              />
+                              <YAxis 
+                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
+                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                              />
                               <Tooltip content={<CustomTooltip />} />
-                              <Legend />
+                              <Legend 
+                                wrapperStyle={{ color: darkMode ? '#e5e5e5' : '#333333' }} 
+                              />
                               <Bar dataKey="value" name="Count">
                                 {responseByGender.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  <Cell 
+                                    key={`cell-${index}`} 
+                                    fill={darkMode ? DARK_COLORS[index % DARK_COLORS.length] : LIGHT_COLORS[index % LIGHT_COLORS.length]} 
+                                  />
                                 ))}
                               </Bar>
                             </BarChart>
@@ -545,31 +597,38 @@ const DemographicsTab = () => {
                         </div>
                         
                         {/* Gender Table */}
-                        <div className="bg-gray-50 p-4 rounded-lg">
+                        <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg`}>
                           <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                              <thead className="bg-gray-50">
+                            <table className={`min-w-full divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                              <thead className={darkMode ? 'bg-gray-800' : 'bg-gray-50'}>
                                 <tr>
-                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
-                                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
-                                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                                  <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Gender</th>
+                                  <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Count</th>
+                                  <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Percentage</th>
                                 </tr>
                               </thead>
-                              <tbody className="bg-white divide-y divide-gray-200">
+                              <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
                                 {responseByGender.map((item, index) => {
                                   const total = responseByGender.reduce((sum, i) => sum + i.value, 0);
                                   const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
                                   
                                   return (
                                     <tr key={index}>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                         <div className="flex items-center">
-                                          <div className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                          <div 
+                                            className="h-3 w-3 rounded-full mr-2" 
+                                            style={{ 
+                                              backgroundColor: darkMode 
+                                                ? DARK_COLORS[index % DARK_COLORS.length] 
+                                                : LIGHT_COLORS[index % LIGHT_COLORS.length] 
+                                            }}
+                                          ></div>
                                           {item.name}
                                         </div>
                                       </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{item.value}</td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{percentage}%</td>
+                                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{item.value}</td>
+                                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{percentage}%</td>
                                     </tr>
                                   );
                                 })}
@@ -583,24 +642,39 @@ const DemographicsTab = () => {
                   
                   {/* Age Breakdown */}
                   <div className="mt-6">
-                    <h5 className="text-md font-medium mb-3">Age Breakdown</h5>
+                    <h5 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : ''}`}>Age Breakdown</h5>
                     {responseByAge.length > 0 ? (
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Age Bar Chart */}
+                        {/* Age Bar Chart - Direct implementation with dark mode */}
                         <div className="h-80">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart
                               data={responseByAge}
                               margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
                             >
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="name" />
-                              <YAxis />
+                              <CartesianGrid 
+                                strokeDasharray="3 3" 
+                                stroke={darkMode ? '#444444' : '#e5e5e5'} 
+                              />
+                              <XAxis 
+                                dataKey="name" 
+                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
+                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                              />
+                              <YAxis 
+                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
+                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                              />
                               <Tooltip content={<CustomTooltip />} />
-                              <Legend />
+                              <Legend 
+                                wrapperStyle={{ color: darkMode ? '#e5e5e5' : '#333333' }} 
+                              />
                               <Bar dataKey="value" name="Count">
                                 {responseByAge.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={COLORS[(index + 4) % COLORS.length]} />
+                                  <Cell 
+                                    key={`cell-${index}`} 
+                                    fill={darkMode ? DARK_COLORS[(index + 4) % DARK_COLORS.length] : LIGHT_COLORS[(index + 4) % LIGHT_COLORS.length]} 
+                                  />
                                 ))}
                               </Bar>
                             </BarChart>
@@ -608,31 +682,38 @@ const DemographicsTab = () => {
                         </div>
                         
                         {/* Age Table */}
-                        <div className="bg-gray-50 p-4 rounded-lg">
+                        <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg`}>
                           <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                              <thead className="bg-gray-50">
+                            <table className={`min-w-full divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                              <thead className={darkMode ? 'bg-gray-800' : 'bg-gray-50'}>
                                 <tr>
-                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Age Group</th>
-                                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
-                                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                                  <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Age Group</th>
+                                  <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Count</th>
+                                  <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Percentage</th>
                                 </tr>
                               </thead>
-                              <tbody className="bg-white divide-y divide-gray-200">
+                              <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
                                 {responseByAge.map((item, index) => {
                                   const total = responseByAge.reduce((sum, i) => sum + i.value, 0);
                                   const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
                                   
                                   return (
                                     <tr key={index}>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                         <div className="flex items-center">
-                                          <div className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: COLORS[(index + 4) % COLORS.length] }}></div>
+                                          <div 
+                                            className="h-3 w-3 rounded-full mr-2" 
+                                            style={{ 
+                                              backgroundColor: darkMode 
+                                                ? DARK_COLORS[(index + 4) % DARK_COLORS.length] 
+                                                : LIGHT_COLORS[(index + 4) % LIGHT_COLORS.length] 
+                                            }}
+                                          ></div>
                                           {item.name}
                                         </div>
                                       </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{item.value}</td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{percentage}%</td>
+                                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{item.value}</td>
+                                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{percentage}%</td>
                                     </tr>
                                   );
                                 })}
@@ -642,8 +723,8 @@ const DemographicsTab = () => {
                         </div>
                       </div>
                     ) : (
-                      <div className="bg-gray-50 p-4 rounded-lg flex items-center justify-center h-20">
-                        <p className="text-gray-500">
+                      <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg flex items-center justify-center h-20`}>
+                        <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
                           {selectedResponses.length > 0 
                             ? isProcessingDemographics ? "Loading age data..." : "No age data available"
                             : "Select a response to view age breakdown"}
@@ -655,8 +736,8 @@ const DemographicsTab = () => {
               )}
             </div>
           ) : (
-            <div className="flex items-center justify-center h-60 bg-gray-50 rounded">
-              <p className="text-gray-500">No response data available for this question</p>
+            <div className={`flex items-center justify-center h-60 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded`}>
+              <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No response data available for this question</p>
             </div>
           )}
         </div>
@@ -664,16 +745,16 @@ const DemographicsTab = () => {
       
       {/* Explanation text at the bottom */}
       {selectedResponses.length > 0 && (
-        <div className="bg-blue-50 p-4 rounded-lg shadow mt-4 border border-blue-200">
+        <div className={`${darkMode ? 'bg-blue-900 border-blue-800' : 'bg-blue-50 border-blue-200'} p-4 rounded-lg shadow mt-4 border`}>
           <div className="flex items-start">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className={`h-5 w-5 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-blue-800">How to interpret this data</h3>
-              <div className="mt-2 text-sm text-blue-700">
+              <h3 className={`text-sm font-medium ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>How to interpret this data</h3>
+              <div className={`mt-2 text-sm ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
                 <p>
                   The demographic breakdowns show the distribution of genders and age groups among respondents who
                   selected the highlighted response(s).

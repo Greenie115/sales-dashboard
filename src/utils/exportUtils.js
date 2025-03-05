@@ -519,3 +519,4 @@ const exportOfferDataToPDF = (data, fileName) => {
     alert('Failed to export offer data to PDF.');
   }
 };
+
