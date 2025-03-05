@@ -75,7 +75,7 @@ export const DataProvider = ({ children }) => {
               if (isOfferData) {
                 // Process offer data
                 const validOfferData = results.data.filter(row => 
-                  row && row.hit_id && row.offer_id
+                  row && row.hit_id !== undefined
                 );
                 
                 console.log("Valid offer data rows:", validOfferData.length);
@@ -83,9 +83,25 @@ export const DataProvider = ({ children }) => {
                 if (validOfferData.length === 0) {
                   setError('No valid offer data found. Please ensure your CSV has the correct format.');
                 } else {
-                  setOfferData(validOfferData);
+                  // Process dates for offer data
+                  const processedOfferData = validOfferData.map(row => {
+                    if (row.created_at) {
+                      try {
+                        const date = new Date(row.created_at);
+                        return {
+                          ...row,
+                          created_at: !isNaN(date) ? date.toISOString() : row.created_at
+                        };
+                      } catch (e) {
+                        return row;
+                      }
+                    }
+                    return row;
+                  });
+                  
+                  setOfferData(processedOfferData);
                   setHasOfferData(true);
-                  console.log("Offer data processed successfully");
+                  console.log("Offer data processed successfully", processedOfferData.length);
                   
                   // Set active tab to offers
                   setActiveTab('offers');
@@ -346,9 +362,11 @@ export const DataProvider = ({ children }) => {
     setHasOfferData(false);
     setBrandMapping({});
     setBrandNames([]);
+    setClientName('');
     setSelectedProducts(['all']);
     setSelectedRetailers(['all']);
     setDateRange('all');
+    setActiveTab('summary');
   }, []);
 
   // Get retailer distribution data

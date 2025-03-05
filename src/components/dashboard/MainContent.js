@@ -11,19 +11,19 @@ import FilterPanel from '../filters/FilterPanel';
  * Main content area with tabs and data display
  */
 const MainContent = () => {
-  // State for active tab
-  const [activeTab, setActiveTab] = useState('summary');
-  
   // Get data from context
   const {
     salesData,
     offerData,
+    hasOfferData,
     brandNames,
     clientName,
     hasData,
     loading,
     error,
-    calculateMetrics
+    calculateMetrics,
+    activeTab,
+    setActiveTab
   } = useData();
 
   // Handle tab change
@@ -35,6 +35,9 @@ const MainContent = () => {
   if (!hasData) {
     return <EmptyState />;
   }
+
+  // Explicitly check if offers tab should be available
+  const isOffersTabAvailable = hasOfferData || (offerData && offerData.length > 0);
 
   // Calculate metrics for display
   const metrics = calculateMetrics();
@@ -78,17 +81,18 @@ const MainContent = () => {
             >
               Demographics
             </button>
-            <button
-              onClick={() => handleTabChange('offers')}
-              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
-                activeTab === 'offers'
-                  ? 'border-pink-500 text-pink-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              disabled={!offerData.length}
-            >
-              Offers
-            </button>
+            {isOffersTabAvailable && (
+              <button
+                onClick={() => handleTabChange('offers')}
+                className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
+                  activeTab === 'offers'
+                    ? 'border-pink-500 text-pink-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Offers
+              </button>
+            )}
           </nav>
         </div>
 
@@ -157,7 +161,7 @@ const MainContent = () => {
           {activeTab === 'summary' && <SummaryTab />}
           {activeTab === 'sales' && <SalesTab />}
           {activeTab === 'demographics' && <DemographicsTab />}
-          {activeTab === 'offers' && <OffersTab />}
+          {activeTab === 'offers' && isOffersTabAvailable && <OffersTab />}
         </div>
       </div>
     </div>
