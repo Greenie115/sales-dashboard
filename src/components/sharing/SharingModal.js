@@ -9,7 +9,17 @@ import SupabaseDebugger from '../debug/SupabaseDebugger';
 
 const SharingModal = () => {
   const { darkMode } = useTheme();
-  const { activeTab } = useData();
+  const { 
+    activeTab, 
+    selectedProducts, 
+    selectedRetailers,
+    dateRange,
+    startDate,
+    endDate,
+    selectedMonth,
+    brandMapping
+  } = useData();
+  
   const { 
     isShareModalOpen, 
     toggleShareModal, 
@@ -17,9 +27,10 @@ const SharingModal = () => {
     updateShareConfig,
     generateShareableLink,
     shareableLink,
-    setShareableLink, // Added this line to fix the ESLint errors
+    setShareableLink,
     isPreviewMode,
-    togglePreviewMode
+    togglePreviewMode,
+    handleSaveCurrentFilters
   } = useSharing();
   
   const { filters } = useFilter();
@@ -52,7 +63,7 @@ const SharingModal = () => {
   // Handle tab selection
   const handleTabToggle = (tab) => {
     if (shareConfig.allowedTabs.includes(tab)) {
-      // Don't allow deselecting all tabs
+      // Allow deselecting tabs as long as there's at least one tab selected
       if (shareConfig.allowedTabs.length > 1) {
         updateShareConfig({
           allowedTabs: shareConfig.allowedTabs.filter(t => t !== tab)
@@ -65,11 +76,22 @@ const SharingModal = () => {
     }
   };
   
-  // Handle saving current filters for sharing
-  const handleSaveCurrentFilters = () => {
-    updateShareConfig({
-      filters: { ...filters }
-    });
+  // Helper function to get display name without brand prefix
+  const getProductDisplayName = (product) => {
+    // Use the brand mapping if available
+    if (brandMapping && brandMapping[product]) {
+      return brandMapping[product].displayName || product;
+    }
+    
+    // Fallback: Remove the brand prefix (first word or two)
+    const words = product.split(' ');
+    if (words.length >= 3) {
+      // Remove first word or two words for longer product names
+      const wordsToRemove = words.length >= 5 ? 2 : 1;
+      return words.slice(wordsToRemove).join(' ');
+    }
+    
+    return product;
   };
   
   // Create a fallback link using Base64 encoding (like the original implementation)
@@ -292,7 +314,7 @@ const SharingModal = () => {
                         <div className="text-sm">
                           <span className="font-medium">Products:</span> {shareConfig.filters?.selectedProducts?.includes('all') 
                             ? 'All Products' 
-                            : (shareConfig.filters?.selectedProducts?.join(', ') || 'All Products')}
+                            : (shareConfig.filters?.selectedProducts?.map(p => getProductDisplayName(p)).join(', ') || 'All Products')}
                         </div>
                         <div className="text-sm">
                           <span className="font-medium">Retailers:</span> {shareConfig.filters?.selectedRetailers?.includes('all') 
@@ -313,7 +335,140 @@ const SharingModal = () => {
                     </p>
                   </div>
                   
-                  {/* Other configuration sections... (kept for brevity) */}
+                  {/* Display Options */}
+                  <div>
+                    <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Display Options</h3>
+                    <div className="flex flex-col space-y-2">
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.hideRetailers}
+                          onChange={(e) => updateShareConfig({ hideRetailers: e.target.checked })}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Hide retailer names (anonymize)</span>
+                      </label>
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.hideTotals}
+                          onChange={(e) => updateShareConfig({ hideTotals: e.target.checked })}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Hide total values</span>
+                      </label>
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.showOnlyPercent}
+                          onChange={(e) => updateShareConfig({ showOnlyPercent: e.target.checked })}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Show only percentages (hide count values)</span>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  {/* Client Note */}
+                  <div>
+                    <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Client Note</h3>
+                    <textarea
+                      placeholder="Add a message to display to the client (optional)"
+                      value={shareConfig.clientNote}
+                      onChange={(e) => updateShareConfig({ clientNote: e.target.value })}
+                      className={`w-full px-3 py-2 border ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                          : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                      } rounded-md text-sm focus:outline-none`}
+                      rows={3}
+                    />
+                  </div>
+                  
+                  {/* Expiry Date */}
+                  <div>
+                    <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Expiry Date</h3>
+                    <input
+                      type="date"
+                      value={shareConfig.expiryDate || ''}
+                      onChange={(e) => updateShareConfig({ expiryDate: e.target.value || null })}
+                      min={new Date().toISOString().split('T')[0]}
+                      className={`w-full px-3 py-2 border ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                          : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                      } rounded-md text-sm focus:outline-none`}
+                    />
+                    <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Leave blank for links that don't expire.
+                    </p>
+                  </div>
+                  
+                  {/* Branding */}
+                  <div>
+                    <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Branding</h3>
+                    <div className="space-y-3">
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.branding.showLogo}
+                          onChange={(e) => updateShareConfig({ 
+                            branding: { ...shareConfig.branding, showLogo: e.target.checked }
+                          })}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Show your logo</span>
+                      </label>
+                      
+                      <div>
+                        <label className={`block text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>
+                          Company Name
+                        </label>
+                        <input
+                          type="text"
+                          value={shareConfig.branding.companyName}
+                          onChange={(e) => updateShareConfig({ 
+                            branding: { ...shareConfig.branding, companyName: e.target.value }
+                          })}
+                          placeholder="Your Company"
+                          className={`w-full px-3 py-2 border ${
+                            darkMode 
+                              ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                              : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                          } rounded-md text-sm focus:outline-none`}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className={`block text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>
+                          Brand Color
+                        </label>
+                        <div className="flex items-center">
+                          <input
+                            type="color"
+                            value={shareConfig.branding.primaryColor}
+                            onChange={(e) => updateShareConfig({ 
+                              branding: { ...shareConfig.branding, primaryColor: e.target.value }
+                            })}
+                            className="h-8 w-8 mr-3 rounded-md cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={shareConfig.branding.primaryColor}
+                            onChange={(e) => updateShareConfig({ 
+                              branding: { ...shareConfig.branding, primaryColor: e.target.value }
+                            })}
+                            placeholder="#FF0066"
+                            className={`w-24 px-3 py-2 border ${
+                              darkMode 
+                                ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                                : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                            } rounded-md text-sm focus:outline-none`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

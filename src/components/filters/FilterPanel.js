@@ -27,7 +27,8 @@ const FilterPanel = ({ activeTab }) => {
     setEndDate,
     setSelectedMonth,
     comparisonMode = false,
-    setComparisonMode
+    setComparisonMode,
+    brandMapping = {} // Import the brandMapping
   } = useData();
   
   // Local state for UI
@@ -41,6 +42,24 @@ const FilterPanel = ({ activeTab }) => {
     } else {
       setExpandedSection(section);
     }
+  };
+  
+  // Helper function to get display name without brand prefix
+  const getProductDisplayName = (product) => {
+    // Use the brand mapping if available
+    if (brandMapping && brandMapping[product]) {
+      return brandMapping[product].displayName || product;
+    }
+    
+    // Fallback: Remove the brand prefix (first word or two)
+    const words = product.split(' ');
+    if (words.length >= 3) {
+      // Remove first word or two words for longer product names
+      const wordsToRemove = words.length >= 5 ? 2 : 1;
+      return words.slice(wordsToRemove).join(' ');
+    }
+    
+    return product;
   };
   
   // Handle product selection
@@ -223,7 +242,7 @@ const FilterPanel = ({ activeTab }) => {
                           : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                       }`}
                     >
-                      <span>{product.length > 20 ? `${product.substring(0, 20)}...` : product}</span>
+                      <span>{getProductDisplayName(product).length > 20 ? `${getProductDisplayName(product).substring(0, 20)}...` : getProductDisplayName(product)}</span>
                       {selectedProducts.includes(product) && !selectedProducts.includes('all') ? (
                         <svg className="ml-1 h-3 w-3 text-pink-600 dark:text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -441,24 +460,10 @@ const FilterPanel = ({ activeTab }) => {
             <div className="flex flex-wrap gap-2">
               {!selectedProducts.includes('all') && selectedProducts.map(product => (
                 <div key={product} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300">
-                  <span>Product: {product.length > 15 ? `${product.substring(0, 15)}...` : product}</span>
+                  <span>Product: {getProductDisplayName(product).length > 15 ? `${getProductDisplayName(product).substring(0, 15)}...` : getProductDisplayName(product)}</span>
                   <button 
                     onClick={() => handleProductSelection(product)}
                     className="ml-1 text-pink-600 dark:text-pink-400 hover:text-pink-800 dark:hover:text-pink-200"
-                  >
-                    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-              
-              {!selectedRetailers.includes('all') && selectedRetailers.map(retailer => (
-                <div key={retailer} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
-                  <span>Retailer: {retailer}</span>
-                  <button 
-                    onClick={() => handleRetailerSelection(retailer)}
-                    className="ml-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"
                   >
                     <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />

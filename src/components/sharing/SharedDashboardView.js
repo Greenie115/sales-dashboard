@@ -10,7 +10,7 @@ import OffersTab from '../dashboard/tabs/OffersTab';
 import ErrorBoundary from '../ErrorBoundary';
 import sharingService from '../../services/sharingService';
 
-// Same context from SharedDashboardPreview for consistency
+// Create a context to provide data to the tabs
 const ClientDataContext = React.createContext();
 export const useClientData = () => React.useContext(ClientDataContext);
 
@@ -29,13 +29,21 @@ const SharedDashboardView = () => {
   const { darkMode } = useTheme();
   const { transformDataForSharing } = useSharing();
   const { 
+    salesData,
+    setSalesData,
     getFilteredData, 
     calculateMetrics, 
     getRetailerDistribution,
     getProductDistribution,
     brandNames, 
     clientName,
-    brandMapping
+    brandMapping,
+    setSelectedProducts,
+    setSelectedRetailers,
+    setDateRange,
+    setStartDate,
+    setEndDate,
+    setSelectedMonth
   } = useData();
   
   const [error, setError] = useState(null);
@@ -129,6 +137,25 @@ const SharedDashboardView = () => {
           setActiveTab(config.allowedTabs[0]);
         }
         
+        // Apply filters from the shared config
+        if (config.filters) {
+          if (config.filters.selectedProducts) setSelectedProducts(config.filters.selectedProducts);
+          if (config.filters.selectedRetailers) setSelectedRetailers(config.filters.selectedRetailers);
+          if (config.filters.dateRange) setDateRange(config.filters.dateRange);
+          if (config.filters.startDate) setStartDate(config.filters.startDate);
+          if (config.filters.endDate) setEndDate(config.filters.endDate);
+          if (config.filters.selectedMonth) setSelectedMonth(config.filters.selectedMonth);
+        }
+        
+        // If the config has precomputed data and we don't have data loaded
+        if (config.precomputedData && (!salesData || salesData.length === 0)) {
+          console.log("Using precomputed data from share config");
+          // Set the precomputed data to be used
+          if (config.precomputedData.salesData) {
+            setSalesData(config.precomputedData.salesData);
+          }
+        }
+        
         setLoading(false);
       } catch (err) {
         console.error("Error loading shared dashboard:", err);
@@ -138,7 +165,7 @@ const SharedDashboardView = () => {
     };
     
     fetchSharedDashboard();
-  }, [shareId]);
+  }, [shareId, setSalesData, setSelectedProducts, setSelectedRetailers, setDateRange, setStartDate, setEndDate, setSelectedMonth, salesData]);
   
   // If still loading
   if (loading) {
@@ -201,17 +228,32 @@ const SharedDashboardView = () => {
     );
   }
   
-  // Prepare the data from share configuration
+  // Get filtered data based on the filters from the share config
+  const filteredData = getFilteredData ? getFilteredData(shareConfig?.filters) : [];
+  
+  // Calculate metrics and prepare data
+  const metrics = calculateMetrics ? calculateMetrics() : null;
+  const retailerData = getRetailerDistribution ? getRetailerDistribution() : [];
+  const productDistribution = getProductDistribution ? getProductDistribution() : [];
+  
+  // Prepare the data object for the tabs
   const clientData = {
-    filteredData: getFilteredData ? getFilteredData(shareConfig?.filters) : [],
-    metrics: calculateMetrics ? calculateMetrics() : null,
-    retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
-    productDistribution: getProductDistribution ? getProductDistribution() : [],
+    filteredData,
+    metrics,
+    retailerData,
+    productDistribution,
     brandMapping: brandMapping || {},
     brandNames: (shareConfig?.hideRetailers ? ['Anonymous Brand'] : brandNames) || [],
     clientName: clientName || 'Client',
-    filters: shareConfig?.filters || {}
+    filters: shareConfig?.filters || {},
+    // Add flag to indicate this is a shared view
+    isSharedView: true
   };
+  
+  // Add precomputed data if available
+  if (shareConfig.precomputedData) {
+    Object.assign(clientData, shareConfig.precomputedData);
+  }
   
   // Transform data based on sharing config
   const transformedData = transformDataForSharing ? 
@@ -219,7 +261,7 @@ const SharedDashboardView = () => {
     clientData;
   
   // Check if there's data to display
-  const hasData = transformedData?.filteredData?.length > 0;
+  const hasData = transformedData?.filteredData?.length > 0 || (transformedData?.salesData?.length > 0);
   
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>

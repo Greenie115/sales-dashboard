@@ -9,7 +9,22 @@ const SharingContext = createContext();
 export const useSharing = () => useContext(SharingContext);
 
 export const SharingProvider = ({ children }) => {
-  const { salesData, activeTab, brandNames, clientName } = useData();
+  const { 
+    salesData, 
+    activeTab, 
+    brandNames, 
+    clientName,
+    getFilteredData,
+    calculateMetrics,
+    getRetailerDistribution,
+    getProductDistribution,
+    selectedProducts,
+    selectedRetailers,
+    dateRange,
+    startDate,
+    endDate,
+    selectedMonth
+  } = useData();
   
   // State for sharing configuration
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -34,7 +49,9 @@ export const SharingProvider = ({ children }) => {
       startDate: '',
       endDate: '',
       selectedMonth: '',
-    }
+    },
+    // Add precomputed data field
+    precomputedData: null
   });
 
   // Shareable link state
@@ -63,6 +80,24 @@ export const SharingProvider = ({ children }) => {
     
     loadSharedDashboards();
   }, []);
+
+  // Update filters in shareConfig when they change in DataContext
+  useEffect(() => {
+    // Only update if the modal is open to avoid unnecessary updates
+    if (isShareModalOpen) {
+      setShareConfig(prev => ({
+        ...prev,
+        filters: {
+          selectedProducts,
+          selectedRetailers,
+          dateRange,
+          startDate,
+          endDate,
+          selectedMonth,
+        }
+      }));
+    }
+  }, [isShareModalOpen, selectedProducts, selectedRetailers, dateRange, startDate, endDate, selectedMonth]);
   
   // Generate a shareable link using Supabase
   const generateShareableLink = useCallback(async () => {
@@ -86,6 +121,15 @@ export const SharingProvider = ({ children }) => {
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
       
+      // Add precomputed data for the client view
+      configToShare.precomputedData = {
+        filteredData: getFilteredData ? getFilteredData(configToShare.filters) : [],
+        metrics: calculateMetrics ? calculateMetrics() : null,
+        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
+        productDistribution: getProductDistribution ? getProductDistribution() : [],
+        salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
+      };
+      
       // Create the shared dashboard in Supabase
       const { url } = await sharingService.createSharedDashboard(
         configToShare, 
@@ -105,7 +149,17 @@ export const SharingProvider = ({ children }) => {
       setShareError('Failed to generate share link');
       return "";
     }
-  }, [shareConfig, activeTab, brandNames, clientName, salesData]);
+  }, [
+    shareConfig, 
+    activeTab, 
+    brandNames, 
+    clientName, 
+    salesData, 
+    getFilteredData, 
+    calculateMetrics, 
+    getRetailerDistribution, 
+    getProductDistribution
+  ]);
   
   // Delete a shared dashboard
   const deleteSharedDashboard = useCallback(async (shareId) => {
@@ -143,8 +197,66 @@ export const SharingProvider = ({ children }) => {
   
   // Toggle preview mode
   const togglePreviewMode = useCallback(() => {
+    // Prepare precomputed data when entering preview mode
+    if (!isPreviewMode) {
+      const precomputedData = {
+        filteredData: getFilteredData ? getFilteredData(shareConfig.filters) : [],
+        metrics: calculateMetrics ? calculateMetrics() : null,
+        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
+        productDistribution: getProductDistribution ? getProductDistribution() : [],
+        salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
+      };
+      
+      // Update the share config with precomputed data
+      setShareConfig(prev => ({
+        ...prev,
+        precomputedData
+      }));
+    }
+    
     setIsPreviewMode(prev => !prev);
-  }, []);
+  }, [
+    isPreviewMode, 
+    shareConfig.filters, 
+    getFilteredData, 
+    calculateMetrics, 
+    getRetailerDistribution, 
+    getProductDistribution, 
+    salesData
+  ]);
+  
+  // Handle saving current filters
+  const handleSaveCurrentFilters = useCallback(() => {
+    // Log values to verify they're available
+    console.log("Applying current filters to share config:", {
+      selectedProducts,
+      selectedRetailers,
+      dateRange,
+      startDate,
+      endDate,
+      selectedMonth
+    });
+  
+    // Update share config with current filter values
+    updateShareConfig({
+      filters: {
+        selectedProducts: [...selectedProducts],
+        selectedRetailers: [...selectedRetailers],
+        dateRange,
+        startDate,
+        endDate,
+        selectedMonth
+      }
+    });
+  }, [
+    updateShareConfig,
+    selectedProducts, 
+    selectedRetailers, 
+    dateRange, 
+    startDate, 
+    endDate, 
+    selectedMonth
+  ]);
   
   // Transform data for sharing (removes sensitive data based on config)
   const transformDataForSharing = useCallback((data) => {
@@ -223,13 +335,15 @@ export const SharingProvider = ({ children }) => {
       updateShareConfig,
       generateShareableLink,
       shareableLink,
+      setShareableLink,
       isPreviewMode,
       togglePreviewMode,
       transformDataForSharing,
       sharedDashboards,
       loadingSharedDashboards,
       deleteSharedDashboard,
-      shareError
+      shareError,
+      handleSaveCurrentFilters
     }}>
       {children}
     </SharingContext.Provider>
