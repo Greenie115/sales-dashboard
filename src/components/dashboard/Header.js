@@ -2,6 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { useData } from '../../context/DataContext';
 import ThemeToggle from '../ThemeToggle';
+import ShareButton from '../sharing/ShareButton';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -12,6 +13,7 @@ const Header = () => {
     handleFileUpload,
     salesData,
     offerData,
+    hasData,
     loading,
     error
   } = useData();
@@ -60,6 +62,13 @@ const Header = () => {
               <span className="mr-4 text-sm text-gray-500 dark:text-gray-400 font-medium hidden md:block">
                 No data loaded
               </span>
+            )}
+            
+            {/* Share button - only show when data is loaded */}
+            {hasData && (
+              <div className="mr-2">
+                <ShareButton />
+              </div>
             )}
             
             {/* Upload button */}
