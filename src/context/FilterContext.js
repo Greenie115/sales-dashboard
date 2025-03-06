@@ -32,7 +32,8 @@ export const FilterProvider = ({ children }) => {
   
   // Initialize date range when data changes
   useEffect(() => {
-    if (data.length > 0) {
+    // Check if data exists and is an array
+    if (data && Array.isArray(data) && data.length > 0) {
       const dates = data.map(row => row.receipt_date);
       const minDate = _.min(dates);
       const maxDate = _.max(dates);
@@ -101,34 +102,44 @@ export const FilterProvider = ({ children }) => {
   
   // Get available months from data
   const getAvailableMonths = () => {
+    if (!data || !Array.isArray(data)) return [];
     return _.uniq(data.map(item => item.month)).sort();
   };
   
   // Get filtered data based on all selections
-  const getFilteredData = (isComparison = false) => {
+  const getFilteredData = (customFilters) => {
+    if (!data || !Array.isArray(data)) return [];
+    
+    // Use provided filters or default to current state
+    const filters = customFilters || {
+      selectedProducts,
+      selectedRetailers,
+      dateRange,
+      startDate,
+      endDate,
+      selectedMonth
+    };
+    
     return data.filter(item => {
       // Product filter
-      const productMatch = selectedProducts.includes('all') || selectedProducts.includes(item.product_name);
+      const productMatch = 
+        !filters.selectedProducts || 
+        filters.selectedProducts.includes('all') || 
+        filters.selectedProducts.includes(item.product_name);
       
       // Retailer filter
-      const retailerMatch = selectedRetailers.includes('all') || selectedRetailers.includes(item.chain);
+      const retailerMatch = 
+        !filters.selectedRetailers ||
+        filters.selectedRetailers.includes('all') || 
+        filters.selectedRetailers.includes(item.chain);
       
       // Date filter
       let dateMatch = true;
-      if (!isComparison) {
-        // Primary date range
-        if (dateRange === 'month') {
-          dateMatch = item.month === selectedMonth;
-        } else if (dateRange === 'custom') {
-          dateMatch = item.receipt_date >= startDate && item.receipt_date <= endDate;
-        }
-      } else {
-        // Comparison date range
-        if (comparisonDateRange === 'month') {
-          dateMatch = item.month === comparisonMonth;
-        } else if (comparisonDateRange === 'custom') {
-          dateMatch = item.receipt_date >= comparisonStartDate && item.receipt_date <= comparisonEndDate;
-        }
+      
+      if (filters.dateRange === 'month' && filters.selectedMonth) {
+        dateMatch = item.month === filters.selectedMonth;
+      } else if (filters.dateRange === 'custom' && filters.startDate && filters.endDate) {
+        dateMatch = item.receipt_date >= filters.startDate && item.receipt_date <= filters.endDate;
       }
       
       return productMatch && retailerMatch && dateMatch;
@@ -138,29 +149,36 @@ export const FilterProvider = ({ children }) => {
   // Formatting helper for month display
   const formatMonth = (monthStr) => {
     try {
+      if (!monthStr) return '';
       const [year, month] = monthStr.split('-');
       const date = new Date(parseInt(year), parseInt(month) - 1);
       return date.toLocaleString('default', { month: 'long', year: 'numeric' });
     } catch (e) {
-      return monthStr;
+      return monthStr || '';
     }
+  };
+  
+  // Create the filter state object to expose to consumers
+  const filters = {
+    selectedProducts,
+    selectedRetailers,
+    dateRange,
+    startDate,
+    endDate,
+    selectedMonth,
+    comparisonMode,
+    comparisonDateRange,
+    comparisonStartDate,
+    comparisonEndDate,
+    comparisonMonth
   };
   
   return (
     <FilterContext.Provider value={{
       // State
-      selectedProducts,
-      selectedRetailers,
-      dateRange,
-      startDate,
-      endDate,
-      selectedMonth,
-      comparisonMode,
-      comparisonDateRange,
-      comparisonStartDate,
-      comparisonEndDate,
-      comparisonMonth,
+      ...filters,
       isFilterPanelCollapsed,
+      filters,
       
       // Setters
       setSelectedProducts,

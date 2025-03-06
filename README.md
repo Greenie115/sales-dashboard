@@ -1,6 +1,18 @@
-# Getting Started with Create React App
+# Sales Dashboard
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A comprehensive sales data visualization dashboard with client sharing capabilities.
+
+## Getting Started
+
+### Installation
+
+Make sure you have Node.js installed, then run:
+
+```bash
+npm install
+```
+
+This will install all dependencies, including React Router DOM which is required for the sharing feature.
 
 ## Available Scripts
 

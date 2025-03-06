@@ -4,8 +4,19 @@ import { useSharing } from '../../context/SharingContext';
 import { useData } from '../../context/DataContext';
 import SummaryTab from '../dashboard/tabs/SummaryTab';
 import SalesTab from '../dashboard/tabs/SalesTab';
-import DemographicsTab from '.DemographicsTab';
+import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
+
+const ClientDataContext = React.createContext();
+export const useClientData = () => React.useContext(ClientDataContext);
+
+const TabContentWrapper = ({ children, transformedData }) => {
+  return (
+    <ClientDataContext.Provider value={transformedData}>
+      {children}
+    </ClientDataContext.Provider>
+  );
+};
 
 const SharedDashboardPreview = ({ onClose }) => {
   const { darkMode } = useTheme();
@@ -21,7 +32,8 @@ const SharedDashboardPreview = ({ onClose }) => {
     getProductDistribution,
     brandNames, 
     clientName,
-    brandMapping
+    brandMapping,
+    filters
   } = useData();
   
   // State for currently active tab in the preview
@@ -41,7 +53,8 @@ const SharedDashboardPreview = ({ onClose }) => {
     productDistribution,
     brandMapping,
     brandNames: shareConfig.hideRetailers ? ['Anonymous Brand'] : brandNames,
-    clientName: clientName
+    clientName,
+    filters: shareConfig.filters || filters, // Use sharing filters or current filters
   };
   
   // Transform the data based on sharing config
@@ -72,7 +85,7 @@ const SharedDashboardPreview = ({ onClose }) => {
             )}
             <div>
               <h1 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                Dashboard Preview
+                {clientName || 'Client'} Dashboard
               </h1>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                 Shared by {shareConfig.branding.companyName}
@@ -153,7 +166,7 @@ const SharedDashboardPreview = ({ onClose }) => {
           )}
           
           {/* Main content */}
-          <div className={`bg-white dark:bg-gray-800 shadow rounded-lg ${!hasData ? 'p-6' : ''}`}>
+          <div className={`bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden ${!hasData ? 'p-6' : ''}`}>
             {!hasData ? (
               <div className="text-center py-12">
                 <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -165,13 +178,13 @@ const SharedDashboardPreview = ({ onClose }) => {
                 </p>
               </div>
             ) : (
-              <>
+              <TabContentWrapper transformedData={transformedData}>
                 {/* Render the appropriate tab content */}
-                {activeTab === 'summary' && <SummaryTab />}
-                {activeTab === 'sales' && <SalesTab />}
-                {activeTab === 'demographics' && <DemographicsTab />}
-                {activeTab === 'offers' && <OffersTab />}
-              </>
+                {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
+                {activeTab === 'sales' && <SalesTab isSharedView={true} />}
+                {activeTab === 'demographics' && <DemographicsTab isSharedView={true} />}
+                {activeTab === 'offers' && <OffersTab isSharedView={true} />}
+              </TabContentWrapper>
             )}
           </div>
         </div>
