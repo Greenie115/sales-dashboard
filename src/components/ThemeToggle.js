@@ -1,4 +1,3 @@
-// src/components/ThemeToggle.js
 import React from 'react';
 import { useTheme } from '../context/ThemeContext';
 
@@ -16,12 +15,12 @@ const ThemeToggle = () => {
       <span
         className={`${
           darkMode ? 'bg-pink-600' : 'bg-gray-200'
-        } relative inline-block h-6 w-11 rounded-full transition-colors duration-200 ease-in-out`}
+        } relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 ease-in-out`}
       >
         <span
           className={`${
             darkMode ? 'translate-x-6 bg-gray-800' : 'translate-x-1 bg-white'
-          } inline-block h-4 w-4 rounded-full transform transition duration-200 ease-in-out mt-1`}
+          } inline-flex items-center justify-center h-4 w-4 rounded-full transform transition duration-200 ease-in-out`}
         >
           {darkMode ? (
             <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">

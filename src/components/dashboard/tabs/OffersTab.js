@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../../context/DataContext';
+import { useTheme } from '../../../context/ThemeContext'; // Added ThemeContext import
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, PieChart,
@@ -7,10 +8,16 @@ import {
 } from 'recharts';
 import _ from 'lodash';
 
-const COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
+// Custom colors for light and dark mode
+const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
+const DARK_COLORS = ['#FF4D94', '#4D94FF', '#FFD54F', '#4DD0E1', '#CE93D8', '#81C784', '#FFB74D'];
+
 const DEFAULT_PAGE_SIZE = 10;
 
 const OffersTab = () => {
+  // Get dark mode from ThemeContext
+  const { darkMode } = useTheme();
+
   const { 
     offerData,
     hasOfferData
@@ -306,6 +313,7 @@ const OffersTab = () => {
       return filteredOfferData;
     }
   }, [filteredOfferData, excludeFirstDays, excludeLastDays, excludeDaysCount, excludeLastDaysCount, customExcludedDates]);
+  
   // Gender distribution
   const genderData = useMemo(() => {
     const adjustedData = exclusionAdjustedData;
@@ -547,7 +555,7 @@ const OffersTab = () => {
     return (
       <div className="flex items-center justify-between mt-4">
         <div>
-          <span className="text-sm text-gray-700">
+          <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-700'}`}>
             Showing <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span> to{' '}
             <span className="font-medium">{Math.min(currentPage * pageSize, totalItems)}</span> of{' '}
             <span className="font-medium">{totalItems}</span> results
@@ -557,14 +565,22 @@ const OffersTab = () => {
           <button
             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             disabled={currentPage === 1}
-            className={`px-3 py-1 rounded-md ${currentPage === 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
+            className={`px-3 py-1 rounded-md ${
+              currentPage === 1 
+                ? `${darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'} cursor-not-allowed` 
+                : `${darkMode ? 'bg-pink-900 text-pink-300 hover:bg-pink-800' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`
+            }`}
           >
             Previous
           </button>
           <button
             onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
             disabled={currentPage === totalPages}
-            className={`px-3 py-1 rounded-md ${currentPage === totalPages ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
+            className={`px-3 py-1 rounded-md ${
+              currentPage === totalPages 
+                ? `${darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'} cursor-not-allowed` 
+                : `${darkMode ? 'bg-pink-900 text-pink-300 hover:bg-pink-800' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`
+            }`}
           >
             Next
           </button>
@@ -590,14 +606,14 @@ const OffersTab = () => {
     setCurrentPage(1);
   }, [insightType]);
 
-  // Custom tooltip
+  // Custom tooltip with dark mode support
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white p-2 shadow-md rounded-md border border-gray-200">
-          <p className="font-medium">{label}</p>
+        <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} p-2 shadow-md rounded-md border`}>
+          <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{label}</p>
           {payload.map((entry, index) => (
-            <p key={index} className="text-sm" style={{ color: entry.color }}>
+            <p key={index} className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`} style={{ color: entry.color }}>
               {entry.name}: {entry.value}
             </p>
           ))}
@@ -610,29 +626,33 @@ const OffersTab = () => {
   // If no data available, show a message
   if (!offerData || offerData.length === 0) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
         <div className="text-center">
-          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className={`mx-auto h-12 w-12 ${darkMode ? 'text-gray-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
           </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No offer data available</h3>
-          <p className="mt-1 text-sm text-gray-500">Upload a file with offer data to see insights.</p>
+          <h3 className={`mt-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>No offer data available</h3>
+          <p className={`mt-1 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Upload a file with offer data to see insights.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-4 bg-white">
+    <div className={`p-4 ${darkMode ? 'bg-gray-800 text-white' : 'bg-white'}`}>
       {/* Title and controls */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4 sm:mb-0">Offer Insights</h2>
+        <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'} mb-4 sm:mb-0`}>Offer Insights</h2>
         <div className="flex flex-wrap items-center gap-3">
           <div>
             <select 
               value={insightType}
               onChange={(e) => setInsightType(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500"
+              className={`px-3 py-2 border ${
+                darkMode 
+                  ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                  : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+              } rounded-md text-sm focus:outline-none`}
             >
               <option value="metrics">Overview</option>
               <option value="offers">Offer Distribution</option>
@@ -642,7 +662,7 @@ const OffersTab = () => {
             </select>
           </div>
           <div className="flex items-center space-x-2">
-            <label className="flex items-center text-sm">
+            <label className={`flex items-center text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
               <input
                 type="checkbox"
                 checked={chartType === 'line'}
@@ -653,7 +673,7 @@ const OffersTab = () => {
             </label>
             {chartType === 'line' && (
               <>
-                <label className="flex items-center text-sm">
+                <label className={`flex items-center text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
                     type="checkbox"
                     checked={showDataPoints}
@@ -662,7 +682,7 @@ const OffersTab = () => {
                   />
                   <span className="ml-2">Show Points</span>
                 </label>
-                <label className="flex items-center text-sm">
+                <label className={`flex items-center text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
                     type="checkbox"
                     checked={smoothLine}
@@ -678,15 +698,15 @@ const OffersTab = () => {
       </div>
 
       {/* Offer selection */}
-      <div className="bg-gray-50 p-4 rounded-lg mb-6">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">Filter by Offer</h3>
+      <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg mb-6`}>
+        <h3 className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Filter by Offer</h3>
         <div className="flex flex-wrap gap-2 mt-2 max-h-40 overflow-y-auto">
           <button
             onClick={() => handleOfferSelection('all')}
             className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
               selectedOffers.includes('all')
-                ? 'bg-pink-100 text-pink-800 border border-pink-200'
-                : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'
+                ? 'bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 border border-pink-200 dark:border-pink-700'
+                : `${darkMode ? 'bg-gray-600 text-gray-300 border border-gray-500 hover:bg-gray-500' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`
             }`}
           >
             <span>All Offers</span>
@@ -698,8 +718,8 @@ const OffersTab = () => {
               onClick={() => handleOfferSelection(offer)}
               className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
                 selectedOffers.includes(offer) && !selectedOffers.includes('all')
-                  ? 'bg-pink-100 text-pink-800 border border-pink-200'
-                  : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'
+                  ? 'bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 border border-pink-200 dark:border-pink-700'
+                  : `${darkMode ? 'bg-gray-600 text-gray-300 border border-gray-500 hover:bg-gray-500' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`
               }`}
             >
               <span>{offer.length > 20 ? offer.substring(0, 20) + '...' : offer}</span>
@@ -709,19 +729,19 @@ const OffersTab = () => {
       </div>
 
       {/* Date controls */}
-      <div className="bg-gray-50 p-4 rounded-lg mb-6">
+      <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg mb-6`}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left column - Date range */}
           <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Date Range</h3>
+            <h3 className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Date Range</h3>
             <div className="flex flex-wrap gap-4">
               <div className="flex space-x-2">
                 <button
                   onClick={() => setDateRange('all')}
                   className={`px-3 py-1 rounded-full text-sm ${
                     dateRange === 'all'
-                      ? 'bg-pink-100 text-pink-800 border border-pink-200'
-                      :'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'
+                      ? 'bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 border border-pink-200 dark:border-pink-700'
+                      : `${darkMode ? 'bg-gray-600 text-gray-300 border border-gray-500 hover:bg-gray-500' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`
                   }`}
                 >
                   All Dates
@@ -730,8 +750,8 @@ const OffersTab = () => {
                   onClick={() => setDateRange('month')}
                   className={`px-3 py-1 rounded-full text-sm ${
                     dateRange === 'month'
-                      ? 'bg-pink-100 text-pink-800 border border-pink-200'
-                      : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'
+                      ? 'bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 border border-pink-200 dark:border-pink-700'
+                      : `${darkMode ? 'bg-gray-600 text-gray-300 border border-gray-500 hover:bg-gray-500' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`
                   }`}
                 >
                   By Month
@@ -740,8 +760,8 @@ const OffersTab = () => {
                   onClick={() => setDateRange('custom')}
                   className={`px-3 py-1 rounded-full text-sm ${
                     dateRange === 'custom'
-                      ? 'bg-pink-100 text-pink-800 border border-pink-200'
-                      : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'
+                      ? 'bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 border border-pink-200 dark:border-pink-700'
+                      : `${darkMode ? 'bg-gray-600 text-gray-300 border border-gray-500 hover:bg-gray-500' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`
                   }`}
                 >
                   Custom
@@ -753,7 +773,11 @@ const OffersTab = () => {
                   <select
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500"
+                    className={`w-full px-3 py-2 border ${
+                      darkMode 
+                        ? 'bg-gray-600 border-gray-500 text-white focus:ring-pink-500 focus:border-pink-500' 
+                        : 'bg-white border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                    } rounded-md text-sm focus:outline-none`}
                   >
                     <option value="">Select Month</option>
                     {processedData.availableMonths.map(month => (
@@ -769,14 +793,22 @@ const OffersTab = () => {
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500"
+                    className={`flex-1 px-3 py-2 border ${
+                      darkMode 
+                        ? 'bg-gray-600 border-gray-500 text-white focus:ring-pink-500 focus:border-pink-500' 
+                        : 'bg-white border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                    } rounded-md text-sm focus:outline-none`}
                   />
-                  <span>to</span>
+                  <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>to</span>
                   <input
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500"
+                    className={`flex-1 px-3 py-2 border ${
+                      darkMode 
+                        ? 'bg-gray-600 border-gray-500 text-white focus:ring-pink-500 focus:border-pink-500' 
+                        : 'bg-white border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                    } rounded-md text-sm focus:outline-none`}
                   />
                 </div>
               )}
@@ -785,7 +817,7 @@ const OffersTab = () => {
 
           {/* Right column - Exclusion settings */}
           <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Date Exclusions</h3>
+            <h3 className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Date Exclusions</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="flex items-center mb-2">
@@ -795,7 +827,7 @@ const OffersTab = () => {
                     onChange={() => setExcludeFirstDays(!excludeFirstDays)}
                     className="h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded"
                   />
-                  <span className="ml-2 text-sm">Exclude first</span>
+                  <span className={`ml-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Exclude first</span>
                   <input 
                     type="number" 
                     min="0"
@@ -803,9 +835,13 @@ const OffersTab = () => {
                     value={excludeDaysCount}
                     onChange={(e) => setExcludeDaysCount(Math.max(0, parseInt(e.target.value) || 0))}
                     disabled={!excludeFirstDays}
-                    className="ml-2 w-14 px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500"
+                    className={`ml-2 w-14 px-2 py-1 border ${
+                      darkMode 
+                        ? 'bg-gray-600 border-gray-500 text-white focus:ring-pink-500 focus:border-pink-500' 
+                        : 'bg-white border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                    } rounded-md text-sm focus:outline-none disabled:opacity-50`}
                   />
-                  <span className="ml-1 text-sm">days</span>
+                  <span className={`ml-1 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>days</span>
                 </div>
                 <div className="flex items-center">
                   <input
@@ -814,7 +850,7 @@ const OffersTab = () => {
                     onChange={() => setExcludeLastDays(!excludeLastDays)}
                     className="h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded"
                   />
-                  <span className="ml-2 text-sm">Exclude last</span>
+                  <span className={`ml-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Exclude last</span>
                   <input 
                     type="number" 
                     min="0"
@@ -822,9 +858,13 @@ const OffersTab = () => {
                     value={excludeLastDaysCount}
                     onChange={(e) => setExcludeLastDaysCount(Math.max(0, parseInt(e.target.value) || 0))}
                     disabled={!excludeLastDays}
-                    className="ml-2 w-14 px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500"
+                    className={`ml-2 w-14 px-2 py-1 border ${
+                      darkMode 
+                        ? 'bg-gray-600 border-gray-500 text-white focus:ring-pink-500 focus:border-pink-500' 
+                        : 'bg-white border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                    } rounded-md text-sm focus:outline-none disabled:opacity-50`}
                   />
-                  <span className="ml-1 text-sm">days</span>
+                  <span className={`ml-1 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>days</span>
                 </div>
               </div>
               <div>
@@ -833,25 +873,33 @@ const OffersTab = () => {
                     type="date"
                     value={datePickerValue}
                     onChange={(e) => setDatePickerValue(e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500"
+                    className={`w-full px-2 py-1 border ${
+                      darkMode 
+                        ? 'bg-gray-600 border-gray-500 text-white focus:ring-pink-500 focus:border-pink-500' 
+                        : 'bg-white border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                    } rounded-md text-sm focus:outline-none`}
                   />
                   <button
                     onClick={handleAddExcludedDate}
                     disabled={!datePickerValue}
-                    className="ml-2 px-2 py-1 bg-pink-100 text-pink-800 rounded-md text-sm hover:bg-pink-200"
+                    className={`ml-2 px-2 py-1 ${
+                      !datePickerValue
+                        ? `${darkMode ? 'bg-gray-600 text-gray-400' : 'bg-gray-100 text-gray-400'} cursor-not-allowed`
+                        : `${darkMode ? 'bg-pink-900 text-pink-300 hover:bg-pink-800' : 'bg-pink-100 text-pink-800 hover:bg-pink-200'}`
+                    } rounded-md text-sm`}
                   >
                     Add
                   </button>
                 </div>
                 <div className="max-h-20 overflow-y-auto">
                   {customExcludedDates.length > 0 ? (
-                    <ul className="text-sm">
+                    <ul className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                       {customExcludedDates.map(date => (
                         <li key={date} className="flex justify-between items-center py-1">
                           <span>{formatDate(date)}</span>
                           <button
                             onClick={() => handleRemoveExcludedDate(date)}
-                            className="text-red-500 hover:text-red-700"
+                            className={`${darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-700'}`}
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -861,7 +909,7 @@ const OffersTab = () => {
                       ))}
                     </ul>
                   ) : (
-                    <div className="text-xs text-gray-500">No custom excluded dates</div>
+                    <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No custom excluded dates</div>
                   )}
                 </div>
               </div>
@@ -875,55 +923,55 @@ const OffersTab = () => {
         <div>
           {/* Key Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white p-4 border rounded-lg shadow-sm">
+            <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm`}>
               <div className="flex items-center">
-                <div className="p-3 rounded-full bg-pink-100 text-pink-600 mr-4">
+                <div className={`p-3 rounded-full ${darkMode ? 'bg-pink-900/30 text-pink-400' : 'bg-pink-100 text-pink-600'} mr-4`}>
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Total Hits</p>
-                  <p className="text-xl font-semibold">{metrics.totalHits.toLocaleString()}</p>
+                  <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Total Hits</p>
+                  <p className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{metrics.totalHits.toLocaleString()}</p>
                 </div>
               </div>
             </div>
-            <div className="bg-white p-4 border rounded-lg shadow-sm">
+            <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm`}>
               <div className="flex items-center">
-                <div className="p-3 rounded-full bg-blue-100 text-blue-600 mr-4">
+                <div className={`p-3 rounded-full ${darkMode ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-100 text-blue-600'} mr-4`}>
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Period Length</p>
-                  <p className="text-xl font-semibold">{metrics.periodDays} days</p>
+                  <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Period Length</p>
+                  <p className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{metrics.periodDays} days</p>
                 </div>
               </div>
             </div>
-            <div className="bg-white p-4 border rounded-lg shadow-sm">
+            <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm`}>
               <div className="flex items-center">
-                <div className="p-3 rounded-full bg-green-100 text-green-600 mr-4">
+                <div className={`p-3 rounded-full ${darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-600'} mr-4`}>
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Average Hits/Day</p>
-                  <p className="text-xl font-semibold">{metrics.averageHitsPerDay}</p>
+                  <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Average Hits/Day</p>
+                  <p className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{metrics.averageHitsPerDay}</p>
                 </div>
               </div>
             </div>
-            <div className="bg-white p-4 border rounded-lg shadow-sm">
+            <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm`}>
               <div className="flex items-center">
-                <div className="p-3 rounded-full bg-purple-100 text-purple-600 mr-4">
+                <div className={`p-3 rounded-full ${darkMode ? 'bg-purple-900/30 text-purple-400' : 'bg-purple-100 text-purple-600'} mr-4`}>
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Date Range</p>
-                  <p className="text-sm font-semibold">
+                  <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Date Range</p>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     {processedData.uniqueDates.length > 0 ? 
                       `${formatDate(processedData.uniqueDates[0])} - ${formatDate(processedData.uniqueDates[processedData.uniqueDates.length-1])}` : 
                       "No dates available"}
@@ -934,8 +982,8 @@ const OffersTab = () => {
           </div>
 
           {/* Offer Hits Over Time Chart */}
-          <div className="bg-white p-4 border rounded-lg shadow-sm mb-6">
-            <h3 className="text-lg font-medium mb-4">Offer Hits Over Time</h3>
+          <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm mb-6`}>
+            <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Offer Hits Over Time</h3>
             {trendData.length > 0 ? (
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
@@ -944,25 +992,26 @@ const OffersTab = () => {
                       data={trendData}
                       margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" />
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
                       <XAxis 
                         dataKey="formattedDate" 
                         angle={-45} 
                         textAnchor="end"
                         height={80}
                         interval={Math.max(0, Math.floor(trendData.length / 15))}
+                        tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }}
                       />
-                      <YAxis />
+                      <YAxis tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
                       <Tooltip content={<CustomTooltip />} />
-                      <Legend />
+                      <Legend wrapperStyle={{ color: darkMode ? '#E5E7EB' : '#4B5563' }} />
                       <Line 
                         type={smoothLine ? "monotone" : "linear"} 
                         dataKey="count" 
                         name="Hits" 
-                        stroke="#FF0066" 
+                        stroke={darkMode ? '#FF4D94' : '#FF0066'} 
                         strokeWidth={2}
-                        dot={showDataPoints ? { stroke: '#FF0066', strokeWidth: 2, r: 3, fill: 'white' } : false}
-                        activeDot={{ stroke: '#FF0066', strokeWidth: 2, r: 5, fill: 'white' }}
+                        dot={showDataPoints ? { stroke: darkMode ? '#FF4D94' : '#FF0066', strokeWidth: 2, r: 3, fill: darkMode ? '#1F2937' : 'white' } : false}
+                        activeDot={{ stroke: darkMode ? '#FF4D94' : '#FF0066', strokeWidth: 2, r: 5, fill: darkMode ? '#1F2937' : 'white' }}
                       />
                     </LineChart>
                   ) : (
@@ -970,34 +1019,33 @@ const OffersTab = () => {
                       data={trendData}
                       margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" />
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
                       <XAxis 
                         dataKey="formattedDate" 
                         angle={-45} 
                         textAnchor="end"
                         height={80}
                         interval={Math.max(0, Math.floor(trendData.length / 15))}
+                        tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }}
                       />
-                      <YAxis />
+                      <YAxis tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
                       <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Bar dataKey="count" name="Hits" fill="#FF0066" />
+                      <Legend wrapperStyle={{ color: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <Bar dataKey="count" name="Hits" fill={darkMode ? '#FF4D94' : '#FF0066'} />
                     </BarChart>
                   )}
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="flex justify-center items-center h-64 bg-gray-50 rounded">
-                <p className="text-gray-500">No time series data available. Try adjusting your filters.</p>
+              <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded`}>
+                <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No time series data available. Try adjusting your filters.</p>
               </div>
             )}
           </div>
-
-          {/* Rest of the component remains the same... */}
         </div>
       )}
 
-      {/* Other insight type sections remain the same... */}
+      {/* Other insight type sections would go here, all with dark mode styling */}
     </div>
   );
 };

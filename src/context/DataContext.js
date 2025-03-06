@@ -19,6 +19,7 @@ export const DataProvider = ({ children }) => {
   const [brandMapping, setBrandMapping] = useState({});
   const [brandNames, setBrandNames] = useState([]);
   const [clientName, setClientName] = useState('');
+  const [darkMode, setDarkMode] = useState(false);
   
   // Filter state
   const [selectedProducts, setSelectedProducts] = useState(['all']);
@@ -612,7 +613,9 @@ export const DataProvider = ({ children }) => {
     getProductDistribution,
     getAvailableMonths,
     calculateTrendLine,
-    getRedemptionsOverTime
+    getRedemptionsOverTime,
+    darkMode, 
+    setDarkMode
   };
 
   return (

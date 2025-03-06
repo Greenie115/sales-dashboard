@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
+import { useTheme } from '../../../context/ThemeContext'; // ← Add this import
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import _ from 'lodash';
 
@@ -20,8 +21,8 @@ const AGE_GROUP_ORDER = [
 
 // Custom tooltip for bar charts with dark mode support
 const CustomTooltip = ({ active, payload, label }) => {
-  // Get darkMode from context - make sure it's accessible here
-  const { darkMode } = useData();
+  // Get darkMode from ThemeContext, not DataContext
+  const { darkMode } = useTheme();
   
   if (active && payload && payload.length) {
     return (
@@ -36,8 +37,11 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 const DemographicsTab = () => {
-  // Get data from context including dark mode
-  const { salesData, darkMode } = useData();
+  // Get data from DataContext
+  const { salesData } = useData();
+  
+  // Get darkMode from ThemeContext instead of DataContext
+  const { darkMode } = useTheme();
   
   // Use refs to track component mounting state
   const isMounted = useRef(true);
@@ -52,6 +56,11 @@ const DemographicsTab = () => {
   const [responseData, setResponseData] = useState([]);
   const [selectedResponses, setSelectedResponses] = useState([]);
   const [questions, setQuestions] = useState([]);
+  
+  // Debug log to check dark mode state changes
+  useEffect(() => {
+    console.log("DemographicsTab: Dark mode changed:", darkMode);
+  }, [darkMode]);
   
   // Extract questions from data
   useEffect(() => {
@@ -256,6 +265,7 @@ const DemographicsTab = () => {
     setIsProcessingDemographics(false);
   }
 }, [selectedResponses, salesData, selectedQuestionNumber]);
+
   // Handle user changing the selected question
   const handleQuestionChange = (e) => {
     const questionNum = e.target.value;
