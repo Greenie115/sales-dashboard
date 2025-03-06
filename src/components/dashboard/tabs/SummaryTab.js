@@ -191,7 +191,7 @@ const SummaryTab = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </div>
-          <h2 className="mt-2 text-lg font-semibold text-gray-700 dark:text-gray-300">Executive Summary</h2>
+          <h2 className="mt-2 text-lg font-semibold text-gray-700 dark:text-gray-300">Summary</h2>
           <p className="mt-1 text-gray-500 dark:text-gray-400">No data available for the current filters</p>
         </div>
       </div>

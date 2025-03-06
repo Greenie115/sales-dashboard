@@ -8,6 +8,7 @@ import SalesTab from '../dashboard/tabs/SalesTab';
 import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
 import ErrorBoundary from '../ErrorBoundary';
+import sharingService from '../../services/sharingService';
 
 // Same context from SharedDashboardPreview for consistency
 const ClientDataContext = React.createContext();
@@ -38,43 +39,120 @@ const SharedDashboardView = () => {
   } = useData();
   
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [shareConfig, setShareConfig] = useState(null);
   const [activeTab, setActiveTab] = useState(null);
   const [isExpired, setIsExpired] = useState(false);
+  const [isSupabaseMode, setIsSupabaseMode] = useState(true);
   
-  // Load shared configuration from the share ID
+  // Check if the share ID looks like Base64 (fallback mode) or UUID (Supabase mode)
+  const isBase64ShareId = (id) => {
+    // If it contains characters that aren't valid in a UUID but are in Base64
+    return /[+/]/.test(id) || id.length > 40;
+  };
+  
+  // Load shared configuration from either Supabase or fallback method
   useEffect(() => {
-    try {
-      if (!shareId) {
-        throw new Error("No share ID provided");
-      }
-      
-      // In a real implementation, this would make an API call
-      // For now, we decode from the URL
-      const decodedConfig = JSON.parse(atob(shareId + "=="));
-      
-      // Check if share link is expired
-      if (decodedConfig.expiryDate) {
-        const expiryDate = new Date(decodedConfig.expiryDate);
-        const now = new Date();
-        if (expiryDate < now) {
-          setIsExpired(true);
+    const fetchSharedDashboard = async () => {
+      try {
+        if (!shareId) {
+          throw new Error("No share ID provided");
         }
+        
+        setLoading(true);
+        
+        // Determine if we should use Supabase or fallback method based on share ID format
+        const useSupabase = !isBase64ShareId(shareId);
+        setIsSupabaseMode(useSupabase);
+        
+        let config;
+        let expired = false;
+        
+        if (useSupabase) {
+          try {
+            // Try Supabase first
+            console.log("Using Supabase to fetch dashboard");
+            const result = await sharingService.getSharedDashboard(shareId);
+            expired = result.expired;
+            config = result.config;
+          } catch (err) {
+            console.error("Supabase fetch failed, trying fallback:", err);
+            // If Supabase fails, try fallback method
+            try {
+              const decodedConfig = JSON.parse(atob(shareId + "=="));
+              config = decodedConfig;
+              
+              // Check if share link is expired (fallback mode)
+              if (decodedConfig.expiryDate) {
+                const expiryDate = new Date(decodedConfig.expiryDate);
+                const now = new Date();
+                expired = expiryDate < now;
+              }
+              
+              setIsSupabaseMode(false);
+            } catch (fallbackErr) {
+              console.error("Fallback decode failed:", fallbackErr);
+              throw new Error("Invalid or corrupted share link");
+            }
+          }
+        } else {
+          // Directly use fallback method (Base64 encoded)
+          console.log("Using fallback mode to fetch dashboard");
+          try {
+            const decodedConfig = JSON.parse(atob(shareId + "=="));
+            config = decodedConfig;
+            
+            // Check if share link is expired (fallback mode)
+            if (decodedConfig.expiryDate) {
+              const expiryDate = new Date(decodedConfig.expiryDate);
+              const now = new Date();
+              expired = expiryDate < now;
+            }
+          } catch (err) {
+            console.error("Error decoding fallback share:", err);
+            throw new Error("Invalid or corrupted share link");
+          }
+        }
+        
+        // Check if share link is expired
+        if (expired) {
+          setIsExpired(true);
+          setShareConfig(config); // Still set the config for branding display
+          setLoading(false);
+          return;
+        }
+        
+        setShareConfig(config);
+        
+        // Set the default active tab
+        if (config.allowedTabs && config.allowedTabs.length > 0) {
+          setActiveTab(config.allowedTabs[0]);
+        }
+        
+        setLoading(false);
+      } catch (err) {
+        console.error("Error loading shared dashboard:", err);
+        setError("Invalid or expired share link");
+        setLoading(false);
       }
-      
-      setShareConfig(decodedConfig);
-      
-      // Set the default active tab
-      if (decodedConfig.allowedTabs && decodedConfig.allowedTabs.length > 0) {
-        setActiveTab(decodedConfig.allowedTabs[0]);
-      }
-    } catch (err) {
-      console.error("Error loading shared dashboard:", err);
-      setError("Invalid or expired share link");
-    }
+    };
+    
+    fetchSharedDashboard();
   }, [shareId]);
   
-  // If still loading or error
+  // If still loading
+  if (loading) {
+    return (
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 border-t-2 border-b-2 border-pink-600 rounded-full animate-spin"></div>
+          <p className="mt-4">Loading shared dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // If error
   if (error) {
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
@@ -92,17 +170,6 @@ const SharedDashboardView = () => {
     );
   }
   
-  if (!shareConfig) {
-    return (
-      <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
-        <div className="text-center">
-          <div className="inline-block w-8 h-8 border-t-2 border-b-2 border-pink-600 rounded-full animate-spin"></div>
-          <p className="mt-4">Loading shared dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-  
   if (isExpired) {
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
@@ -115,6 +182,19 @@ const SharedDashboardView = () => {
           <h2 className="text-xl font-bold text-center mb-4">This Dashboard Link Has Expired</h2>
           <p className="text-center mb-6">
             Please contact {shareConfig.branding?.companyName || 'the dashboard owner'} for an updated link.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!shareConfig) {
+    return (
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
+        <div className={`w-full max-w-md p-6 rounded-lg shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h2 className="text-xl font-bold text-center mb-4">Dashboard Not Found</h2>
+          <p className="text-center mb-6">
+            The dashboard you're looking for doesn't exist or may have been deleted.
           </p>
         </div>
       </div>
@@ -143,6 +223,17 @@ const SharedDashboardView = () => {
   
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      {/* Storage type indicator - Only visible in development */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className={`fixed top-0 right-0 m-4 z-50 px-3 py-1 rounded-full text-xs font-medium ${
+          isSupabaseMode 
+            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' 
+            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+        }`}>
+          {isSupabaseMode ? 'Supabase Mode' : 'Fallback Mode'}
+        </div>
+      )}
+      
       {/* Header */}
       <header className={`w-full border-b ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">

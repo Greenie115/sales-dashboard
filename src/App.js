@@ -8,7 +8,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { SharingProvider } from './context/SharingContext';
 import { FilterProvider } from './context/FilterContext';
 import Header from './components/dashboard/Header';
-import Footer from './components/dashboard/Footer';
+import Footer from './components/dashboard/Footer'; 
 import MainContent from './components/dashboard/MainContent';
 import SharingModal from './components/sharing/SharingModal';
 import ErrorBoundary from './components/ErrorBoundary';

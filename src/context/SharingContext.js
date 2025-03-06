@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useData } from './DataContext';
+import sharingService from '../services/sharingService';
 
 // Create context
 const SharingContext = createContext();
@@ -39,11 +40,35 @@ export const SharingProvider = ({ children }) => {
   // Shareable link state
   const [shareableLink, setShareableLink] = useState('');
   
-  // Generate a shareable link
-  const generateShareableLink = useCallback(() => {
+  // State for shared dashboards
+  const [sharedDashboards, setSharedDashboards] = useState([]);
+  const [loadingSharedDashboards, setLoadingSharedDashboards] = useState(false);
+  const [shareError, setShareError] = useState(null);
+  
+  // Load existing shared dashboards when the component mounts
+  useEffect(() => {
+    const loadSharedDashboards = async () => {
+      setLoadingSharedDashboards(true);
+      try {
+        const dashboards = await sharingService.listSharedDashboards();
+        setSharedDashboards(dashboards);
+        setShareError(null);
+      } catch (error) {
+        console.error('Error loading shared dashboards:', error);
+        setShareError('Failed to load shared dashboards');
+      } finally {
+        setLoadingSharedDashboards(false);
+      }
+    };
+    
+    loadSharedDashboards();
+  }, []);
+  
+  // Generate a shareable link using Supabase
+  const generateShareableLink = useCallback(async () => {
     try {
-      // In a real implementation, you'd likely call an API to create a unique token
-      // and store the configuration server-side. For this example, we'll encode in URL.
+      // Set loading state if needed
+      setShareError(null);
       
       // Create a copy of the current sharing configuration
       const configToShare = { ...shareConfig };
@@ -61,20 +86,43 @@ export const SharingProvider = ({ children }) => {
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
       
-      // Generate an ID (in a real app, this would come from your backend)
-      const shareId = btoa(JSON.stringify(configToShare)).replace(/=/g, '');
+      // Create the shared dashboard in Supabase
+      const { url } = await sharingService.createSharedDashboard(
+        configToShare, 
+        configToShare.expiryDate ? new Date(configToShare.expiryDate) : null
+      );
       
-      // Create the shareable URL
-      const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/shared/${shareId}`;
+      // Set the shareable URL
+      setShareableLink(url);
       
-      setShareableLink(shareUrl);
-      return shareUrl;
+      // Refresh the shared dashboards list
+      const dashboards = await sharingService.listSharedDashboards();
+      setSharedDashboards(dashboards);
+      
+      return url;
     } catch (error) {
       console.error("Error generating share link:", error);
+      setShareError('Failed to generate share link');
       return "";
     }
   }, [shareConfig, activeTab, brandNames, clientName, salesData]);
+  
+  // Delete a shared dashboard
+  const deleteSharedDashboard = useCallback(async (shareId) => {
+    try {
+      setShareError(null);
+      await sharingService.deleteSharedDashboard(shareId);
+      
+      // Update the shared dashboards list
+      setSharedDashboards(prev => prev.filter(dashboard => dashboard.share_id !== shareId));
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting shared dashboard:', error);
+      setShareError('Failed to delete shared dashboard');
+      return false;
+    }
+  }, []);
   
   // Toggle share modal
   const toggleShareModal = useCallback(() => {
@@ -177,7 +225,11 @@ export const SharingProvider = ({ children }) => {
       shareableLink,
       isPreviewMode,
       togglePreviewMode,
-      transformDataForSharing
+      transformDataForSharing,
+      sharedDashboards,
+      loadingSharedDashboards,
+      deleteSharedDashboard,
+      shareError
     }}>
       {children}
     </SharingContext.Provider>
