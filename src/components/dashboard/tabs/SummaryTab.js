@@ -5,43 +5,47 @@ import { useTheme } from '../../../context/ThemeContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import _ from 'lodash';
 import { useChartColors } from '../../../utils/chartColors';
+import { useClientData } from '../sharing/SharedDashboardView';
 
 /**
  * SummaryTab component displays the executive summary
  */
-const SummaryTab = () => {
-  console.log("SummaryTab rendering");
+const SummaryTab = ({ isSharedView }) => {
+  console.log("SummaryTab rendering, isSharedView:", isSharedView);
+  
+  // Use either the client data context or the regular data context based on the isSharedView prop
+  const dataContext = isSharedView ? useClientData() : useData();
   const { darkMode } = useTheme();
+  
   // Get chart colors for dark mode support
   const colors = useChartColors();
   
-  // Get data and filters from context
-  const dataContext = useData();
-  console.log("DataContext in SummaryTab:", dataContext);
+  // Log what data we're working with to debug
+  console.log("SummaryTab dataContext:", dataContext);
   
+  // Destructure only what we need from the context
   const { 
     getFilteredData, 
     calculateMetrics,
     dateRange, 
     comparisonMode,
-    salesData
+    filteredData: contextFilteredData,
+    metrics: contextMetrics
   } = dataContext;
   
-  // Log key data points to debug
-  console.log("salesData length:", salesData?.length);
-  console.log("getFilteredData:", typeof getFilteredData);
-  console.log("calculateMetrics:", typeof calculateMetrics);
+  // For shared view, prioritize the directly provided data
+  const filteredData = isSharedView && contextFilteredData 
+    ? contextFilteredData 
+    : (getFilteredData ? getFilteredData() : []);
+    
+  console.log("SummaryTab filteredData:", filteredData?.length);
   
-  // Get filtered data
-  const filteredData = getFilteredData ? getFilteredData() : [];
-  console.log("filteredData length:", filteredData?.length);
-  
-  // Get comparison data if in comparison mode
-  const comparisonData = comparisonMode && getFilteredData ? getFilteredData(true) : null;
-  
-  // Get metrics
-  const metrics = calculateMetrics ? calculateMetrics() : null;
-  console.log("metrics:", metrics);
+  // Use pre-calculated metrics if available, otherwise calculate them
+  const metrics = isSharedView && contextMetrics 
+    ? contextMetrics 
+    : (calculateMetrics ? calculateMetrics() : null);
+    
+  console.log("SummaryTab metrics:", metrics);
   
   // Get comparison metrics
   const comparisonMetrics = comparisonMode && calculateMetrics ? calculateMetrics(true) : null;

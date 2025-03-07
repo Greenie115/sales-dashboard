@@ -36,7 +36,7 @@ const sharingService = {
       
       // Build the share URL
       const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/shared/${shareId}`;
+      const shareUrl = `${baseUrl}/#/shared/${shareId}`;
       
       return {
         id: shareId,

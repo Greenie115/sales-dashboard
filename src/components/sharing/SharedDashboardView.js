@@ -12,15 +12,108 @@ import sharingService from '../../services/sharingService';
 
 // Create a context to provide data to the tabs
 const ClientDataContext = React.createContext();
-export const useClientData = () => React.useContext(ClientDataContext);
+
+// Custom hook to use the client data context
+export const useClientData = () => {
+  const clientData = React.useContext(ClientDataContext);
+  // If no client data is found, fall back to the regular DataContext
+  if (!clientData) {
+    console.warn("No ClientDataContext found, falling back to DataContext");
+    return useData();
+  }
+  return clientData;
+};
+
+// Add debugging middleware to ClientDataContext provider
+const withDebugLogging = (data, name = "ClientData") => {
+  // Only add this in development
+  if (process.env.NODE_ENV !== 'development') return data;
+  
+  const startTime = new Date();
+  console.group(`${name} Debug Info - ${startTime.toISOString()}`);
+  console.log("Data structure:", Object.keys(data || {}));
+  
+  // Check for critical data
+  console.log("Has filteredData:", Boolean(data?.filteredData));
+  if (data?.filteredData) {
+    console.log("filteredData length:", data.filteredData.length);
+    if (data.filteredData.length > 0) {
+      console.log("First filteredData item sample:", data.filteredData[0]);
+    }
+  }
+  
+  console.log("Has metrics:", Boolean(data?.metrics));
+  if (data?.metrics) {
+    console.log("Metrics:", data.metrics);
+  }
+  
+  console.log("Has salesData:", Boolean(data?.salesData));
+  if (data?.salesData) {
+    console.log("salesData length:", data.salesData.length);
+  }
+  
+  console.log("Has retailerData:", Boolean(data?.retailerData));
+  console.log("Has productDistribution:", Boolean(data?.productDistribution));
+  console.log("Has brandMapping:", Boolean(data?.brandMapping));
+  console.log("Has brandNames:", Boolean(data?.brandNames));
+  
+  if (data?.shareConfig) {
+    console.log("shareConfig present with tabs:", data.shareConfig.allowedTabs);
+  }
+  
+  console.groupEnd();
+  return data;
+};
 
 // Wrapper to provide transformed data to tabs 
 const TabContentWrapper = ({ children, transformedData }) => {
+  console.log("TabContentWrapper rendering with data:", transformedData);
+  
+  // Make sure to log the critical properties to verify they exist
+  console.log("Has filteredData:", Boolean(transformedData?.filteredData));
+  console.log("filteredData length:", transformedData?.filteredData?.length);
+  console.log("Has metrics:", Boolean(transformedData?.metrics));
+  
+  const debuggedData = withDebugLogging(transformedData);
+  
   return (
-    <ClientDataContext.Provider value={transformedData}>
+    <ClientDataContext.Provider value={debuggedData}>
       {children}
     </ClientDataContext.Provider>
   );
+};
+
+// This component acts as a bridge between the ClientDataContext and the tab components
+// It provides all the methods and properties expected by the tab components
+const createSharedDataContext = (clientData) => {
+  return {
+    // Pass through all data from clientData
+    ...clientData,
+    
+    // Ensure essential methods exist even if not provided in clientData
+    getFilteredData: () => clientData.filteredData || [],
+    calculateMetrics: () => clientData.metrics || null,
+    getRetailerDistribution: () => clientData.retailerData || [],
+    getProductDistribution: () => clientData.productDistribution || [],
+    
+    // Flags and metadata
+    isSharedView: true,
+    hasData: Boolean(clientData.filteredData?.length || clientData.salesData?.length),
+    
+    // For backward compatibility, ensure these exist
+    selectedProducts: clientData.filters?.selectedProducts || ['all'],
+    selectedRetailers: clientData.filters?.selectedRetailers || ['all'],
+    dateRange: clientData.filters?.dateRange || 'all',
+    startDate: clientData.filters?.startDate || '',
+    endDate: clientData.filters?.endDate || '',
+    selectedMonth: clientData.filters?.selectedMonth || '',
+    
+    // Empty functions for methods that shouldn't do anything in shared view
+    setSelectedProducts: () => {},
+    setSelectedRetailers: () => {},
+    setDateRange: () => {},
+    setActiveTab: () => {},
+  };
 };
 
 const SharedDashboardView = () => {
@@ -28,16 +121,10 @@ const SharedDashboardView = () => {
   const navigate = useNavigate();
   const { darkMode } = useTheme();
   const { transformDataForSharing } = useSharing();
+  
+  // Destructure only what we need from the DataContext
   const { 
-    salesData,
     setSalesData,
-    getFilteredData, 
-    calculateMetrics, 
-    getRetailerDistribution,
-    getProductDistribution,
-    brandNames, 
-    clientName,
-    brandMapping,
     setSelectedProducts,
     setSelectedRetailers,
     setDateRange,
@@ -52,6 +139,7 @@ const SharedDashboardView = () => {
   const [activeTab, setActiveTab] = useState(null);
   const [isExpired, setIsExpired] = useState(false);
   const [isSupabaseMode, setIsSupabaseMode] = useState(true);
+  const [clientData, setClientData] = useState(null);
   
   // Check if the share ID looks like Base64 (fallback mode) or UUID (Supabase mode)
   const isBase64ShareId = (id) => {
@@ -76,6 +164,9 @@ const SharedDashboardView = () => {
         let config;
         let expired = false;
         
+        console.log("Loading shared dashboard with ID:", shareId);
+        console.log("Using Supabase mode:", useSupabase);
+        
         if (useSupabase) {
           try {
             // Try Supabase first
@@ -83,11 +174,18 @@ const SharedDashboardView = () => {
             const result = await sharingService.getSharedDashboard(shareId);
             expired = result.expired;
             config = result.config;
+            console.log("Supabase result:", result);
           } catch (err) {
             console.error("Supabase fetch failed, trying fallback:", err);
             // If Supabase fails, try fallback method
             try {
-              const decodedConfig = JSON.parse(atob(shareId + "=="));
+              // We need to add padding to ensure valid base64
+              let paddedShareId = shareId;
+              while (paddedShareId.length % 4 !== 0) {
+                paddedShareId += '=';
+              }
+              
+              const decodedConfig = JSON.parse(atob(paddedShareId));
               config = decodedConfig;
               
               // Check if share link is expired (fallback mode)
@@ -98,6 +196,7 @@ const SharedDashboardView = () => {
               }
               
               setIsSupabaseMode(false);
+              console.log("Fallback decode successful:", config);
             } catch (fallbackErr) {
               console.error("Fallback decode failed:", fallbackErr);
               throw new Error("Invalid or corrupted share link");
@@ -107,7 +206,13 @@ const SharedDashboardView = () => {
           // Directly use fallback method (Base64 encoded)
           console.log("Using fallback mode to fetch dashboard");
           try {
-            const decodedConfig = JSON.parse(atob(shareId + "=="));
+            // We need to add padding to ensure valid base64
+            let paddedShareId = shareId;
+            while (paddedShareId.length % 4 !== 0) {
+              paddedShareId += '=';
+            }
+            
+            const decodedConfig = JSON.parse(atob(paddedShareId));
             config = decodedConfig;
             
             // Check if share link is expired (fallback mode)
@@ -116,6 +221,8 @@ const SharedDashboardView = () => {
               const now = new Date();
               expired = expiryDate < now;
             }
+            
+            console.log("Fallback decoded config:", config);
           } catch (err) {
             console.error("Error decoding fallback share:", err);
             throw new Error("Invalid or corrupted share link");
@@ -131,6 +238,35 @@ const SharedDashboardView = () => {
         }
         
         setShareConfig(config);
+        console.log("Share config set:", config);
+        
+        // Important: Store the client data directly from the precomputed data
+        if (config.precomputedData) {
+          // Create a deep copy to prevent reference issues
+          const precomputedData = JSON.parse(JSON.stringify(config.precomputedData));
+          
+          // Create a complete clientData object with all necessary methods
+          const newClientData = createSharedDataContext({
+            ...precomputedData,
+            filters: config.filters || {},
+            brandMapping: precomputedData.brandMapping || {},
+            brandNames: precomputedData.brandNames || [], 
+            clientName: config.metadata?.clientName || 'Client',
+            shareConfig: config,
+            isSharedView: true
+          });
+          
+          console.log("Setting client data from precomputedData:", newClientData);
+          setClientData(newClientData);
+          
+          // If we have salesData in precomputedData, set it in the DataContext
+          if (precomputedData.salesData && Array.isArray(precomputedData.salesData)) {
+            console.log("Setting salesData in DataContext from precomputedData");
+            setSalesData(precomputedData.salesData);
+          }
+        } else {
+          console.warn("No precomputed data found in share config");
+        }
         
         // Set the default active tab
         if (config.allowedTabs && config.allowedTabs.length > 0) {
@@ -147,15 +283,6 @@ const SharedDashboardView = () => {
           if (config.filters.selectedMonth) setSelectedMonth(config.filters.selectedMonth);
         }
         
-        // If the config has precomputed data and we don't have data loaded
-        if (config.precomputedData && (!salesData || salesData.length === 0)) {
-          console.log("Using precomputed data from share config");
-          // Set the precomputed data to be used
-          if (config.precomputedData.salesData) {
-            setSalesData(config.precomputedData.salesData);
-          }
-        }
-        
         setLoading(false);
       } catch (err) {
         console.error("Error loading shared dashboard:", err);
@@ -165,7 +292,7 @@ const SharedDashboardView = () => {
     };
     
     fetchSharedDashboard();
-  }, [shareId, setSalesData, setSelectedProducts, setSelectedRetailers, setDateRange, setStartDate, setEndDate, setSelectedMonth, salesData]);
+  }, [shareId, setSalesData, setSelectedProducts, setSelectedRetailers, setDateRange, setStartDate, setEndDate, setSelectedMonth]);
   
   // If still loading
   if (loading) {
@@ -228,31 +355,17 @@ const SharedDashboardView = () => {
     );
   }
   
-  // Get filtered data based on the filters from the share config
-  const filteredData = getFilteredData ? getFilteredData(shareConfig?.filters) : [];
-  
-  // Calculate metrics and prepare data
-  const metrics = calculateMetrics ? calculateMetrics() : null;
-  const retailerData = getRetailerDistribution ? getRetailerDistribution() : [];
-  const productDistribution = getProductDistribution ? getProductDistribution() : [];
-  
-  // Prepare the data object for the tabs
-  const clientData = {
-    filteredData,
-    metrics,
-    retailerData,
-    productDistribution,
-    brandMapping: brandMapping || {},
-    brandNames: (shareConfig?.hideRetailers ? ['Anonymous Brand'] : brandNames) || [],
-    clientName: clientName || 'Client',
-    filters: shareConfig?.filters || {},
-    // Add flag to indicate this is a shared view
-    isSharedView: true
-  };
-  
-  // Add precomputed data if available
-  if (shareConfig.precomputedData) {
-    Object.assign(clientData, shareConfig.precomputedData);
+  // Ensure we have clientData to work with
+  if (!clientData) {
+    console.error("Missing client data for shared dashboard");
+    return (
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
+        <div className={`w-full max-w-md p-6 rounded-lg shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h2 className="text-xl font-bold text-red-600 mb-4">Error Loading Dashboard Data</h2>
+          <p className="mb-4">The dashboard data could not be loaded.</p>
+        </div>
+      </div>
+    );
   }
   
   // Transform data based on sharing config

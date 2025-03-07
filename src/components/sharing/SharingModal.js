@@ -10,13 +10,14 @@ import SupabaseDebugger from '../debug/SupabaseDebugger';
 const SharingModal = () => {
   const { darkMode } = useTheme();
   const { 
+    salesData, 
     activeTab, 
-    selectedProducts, 
-    selectedRetailers,
-    dateRange,
-    startDate,
-    endDate,
-    selectedMonth,
+    brandNames, 
+    clientName,
+    getFilteredData,
+    calculateMetrics,
+    getRetailerDistribution,
+    getProductDistribution,
     brandMapping
   } = useData();
   
@@ -108,16 +109,28 @@ const SharingModal = () => {
       // Add metadata
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
-        brandNames: ['Fallback Mode'],
-        clientName: 'Client',
+        brandNames: brandNames || [],
+        clientName: clientName || 'Client',
+        datasetSize: Array.isArray(salesData) ? salesData.length : 0,
+      };
+      
+      // IMPORTANT: Add precomputed data for the client view
+      configToShare.precomputedData = {
+        filteredData: getFilteredData ? getFilteredData(configToShare.filters) : [],
+        metrics: calculateMetrics ? calculateMetrics() : null,
+        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
+        productDistribution: getProductDistribution ? getProductDistribution() : [],
+        brandMapping: brandMapping || {},
+        brandNames: brandNames || [],
+        salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
       };
       
       // Generate an ID using Base64 encoding (Original method)
       const shareId = btoa(JSON.stringify(configToShare)).replace(/=/g, '');
       
-      // Create the shareable URL
+      // Create the shareable URL with hash for HashRouter
       const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/shared/${shareId}`;
+      const shareUrl = `${baseUrl}/#/shared/${shareId}`;
       
       return shareUrl;
     } catch (error) {

@@ -6,6 +6,7 @@ import {
   Tooltip, Legend, ResponsiveContainer, PieChart,
   Pie, Cell, BarChart, Bar, Area, ComposedChart
 } from 'recharts';
+import { useClientData } from '../sharing/SharedDashboardView';
 import _ from 'lodash';
 
 // Custom colors for light and dark mode
@@ -14,14 +15,24 @@ const DARK_COLORS = ['#FF4D94', '#4D94FF', '#FFD54F', '#4DD0E1', '#CE93D8', '#81
 
 const DEFAULT_PAGE_SIZE = 10;
 
-const OffersTab = () => {
+const OffersTab = ({ isSharedView }) => {
   // Get dark mode from ThemeContext
   const { darkMode } = useTheme();
 
   const { 
-    offerData,
-    hasOfferData
-  } = useData();
+    offerData: contextOfferData,
+    hasOfferData: contextHasOfferData,
+    filteredData: directFilteredData
+  } = isSharedView ? useClientData() : useData();
+
+  const offerData = isSharedView ? (contextOfferData || directFilteredData) : contextOfferData;
+  const hasOfferData = isSharedView ? (offerData && offerData.length > 0) : contextHasOfferData;
+  
+  console.log("OffersTab data:", {
+    isSharedView,
+    hasOfferData,
+    offerDataLength: offerData?.length
+  });
 
   // Local state
   const [selectedOffers, setSelectedOffers] = useState(['all']);

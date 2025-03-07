@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext'; // ← Add this import
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { useClientData } from '../sharing/SharedDashboardView';
 import _ from 'lodash';
 
 // Custom colors for light and dark mode
@@ -36,12 +37,23 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-const DemographicsTab = () => {
-  // Get data from DataContext
-  const { salesData } = useData();
+const DemographicsTab = ({ isSharedView }) => {
+  // Get data from either ClientDataContext or DataContext
+  const { 
+    salesData,
+    filteredData: directFilteredData
+  } = isSharedView ? useClientData() : useData();
   
-  // Get darkMode from ThemeContext instead of DataContext
   const { darkMode } = useTheme();
+  
+  // Use direct data in shared view
+  const dataToUse = isSharedView && directFilteredData ? directFilteredData : salesData;
+  
+  console.log("DemographicsTab data:", {
+    isSharedView,
+    hasData: dataToUse && dataToUse.length > 0,
+    dataLength: dataToUse?.length
+  });
   
   // Use refs to track component mounting state
   const isMounted = useRef(true);

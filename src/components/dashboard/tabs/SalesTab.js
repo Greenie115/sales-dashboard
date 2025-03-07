@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { useChartColors } from '../../../utils/chartColors';
+import { useClientData } from '../sharing/SharedDashboardView';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
@@ -27,35 +28,61 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-const SalesTab = () => {
+const SalesTab = ({ isSharedView }) => {
   const { darkMode } = useTheme();
+  
+  // Add state for interactive elements
+  const [activeRetailer, setActiveRetailer] = useState(null);
+  const [activeProduct, setActiveProduct] = useState(null);
+  const [redemptionTimeframe, setRedemptionTimeframe] = useState('daily');
+  const [showTrendLine, setShowTrendLine] = useState(true);
+  
+  // Use the appropriate data context based on view mode
   const { 
     getFilteredData, 
     calculateMetrics, 
-    brandMapping = {}, 
-    brandNames = [],
-    dateRange = 'all',
+    getRetailerDistribution,
+    getProductDistribution,
+    brandMapping,
+    dateRange,
+    comparisonMode,
+    filteredData: directFilteredData,
+    metrics: directMetrics,
+    productDistribution: directProductDistribution,
+    // Add this to fix the variable reference
+    retailerDistribution: directRetailerDistribution,
     startDate,
     endDate
-  } = useData();
-
+  } = isSharedView ? useClientData() : useData();
+  
+  // Get chart colors
   const colors = useChartColors();
   
-  // Local state
-  const [redemptionTimeframe, setRedemptionTimeframe] = useState('daily');
-  const [showTrendLine, setShowTrendLine] = useState(true);
-  const [activeRetailer, setActiveRetailer] = useState(null);
-  const [activeProduct, setActiveProduct] = useState(null);
+  // Use direct data if in shared view, otherwise calculate it
+  const filteredData = isSharedView && directFilteredData 
+    ? directFilteredData 
+    : (getFilteredData ? getFilteredData() : []);
   
-  // Get filtered data
-  const filteredData = useMemo(() => {
-    return getFilteredData ? getFilteredData() : [];
-  }, [getFilteredData]);
+  const metrics = isSharedView && directMetrics 
+    ? directMetrics 
+    : (calculateMetrics ? calculateMetrics() : null);
   
-  // Get metrics
-  const metrics = useMemo(() => {
-    return calculateMetrics ? calculateMetrics() : null;
-  }, [calculateMetrics]);
+  // Get retailer data either from props or calculate it
+  // RENAMED variable from retailerData to retailerDataFromContext to avoid duplication
+  const retailerDataFromContext = isSharedView && directRetailerDistribution 
+    ? directRetailerDistribution 
+    : (getRetailerDistribution ? getRetailerDistribution() : []);
+  
+  const productDist = isSharedView && directProductDistribution 
+    ? directProductDistribution 
+    : (getProductDistribution ? getProductDistribution() : []);
+  
+  console.log("SalesTab data check:", {
+    hasFilteredData: filteredData?.length > 0,
+    hasMetrics: !!metrics,
+    hasRetailerData: retailerDataFromContext?.length > 0,
+    hasProductDist: productDist?.length > 0
+  });
   
   const exportSalesData = () => {
     try {
@@ -74,7 +101,7 @@ const SalesTab = () => {
         csvContent += `Average Per Day: ${metrics.avgRedemptionsPerDay}\n\n`;
       }
       
-      // Add retailer distribution
+      // Fixed: Use retailerData from useMemo below instead of retailerDataFromContext
       if (retailerData && retailerData.length > 0) {
         csvContent += 'Retailer Distribution\n';
         csvContent += 'Retailer,Units,Percentage\n';
@@ -143,8 +170,14 @@ const SalesTab = () => {
     }
   };
   
-  // Get retailer distribution
+  // Get retailer distribution - NOW THIS IS THE ONLY DECLARATION OF retailerData
   const retailerData = useMemo(() => {
+    // If we already have retailer data from context, use it
+    if (retailerDataFromContext && retailerDataFromContext.length > 0) {
+      return retailerDataFromContext;
+    }
+    
+    // Otherwise calculate it
     if (!filteredData || filteredData.length === 0) return [];
     
     const groupedByRetailer = _.groupBy(filteredData, 'chain');
@@ -157,7 +190,7 @@ const SalesTab = () => {
         percentage: (items.length / totalUnits) * 100
       }))
       .sort((a, b) => b.value - a.value);
-  }, [filteredData]);
+  }, [filteredData, retailerDataFromContext]);
   
   // Get product distribution
   const productDistribution = useMemo(() => {
