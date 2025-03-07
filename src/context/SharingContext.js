@@ -120,7 +120,7 @@ export const SharingProvider = ({ children }) => {
       }
       
       // Set the active tab as the first allowed tab
-      configToShare.activeTab = activeTab || configToShare.allowedTabs[0];
+      configToShare.activeTab = configToShare.allowedTabs[0];
       
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
@@ -207,18 +207,17 @@ export const SharingProvider = ({ children }) => {
   const togglePreviewMode = useCallback(() => {
     // Prepare precomputed data when entering preview mode
     if (!isPreviewMode) {
-      // First ensure that activeTab is included in allowedTabs
-      if (activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
+      // Make sure we have at least one allowed tab
+      if (shareConfig.allowedTabs.length === 0) {
         setShareConfig(prev => ({
           ...prev,
-          allowedTabs: [...prev.allowedTabs, activeTab],
-          activeTab: activeTab
+          allowedTabs: ['summary']
         }));
-        
-        // Set the preview active tab
-        setPreviewActiveTab(activeTab);
-      } else if (shareConfig.allowedTabs.length > 0) {
-        // Use the first allowed tab if active tab is not in allowed tabs
+      }
+      
+      // Set the preview active tab to the first allowed tab
+      // This ensures we respect the user's tab selection
+      if (shareConfig.allowedTabs.length > 0) {
         setPreviewActiveTab(shareConfig.allowedTabs[0]);
       }
       
@@ -230,33 +229,39 @@ export const SharingProvider = ({ children }) => {
         salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
       };
       
-      // Update the share config with precomputed data and active tab
+      // Update the share config with precomputed data
+      // But preserve the allowed tabs and don't reset activeTab
       setShareConfig(prev => ({
         ...prev,
-        precomputedData,
-        activeTab: activeTab // Ensure active tab is set
+        precomputedData
       }));
       
       console.log("Entering preview mode with tabs:", {
-        activeTab,
         allowedTabs: shareConfig.allowedTabs,
-        previewActiveTab
+        previewActiveTab: shareConfig.allowedTabs[0]
       });
     }
     
     setIsPreviewMode(prev => !prev);
   }, [
     isPreviewMode,
-    activeTab,
     shareConfig.allowedTabs,
     shareConfig.filters,
     getFilteredData,
     calculateMetrics,
     getRetailerDistribution,
     getProductDistribution,
-    salesData,
-    previewActiveTab
+    salesData
   ]);
+
+    if (!isPreviewMode) {
+      // Make sure we have at least one allowed tab
+      if (shareConfig.allowedTabs.length === 0) {
+        setShareConfig(prev => ({
+          ...prev,
+          allowedTabs: ['summary']
+        }));
+      }}
   
   // Handle saving current filters
   const handleSaveCurrentFilters = useCallback(() => {

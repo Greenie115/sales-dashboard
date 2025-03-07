@@ -80,7 +80,7 @@ const SharingModal = () => {
         setShareConfig(prevConfig => ({
           ...prevConfig,
           allowedTabs: [activeTab]
-        }));
+      }));
       }
     }
   }, [isShareModalOpen, activeTab, shareConfig.allowedTabs.length]); // Use allowedTabs.length
@@ -112,11 +112,11 @@ const SharingModal = () => {
           allowedTabs: newAllowedTabs
       }));
     } else {
-      // Add the tab and also make it the active tab
+      // Add the tab but don't make it active automatically
       setShareConfig(prevConfig => ({
           ...prevConfig,
-          allowedTabs: [...prevConfig.allowedTabs, tab],
-          activeTab: tab // Set as the new active tab when adding
+          allowedTabs: [...prevConfig.allowedTabs, tab]
+          // Removed the activeTab assignment here
       }));
     }
   };
@@ -150,8 +150,8 @@ const SharingModal = () => {
       }
       
       // Ensure we set the activeTab property
-      configToShare.activeTab = activeTab;
-  
+      configToShare.activeTab = configToShare.allowedTabs[0];
+
       // Add metadata
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
@@ -195,18 +195,11 @@ const SharingModal = () => {
 const handleGenerateLink = async () => {
   setIsGeneratingLink(true);
   try {
-    // Important: Set the active tab in the share config
-    setShareConfig(prev => ({
-      ...prev,
-      activeTab: activeTab // Ensure the current active tab is set in the config
-    }));
-
-    // Ensure active tab is included in allowed tabs
-    if (activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
+    // Make sure we have at least one allowed tab
+    if (shareConfig.allowedTabs.length === 0) {
       setShareConfig(prev => ({
         ...prev,
-        allowedTabs: [...prev.allowedTabs, activeTab],
-        activeTab: activeTab
+        allowedTabs: ['summary']
       }));
     }
     
@@ -233,6 +226,7 @@ const handleGenerateLink = async () => {
     setIsGeneratingLink(false);
   }
 };
+
   const applyCurrentFilters = () => {
     // Call the handler
     handleSaveCurrentFilters();
@@ -259,15 +253,6 @@ const handleGenerateLink = async () => {
   };
 
   const handlePreviewClick = () => {
-    // First, ensure active tab is in allowed tabs
-    if (activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
-      setShareConfig(prev => ({
-        ...prev,
-        allowedTabs: [...prev.allowedTabs, activeTab],
-        activeTab: activeTab
-      }));
-    }
-  
     // Make sure we have at least one allowed tab
     if (shareConfig.allowedTabs.length === 0) {
       setShareConfig(prev => ({
@@ -276,7 +261,7 @@ const handleGenerateLink = async () => {
       }));
     }
   
-    console.log("Opening preview with activeTab:", activeTab, "and allowedTabs:", shareConfig.allowedTabs);
+    console.log("Opening preview with allowedTabs:", shareConfig.allowedTabs);
     
     // Toggle to preview mode
     togglePreviewMode();

@@ -183,6 +183,13 @@ const SharedDashboardView = () => {
           setActiveTab('summary');
           console.log("No allowed tabs found, defaulting to summary");
         }
+
+        console.log("Shared dashboard configuration:", {
+          activeTab: config.activeTab,
+          allowedTabs: config.allowedTabs,
+          setActiveTabTo: activeTab
+        });
+        
         
         // Important: Store the client data directly from the precomputed data
         if (config.precomputedData) {

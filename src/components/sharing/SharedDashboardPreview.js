@@ -31,19 +31,16 @@ const SharedDashboardPreview = ({ onClose }) => {
 
   // Effect to initialize preview tab on mount
   useEffect(() => {
-    // Initialize tab based on allowedTabs and activeTab in shareConfig
-    if (shareConfig.activeTab && shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
-      setPreviewActiveTab(shareConfig.activeTab);
-    } else if (shareConfig.allowedTabs && shareConfig.allowedTabs.length > 0) {
+    // Always set the preview tab to the first allowed tab
+    if (shareConfig.allowedTabs && shareConfig.allowedTabs.length > 0) {
       setPreviewActiveTab(shareConfig.allowedTabs[0]);
     }
     
     console.log("SharedDashboardPreview initialized with:", {
-      activeTab: shareConfig.activeTab,
       allowedTabs: shareConfig.allowedTabs,
-      previewActiveTab
+      previewActiveTab: shareConfig.allowedTabs[0]
     });
-  }, [shareConfig, setPreviewActiveTab, previewActiveTab]);
+  }, [shareConfig, setPreviewActiveTab]);
 
   // IMPORTANT: Use precomputed data if available
   const precomputed = shareConfig.precomputedData;
