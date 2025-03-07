@@ -3,85 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useSharing } from '../../context/SharingContext';
 import { useData } from '../../context/DataContext';
+import { ClientDataProvider } from '../../context/ClientDataContext';
 import SummaryTab from '../dashboard/tabs/SummaryTab';
 import SalesTab from '../dashboard/tabs/SalesTab';
 import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
 import ErrorBoundary from '../ErrorBoundary';
 import sharingService from '../../services/sharingService';
-
-// Create a context to provide data to the tabs
-const ClientDataContext = React.createContext();
-
-// Custom hook to use the client data context
-export const useClientData = () => {
-  const clientData = React.useContext(ClientDataContext);
-  // If no client data is found, fall back to the regular DataContext
-  if (!clientData) {
-    console.warn("No ClientDataContext found, falling back to DataContext");
-    return useData();
-  }
-  return clientData;
-};
-
-// Add debugging middleware to ClientDataContext provider
-const withDebugLogging = (data, name = "ClientData") => {
-  // Only add this in development
-  if (process.env.NODE_ENV !== 'development') return data;
-  
-  const startTime = new Date();
-  console.group(`${name} Debug Info - ${startTime.toISOString()}`);
-  console.log("Data structure:", Object.keys(data || {}));
-  
-  // Check for critical data
-  console.log("Has filteredData:", Boolean(data?.filteredData));
-  if (data?.filteredData) {
-    console.log("filteredData length:", data.filteredData.length);
-    if (data.filteredData.length > 0) {
-      console.log("First filteredData item sample:", data.filteredData[0]);
-    }
-  }
-  
-  console.log("Has metrics:", Boolean(data?.metrics));
-  if (data?.metrics) {
-    console.log("Metrics:", data.metrics);
-  }
-  
-  console.log("Has salesData:", Boolean(data?.salesData));
-  if (data?.salesData) {
-    console.log("salesData length:", data.salesData.length);
-  }
-  
-  console.log("Has retailerData:", Boolean(data?.retailerData));
-  console.log("Has productDistribution:", Boolean(data?.productDistribution));
-  console.log("Has brandMapping:", Boolean(data?.brandMapping));
-  console.log("Has brandNames:", Boolean(data?.brandNames));
-  
-  if (data?.shareConfig) {
-    console.log("shareConfig present with tabs:", data.shareConfig.allowedTabs);
-  }
-  
-  console.groupEnd();
-  return data;
-};
-
-// Wrapper to provide transformed data to tabs 
-const TabContentWrapper = ({ children, transformedData }) => {
-  console.log("TabContentWrapper rendering with data:", transformedData);
-  
-  // Make sure to log the critical properties to verify they exist
-  console.log("Has filteredData:", Boolean(transformedData?.filteredData));
-  console.log("filteredData length:", transformedData?.filteredData?.length);
-  console.log("Has metrics:", Boolean(transformedData?.metrics));
-  
-  const debuggedData = withDebugLogging(transformedData);
-  
-  return (
-    <ClientDataContext.Provider value={debuggedData}>
-      {children}
-    </ClientDataContext.Provider>
-  );
-};
 
 // This component acts as a bridge between the ClientDataContext and the tab components
 // It provides all the methods and properties expected by the tab components
@@ -459,7 +387,7 @@ const SharedDashboardView = () => {
             </div>
           ) : (
             <ErrorBoundary>
-              <TabContentWrapper transformedData={transformedData}>
+              <ClientDataProvider clientData={transformedData}>
                 {/* Render the appropriate tab content */}
                 {activeTab === 'summary' && (
                   <ErrorBoundary>
@@ -481,7 +409,7 @@ const SharedDashboardView = () => {
                     <OffersTab isSharedView={true} />
                   </ErrorBoundary>
                 )}
-              </TabContentWrapper>
+              </ClientDataProvider>
             </ErrorBoundary>
           )}
         </div>

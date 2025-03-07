@@ -5,7 +5,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import _ from 'lodash';
 import { useChartColors } from '../../../utils/chartColors';
-import { useClientData } from '../sharing/SharedDashboardView';
+import { useClientData } from '../../../context/ClientDataContext';
 
 /**
  * SummaryTab component displays the executive summary
@@ -14,9 +14,11 @@ const SummaryTab = ({ isSharedView }) => {
   console.log("SummaryTab rendering, isSharedView:", isSharedView);
   
   // Use either the client data context or the regular data context based on the isSharedView prop
-  const dataContext = isSharedView ? useClientData() : useData();
+  const contextData = useData();
+  const clientData = useClientData();
+  const dataContext = isSharedView ? clientData : contextData;
   const { darkMode } = useTheme();
-  
+  const salesData = dataContext.salesData || [];
   // Get chart colors for dark mode support
   const colors = useChartColors();
   

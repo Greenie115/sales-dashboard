@@ -21,11 +21,35 @@ const SharingModal = () => {
     brandMapping
   } = useData();
   
+  const [shareConfig, setShareConfig] = useState({
+    allowedTabs: ['summary'], // Default tabs to share
+    hideRetailers: false,     // Whether to anonymize retailer names
+    hideTotals: false,        // Whether to hide total values
+    showOnlyPercent: false,   // Whether to show only percentages
+    clientNote: '',           // Optional message to display to client
+    expiryDate: null,         // When the share link expires
+    // Fixed branding for Shopmium
+    branding: {
+      showLogo: true,
+      primaryColor: '#FF0066', 
+      companyName: 'Shopmium',
+    },
+    // Filter state tracking
+    filters: {
+      selectedProducts: ['all'],
+      selectedRetailers: ['all'],
+      dateRange: 'all',
+      startDate: '',
+      endDate: '',
+      selectedMonth: '',
+    },
+    // Add precomputed data field
+    precomputedData: null
+  });
+
   const { 
     isShareModalOpen, 
     toggleShareModal, 
-    shareConfig, 
-    updateShareConfig,
     generateShareableLink,
     shareableLink,
     setShareableLink,
@@ -45,11 +69,11 @@ const SharingModal = () => {
   // When modal opens, ensure current tab is selected
   useEffect(() => {
     if (isShareModalOpen && activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
-      updateShareConfig({
+      setShareConfig({
         allowedTabs: [...shareConfig.allowedTabs, activeTab]
       });
     }
-  }, [isShareModalOpen, activeTab, shareConfig.allowedTabs, updateShareConfig]);
+  }, [isShareModalOpen, activeTab, shareConfig.allowedTabs, setShareConfig]);
   
   // Reset copy success message
   useEffect(() => {
@@ -66,17 +90,30 @@ const SharingModal = () => {
     if (shareConfig.allowedTabs.includes(tab)) {
       // Allow deselecting tabs as long as there's at least one tab selected
       if (shareConfig.allowedTabs.length > 1) {
-        updateShareConfig({
-          allowedTabs: shareConfig.allowedTabs.filter(t => t !== tab)
+        // Create new allowedTabs array without the current tab
+        const newAllowedTabs = shareConfig.allowedTabs.filter(t => t !== tab);
+        
+        // Check if we need a default tab
+        if (newAllowedTabs.length === 0) {
+          // If summary was the last tab, select 'sales' by default
+          if (tab === 'summary') {
+            newAllowedTabs.push('sales');
+          } else {
+            // Otherwise, select 'summary' by default
+            newAllowedTabs.push('summary');
+          }
+        }
+        
+        setShareConfig({
+          allowedTabs: newAllowedTabs
         });
       }
     } else {
-      updateShareConfig({
+      setShareConfig({
         allowedTabs: [...shareConfig.allowedTabs, tab]
       });
     }
   };
-  
   // Helper function to get display name without brand prefix
   const getProductDisplayName = (product) => {
     // Use the brand mapping if available
@@ -356,7 +393,7 @@ const SharingModal = () => {
                         <input
                           type="checkbox"
                           checked={shareConfig.hideRetailers}
-                          onChange={(e) => updateShareConfig({ hideRetailers: e.target.checked })}
+                          onChange={(e) => setShareConfig({ hideRetailers: e.target.checked })}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide retailer names (anonymize)</span>
@@ -365,7 +402,7 @@ const SharingModal = () => {
                         <input
                           type="checkbox"
                           checked={shareConfig.hideTotals}
-                          onChange={(e) => updateShareConfig({ hideTotals: e.target.checked })}
+                          onChange={(e) => setShareConfig({ hideTotals: e.target.checked })}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide total values</span>
@@ -374,7 +411,7 @@ const SharingModal = () => {
                         <input
                           type="checkbox"
                           checked={shareConfig.showOnlyPercent}
-                          onChange={(e) => updateShareConfig({ showOnlyPercent: e.target.checked })}
+                          onChange={(e) => setShareConfig({ showOnlyPercent: e.target.checked })}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Show only percentages (hide count values)</span>
@@ -388,7 +425,7 @@ const SharingModal = () => {
                     <textarea
                       placeholder="Add a message to display to the client (optional)"
                       value={shareConfig.clientNote}
-                      onChange={(e) => updateShareConfig({ clientNote: e.target.value })}
+                      onChange={(e) => setShareConfig({ clientNote: e.target.value })}
                       className={`w-full px-3 py-2 border ${
                         darkMode 
                           ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
@@ -404,7 +441,7 @@ const SharingModal = () => {
                     <input
                       type="date"
                       value={shareConfig.expiryDate || ''}
-                      onChange={(e) => updateShareConfig({ expiryDate: e.target.value || null })}
+                      onChange={(e) => setShareConfig({ expiryDate: e.target.value || null })}
                       min={new Date().toISOString().split('T')[0]}
                       className={`w-full px-3 py-2 border ${
                         darkMode 
@@ -418,14 +455,14 @@ const SharingModal = () => {
                   </div>
                   
                   {/* Branding */}
-                  <div>
+                  {/* <div>
                     <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Branding</h3>
                     <div className="space-y-3">
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
                           checked={shareConfig.branding.showLogo}
-                          onChange={(e) => updateShareConfig({ 
+                          onChange={(e) => setShareConfig({ 
                             branding: { ...shareConfig.branding, showLogo: e.target.checked }
                           })}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
@@ -440,7 +477,7 @@ const SharingModal = () => {
                         <input
                           type="text"
                           value={shareConfig.branding.companyName}
-                          onChange={(e) => updateShareConfig({ 
+                          onChange={(e) => setShareConfig({ 
                             branding: { ...shareConfig.branding, companyName: e.target.value }
                           })}
                           placeholder="Your Company"
@@ -460,7 +497,7 @@ const SharingModal = () => {
                           <input
                             type="color"
                             value={shareConfig.branding.primaryColor}
-                            onChange={(e) => updateShareConfig({ 
+                            onChange={(e) => setShareConfig({ 
                               branding: { ...shareConfig.branding, primaryColor: e.target.value }
                             })}
                             className="h-8 w-8 mr-3 rounded-md cursor-pointer"
@@ -468,7 +505,7 @@ const SharingModal = () => {
                           <input
                             type="text"
                             value={shareConfig.branding.primaryColor}
-                            onChange={(e) => updateShareConfig({ 
+                            onChange={(e) => setShareConfig({ 
                               branding: { ...shareConfig.branding, primaryColor: e.target.value }
                             })}
                             placeholder="#FF0066"
@@ -481,7 +518,7 @@ const SharingModal = () => {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </div> */}
                 </div>
               </div>
             </div>
@@ -582,21 +619,6 @@ const SharingModal = () => {
           <div className="flex items-center space-x-2">
             {activeView === 'create' && (
               <>
-                <button
-                  onClick={toggleInlinePreview}
-                  className={`
-                    px-4 py-2 rounded-md flex items-center text-sm font-medium
-                    ${inlinePreview 
-                      ? (darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700') 
-                      : (darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900')}
-                  `}
-                >
-                  <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
-                  </svg>
-                  {inlinePreview ? 'Hide Preview' : 'Show Preview'}
-                </button>
-                
                 <button
                   onClick={togglePreviewMode}
                   className={`

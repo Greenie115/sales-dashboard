@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { useSharing } from '../../context/SharingContext';
 import { useData } from '../../context/DataContext';
+import { ClientDataProvider } from '../../context/ClientDataContext';
 import SummaryTab from '../dashboard/tabs/SummaryTab';
 import SalesTab from '../dashboard/tabs/SalesTab';
-import DemographicsTab from '../../components/dashboard/tabs/DemographicsTab';
+import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
 
 const SharedDashboardPreview = ({ onClose }) => {
@@ -36,16 +37,26 @@ const SharedDashboardPreview = ({ onClose }) => {
   // Create data object to pass to the tabs
   const clientData = {
     // Use precomputed data from the share config instead of trying to calculate from scratch
-    filteredData: shareConfig.precomputedData?.filteredData || [],
-    metrics: shareConfig.precomputedData?.metrics || null,
-    retailerData: shareConfig.precomputedData?.retailerData || [],
-    productDistribution: shareConfig.precomputedData?.productDistribution || [],
+    filteredData: shareConfig.precomputedData?.filteredData || filteredData,
+    metrics: shareConfig.precomputedData?.metrics || metrics,
+    retailerData: shareConfig.precomputedData?.retailerData || retailerData,
+    productDistribution: shareConfig.precomputedData?.productDistribution || productDistribution,
     brandMapping: brandMapping || {},
-    brandNames: shareConfig.precomputedData?.brandNames || [],
-    clientName: shareConfig.metadata?.clientName || 'Client',
+    brandNames: shareConfig.precomputedData?.brandNames || brandNames || [],
+    clientName: shareConfig.metadata?.clientName || clientName || 'Client',
     filters: shareConfig?.filters || {},
     // Add flag to indicate this is a shared view
-    isSharedView: true
+    isSharedView: true,
+    // Add getter functions
+    getFilteredData: () => shareConfig.precomputedData?.filteredData || filteredData,
+    calculateMetrics: () => shareConfig.precomputedData?.metrics || metrics,
+    getRetailerDistribution: () => shareConfig.precomputedData?.retailerData || retailerData,
+    getProductDistribution: () => shareConfig.precomputedData?.productDistribution || productDistribution,
+    // Empty setter functions
+    setSelectedProducts: () => {},
+    setSelectedRetailers: () => {},
+    setDateRange: () => {},
+    setActiveTab: () => {}
   };
   
   // Transform data based on sharing config
@@ -171,13 +182,13 @@ const SharedDashboardPreview = ({ onClose }) => {
                 </p>
               </div>
             ) : (
-              <>
+              <ClientDataProvider clientData={transformedData}>
                 {/* Render the appropriate tab content */}
-                {activeTab === 'summary' && <SummaryTab />}
-                {activeTab === 'sales' && <SalesTab />}
-                {activeTab === 'demographics' && <DemographicsTab />}
-                {activeTab === 'offers' && <OffersTab />}
-              </>
+                {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
+                {activeTab === 'sales' && <SalesTab isSharedView={true} />}
+                {activeTab === 'demographics' && <DemographicsTab isSharedView={true} />}
+                {activeTab === 'offers' && <OffersTab isSharedView={true} />}
+              </ClientDataProvider>
             )}
           </div>
         </div>

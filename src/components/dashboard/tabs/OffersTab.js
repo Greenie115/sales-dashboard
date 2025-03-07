@@ -6,7 +6,7 @@ import {
   Tooltip, Legend, ResponsiveContainer, PieChart,
   Pie, Cell, BarChart, Bar, Area, ComposedChart
 } from 'recharts';
-import { useClientData } from '../sharing/SharedDashboardView';
+import { useClientData } from '../../../context/ClientDataContext';
 import _ from 'lodash';
 
 // Custom colors for light and dark mode
@@ -19,11 +19,13 @@ const OffersTab = ({ isSharedView }) => {
   // Get dark mode from ThemeContext
   const { darkMode } = useTheme();
 
+  const clientData = useClientData();
+  const dataContext = useData();
   const { 
     offerData: contextOfferData,
     hasOfferData: contextHasOfferData,
     filteredData: directFilteredData
-  } = isSharedView ? useClientData() : useData();
+  } = isSharedView ? clientData : dataContext;
 
   const offerData = isSharedView ? (contextOfferData || directFilteredData) : contextOfferData;
   const hasOfferData = isSharedView ? (offerData && offerData.length > 0) : contextHasOfferData;

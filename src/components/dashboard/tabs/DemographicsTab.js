@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext'; // ← Add this import
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { useClientData } from '../sharing/SharedDashboardView';
+import { useClientData } from '../../../context/ClientDataContext';
 import _ from 'lodash';
 
 // Custom colors for light and dark mode
@@ -39,10 +39,13 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 const DemographicsTab = ({ isSharedView }) => {
   // Get data from either ClientDataContext or DataContext
+  const clientData = useClientData();
+  const dataContext = useData();
+  const contextData = isSharedView ? clientData : dataContext;
   const { 
     salesData,
     filteredData: directFilteredData
-  } = isSharedView ? useClientData() : useData();
+  } = contextData;
   
   const { darkMode } = useTheme();
   

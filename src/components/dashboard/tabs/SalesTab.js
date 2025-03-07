@@ -2,12 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { useChartColors } from '../../../utils/chartColors';
-import { useClientData } from '../sharing/SharedDashboardView';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
   ComposedChart, Line, Area
 } from 'recharts';
+import { useClientData } from '../../../context/ClientDataContext';
 import _ from 'lodash';
 
 // Custom tooltip component
@@ -38,6 +38,8 @@ const SalesTab = ({ isSharedView }) => {
   const [showTrendLine, setShowTrendLine] = useState(true);
   
   // Use the appropriate data context based on view mode
+  const clientData = useClientData();
+  const dataContext = useData();
   const { 
     getFilteredData, 
     calculateMetrics, 
@@ -49,11 +51,10 @@ const SalesTab = ({ isSharedView }) => {
     filteredData: directFilteredData,
     metrics: directMetrics,
     productDistribution: directProductDistribution,
-    // Add this to fix the variable reference
     retailerDistribution: directRetailerDistribution,
     startDate,
     endDate
-  } = isSharedView ? useClientData() : useData();
+  } = isSharedView ? clientData : dataContext;
   
   // Get chart colors
   const colors = useChartColors();

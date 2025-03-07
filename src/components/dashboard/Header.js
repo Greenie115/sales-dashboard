@@ -4,6 +4,7 @@ import { useData } from '../../context/DataContext';
 import ThemeToggle from '../ThemeToggle';
 import ShareButton from '../sharing/ShareButton';
 import Papa from 'papaparse';
+import getPlaceholderSrc from '../../utils/placeholderImage';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -177,7 +178,7 @@ const Header = () => {
                 alt="Logo"
                 onError={(e) => {
                   e.target.onerror = null;
-                  e.target.src = "https://via.placeholder.com/150/FF0066/FFFFFF?text=SD";
+                  e.target.src = getPlaceholderSrc(150, 150, 'FF0066', 'FFFFFF', 'SD');
                 }}
               />
               <span className="ml-2 text-xl font-semibold text-gray-900 dark:text-white">Insights Dashboard</span>

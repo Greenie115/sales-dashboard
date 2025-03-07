@@ -113,11 +113,10 @@ export const SharingProvider = ({ children }) => {
         configToShare.allowedTabs = [...configToShare.allowedTabs, activeTab];
       }
       
-      // Add metadata
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
         brandNames: brandNames || [],
-        clientName: clientName || 'Client',
+        clientName: brandNames?.length > 0 ? brandNames.join(', ') : (clientName || 'Client'),
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
       
