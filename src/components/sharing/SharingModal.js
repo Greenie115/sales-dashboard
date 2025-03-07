@@ -18,7 +18,13 @@ const SharingModal = () => {
     calculateMetrics,
     getRetailerDistribution,
     getProductDistribution,
-    brandMapping
+    brandMapping,
+    selectedProducts,
+    selectedRetailers,
+    dateRange,
+    startDate,
+    endDate,
+    selectedMonth
   } = useData();
 
   const [shareConfig, setShareConfig] = useState({
@@ -106,11 +112,12 @@ const SharingModal = () => {
           allowedTabs: newAllowedTabs
       }));
     } else {
-        // Add the tab
-        setShareConfig(prevConfig => ({
-            ...prevConfig,
-            allowedTabs: [...prevConfig.allowedTabs, tab]
-        }));
+      // Add the tab and also make it the active tab
+      setShareConfig(prevConfig => ({
+          ...prevConfig,
+          allowedTabs: [...prevConfig.allowedTabs, tab],
+          activeTab: tab // Set as the new active tab when adding
+      }));
     }
   };
   // Helper function to get display name without brand prefix
@@ -136,12 +143,15 @@ const SharingModal = () => {
     try {
       // Create a copy of the current sharing configuration
       const configToShare = { ...shareConfig };
-
+  
       // Add current active tab if not in allowed tabs
       if (activeTab && !configToShare.allowedTabs.includes(activeTab)) {
         configToShare.allowedTabs = [...configToShare.allowedTabs, activeTab];
       }
-
+      
+      // Ensure we set the activeTab property
+      configToShare.activeTab = activeTab;
+  
       // Add metadata
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
@@ -149,7 +159,7 @@ const SharingModal = () => {
         clientName: clientName || 'Client',
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
-
+  
       // IMPORTANT: Add precomputed data for the client view
       configToShare.precomputedData = {
         filteredData: getFilteredData ? getFilteredData(configToShare.filters) : [],
@@ -160,14 +170,19 @@ const SharingModal = () => {
         brandNames: brandNames || [],
         salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
       };
-
+  
+      console.log("Generating share link with config:", {
+        activeTab: configToShare.activeTab,
+        allowedTabs: configToShare.allowedTabs
+      });
+  
       // Generate an ID using Base64 encoding (Original method)
       const shareId = btoa(JSON.stringify(configToShare)).replace(/=/g, '');
-
+  
       // Create the shareable URL with hash for HashRouter
       const baseUrl = window.location.origin;
-      const shareUrl = `<span class="math-inline">\{baseUrl\}/\#/shared/</span>{shareId}`;
-
+      const shareUrl = `${baseUrl}/#/shared/${shareId}`;
+  
       return shareUrl;
     } catch (error) {
       console.error("Error generating fallback link:", error);
@@ -176,17 +191,27 @@ const SharingModal = () => {
   };
 
   // Handle generating and copying link
-  const handleGenerateLink = async () => {
-    setIsGeneratingLink(true);
-    try {
-      // Ensure active tab is included in allowed tabs
-      if (activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
-        setShareConfig(prev => ({
-          ...prev,
-          allowedTabs: [...prev.allowedTabs, activeTab]
-        }));
-      }
-      
+// Update the handleGenerateLink function
+const handleGenerateLink = async () => {
+  setIsGeneratingLink(true);
+  try {
+    // Important: Set the active tab in the share config
+    setShareConfig(prev => ({
+      ...prev,
+      activeTab: activeTab // Ensure the current active tab is set in the config
+    }));
+
+    // Ensure active tab is included in allowed tabs
+    if (activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
+      setShareConfig(prev => ({
+        ...prev,
+        allowedTabs: [...prev.allowedTabs, activeTab],
+        activeTab: activeTab
+      }));
+    }
+    
+    // Add a small delay to ensure state updates before generating link
+    setTimeout(async () => {
       if (fallbackMode) {
         // Use the fallback method
         const shareUrl = generateFallbackLink();
@@ -195,19 +220,19 @@ const SharingModal = () => {
         // Try to use Supabase
         await generateShareableLink();
       }
-    } catch (error) {
-      console.error("Error generating link:", error);
-      // If Supabase fails, try fallback method
-      if (!fallbackMode) {
-        setFallbackMode(true);
-        const shareUrl = generateFallbackLink();
-        setShareableLink(shareUrl);
-      }
-    } finally {
       setIsGeneratingLink(false);
+    }, 100);
+  } catch (error) {
+    console.error("Error generating link:", error);
+    // If Supabase fails, try fallback method
+    if (!fallbackMode) {
+      setFallbackMode(true);
+      const shareUrl = generateFallbackLink();
+      setShareableLink(shareUrl);
     }
-  };
-
+    setIsGeneratingLink(false);
+  }
+};
   const applyCurrentFilters = () => {
     // Call the handler
     handleSaveCurrentFilters();
@@ -217,21 +242,44 @@ const SharingModal = () => {
       return {
         ...prev,
         filters: {
-          selectedProducts: [...filters.selectedProducts],
-          selectedRetailers: [...filters.selectedRetailers],
-          dateRange: filters.dateRange,
-          startDate: filters.startDate,
-          endDate: filters.endDate,
-          selectedMonth: filters.selectedMonth
+          selectedProducts: [...selectedProducts],
+          selectedRetailers: [...selectedRetailers],
+          dateRange: dateRange,
+          startDate: startDate,
+          endDate: endDate,
+          selectedMonth: selectedMonth
         }
       };
     });
   };
-
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareableLink)
       .then(() => setCopySuccess(true))
       .catch(err => console.error('Failed to copy link:', err));
+  };
+
+  const handlePreviewClick = () => {
+    // First, ensure active tab is in allowed tabs
+    if (activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
+      setShareConfig(prev => ({
+        ...prev,
+        allowedTabs: [...prev.allowedTabs, activeTab],
+        activeTab: activeTab
+      }));
+    }
+  
+    // Make sure we have at least one allowed tab
+    if (shareConfig.allowedTabs.length === 0) {
+      setShareConfig(prev => ({
+        ...prev,
+        allowedTabs: ['summary']
+      }));
+    }
+  
+    console.log("Opening preview with activeTab:", activeTab, "and allowedTabs:", shareConfig.allowedTabs);
+    
+    // Toggle to preview mode
+    togglePreviewMode();
   };
 
   // Toggle inline preview
@@ -647,7 +695,7 @@ const SharingModal = () => {
             {activeView === 'create' && (
               <>
                 <button
-                  onClick={togglePreviewMode}
+                  onClick={handlePreviewClick}
                   className={`
                     px-4 py-2 rounded-md flex items-center text-sm font-medium
                     ${darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900'}

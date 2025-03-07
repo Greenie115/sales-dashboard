@@ -84,22 +84,7 @@ const SharedDashboardView = () => {
         }
         
         setLoading(true);
-
-        if (config.activeTab && config.allowedTabs && config.allowedTabs.includes(config.activeTab)) {
-          // If there's an explicit active tab set and it's allowed, use it
-          setActiveTab(config.activeTab);
-          console.log("Setting active tab to:", config.activeTab);
-        } else if (config.allowedTabs && config.allowedTabs.length > 0) {
-          // Fallback to first allowed tab
-          const defaultTab = config.allowedTabs[0];
-          setActiveTab(defaultTab);
-          console.log("Setting default active tab to:", defaultTab);
-        } else {
-          // Ultimate fallback
-          setActiveTab('summary');
-          console.log("No allowed tabs found, defaulting to summary");
-        }
-        
+    
         // Determine if we should use Supabase or fallback method based on share ID format
         const useSupabase = !isBase64ShareId(shareId);
         setIsSupabaseMode(useSupabase);
@@ -183,6 +168,22 @@ const SharedDashboardView = () => {
         setShareConfig(config);
         console.log("Share config set:", config);
         
+        // ONLY NOW that we have config, check for active tab settings
+        if (config.activeTab && config.allowedTabs && config.allowedTabs.includes(config.activeTab)) {
+          // If there's an explicit active tab set and it's allowed, use it
+          setActiveTab(config.activeTab);
+          console.log("Setting active tab to:", config.activeTab);
+        } else if (config.allowedTabs && config.allowedTabs.length > 0) {
+          // Fallback to first allowed tab
+          const defaultTab = config.allowedTabs[0];
+          setActiveTab(defaultTab);
+          console.log("Setting default active tab to:", defaultTab);
+        } else {
+          // Ultimate fallback
+          setActiveTab('summary');
+          console.log("No allowed tabs found, defaulting to summary");
+        }
+        
         // Important: Store the client data directly from the precomputed data
         if (config.precomputedData) {
           // Create a deep copy to prevent reference issues
@@ -209,14 +210,6 @@ const SharedDashboardView = () => {
           }
         } else {
           console.warn("No precomputed data found in share config");
-        }
-        
-        // Set the active tab - FIXED THIS PART
-        if (config.allowedTabs && config.allowedTabs.length > 0) {
-          // Use the first allowed tab as the default
-          const defaultTab = config.allowedTabs[0];
-          setActiveTab(defaultTab);
-          console.log("Set initial active tab to:", defaultTab);
         }
         
         // Apply filters from the shared config

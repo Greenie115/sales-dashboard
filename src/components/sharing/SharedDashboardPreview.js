@@ -1,7 +1,5 @@
-// src/components/sharing/SharedDashboardPreview.js
-// Replace the entire component with this code
-
-import React, { useState, useEffect } from 'react';
+// Updated SharedDashboardPreview.js component
+import React, { useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { useSharing } from '../../context/SharingContext';
 import { useData } from '../../context/DataContext';
@@ -15,7 +13,9 @@ const SharedDashboardPreview = ({ onClose }) => {
   const { darkMode } = useTheme();
   const {
     shareConfig,
-    transformDataForSharing
+    transformDataForSharing,
+    previewActiveTab,
+    setPreviewActiveTab
   } = useSharing();
 
   const {
@@ -26,35 +26,24 @@ const SharedDashboardPreview = ({ onClose }) => {
     getProductDistribution,
     brandNames,
     clientName,
-    brandMapping,
-    selectedProducts,
-    selectedRetailers,
-    dateRange,
-    startDate,
-    endDate,
-    selectedMonth
+    brandMapping
   } = useData();
 
-  // State for currently active tab in the preview
-  const [activeTab, setActiveTab] = useState(shareConfig.activeTab || shareConfig.allowedTabs[0] || 'summary');
-
-  // Create precomputed data if not already present
+  // Effect to initialize preview tab on mount
   useEffect(() => {
-    if (!shareConfig.precomputedData) {
-      const precomputedData = {
-        filteredData: getFilteredData ? getFilteredData(shareConfig.filters) : [],
-        metrics: calculateMetrics ? calculateMetrics() : null,
-        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? getProductDistribution() : [],
-        brandMapping: brandMapping || {},
-        brandNames: brandNames || [],
-        salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
-      };
-      
-      // Update the shareConfig with precomputed data
-      shareConfig.precomputedData = precomputedData;
+    // Initialize tab based on allowedTabs and activeTab in shareConfig
+    if (shareConfig.activeTab && shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
+      setPreviewActiveTab(shareConfig.activeTab);
+    } else if (shareConfig.allowedTabs && shareConfig.allowedTabs.length > 0) {
+      setPreviewActiveTab(shareConfig.allowedTabs[0]);
     }
-  }, [shareConfig, getFilteredData, calculateMetrics, getRetailerDistribution, getProductDistribution, brandMapping, brandNames, salesData]);
+    
+    console.log("SharedDashboardPreview initialized with:", {
+      activeTab: shareConfig.activeTab,
+      allowedTabs: shareConfig.allowedTabs,
+      previewActiveTab
+    });
+  }, [shareConfig, setPreviewActiveTab, previewActiveTab]);
 
   // IMPORTANT: Use precomputed data if available
   const precomputed = shareConfig.precomputedData;
@@ -85,11 +74,11 @@ const SharedDashboardPreview = ({ onClose }) => {
     calculateMetrics: () => metrics,
     getRetailerDistribution: () => retailerData,
     getProductDistribution: () => productDistribution,
-    // Empty setter functions
+    // Empty setter functions for data context compatibility
     setSelectedProducts: () => { },
     setSelectedRetailers: () => { },
     setDateRange: () => { },
-    setActiveTab: () => { }
+    setActiveTab: () => { } // This is just a placeholder, we manage activeTab separately
   };
 
   // Transform data based on sharing config
@@ -101,6 +90,9 @@ const SharedDashboardPreview = ({ onClose }) => {
   // If expiry date is set, calculate days remaining
   const daysRemaining = shareConfig.expiryDate ?
     Math.ceil((new Date(shareConfig.expiryDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+  // Add logging to debug tab switching
+  console.log("Preview rendering with active tab:", previewActiveTab, "and allowed tabs:", shareConfig.allowedTabs);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -180,14 +172,17 @@ const SharedDashboardPreview = ({ onClose }) => {
           )}
 
           {/* Tab navigation */}
-          {shareConfig.allowedTabs.length > 1 && (
+          {shareConfig.allowedTabs && shareConfig.allowedTabs.length > 1 && (
             <div className={`mb-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
               <div className="flex space-x-2">
                 {shareConfig.allowedTabs.map(tab => (
                   <button
                     key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`py-3 px-4 border-b-2 font-medium text-sm ${activeTab === tab
+                    onClick={() => {
+                      console.log("Changing preview tab to:", tab);
+                      setPreviewActiveTab(tab);
+                    }}
+                    className={`py-3 px-4 border-b-2 font-medium text-sm ${previewActiveTab === tab
                         ? `border-pink-500 ${darkMode ? 'text-pink-400' : 'text-pink-600'}`
                         : `border-transparent ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'}`
                       }`}
@@ -213,11 +208,11 @@ const SharedDashboardPreview = ({ onClose }) => {
               </div>
             ) : (
               <ClientDataProvider clientData={transformedData}>
-                {/* Render the appropriate tab content */}
-                {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
-                {activeTab === 'sales' && <SalesTab isSharedView={true} />}
-                {activeTab === 'demographics' && <DemographicsTab isSharedView={true} />}
-                {activeTab === 'offers' && <OffersTab isSharedView={true} />}
+                {/* IMPORTANT: Use previewActiveTab from the SharingContext */}
+                {previewActiveTab === 'summary' && <SummaryTab isSharedView={true} />}
+                {previewActiveTab === 'sales' && <SalesTab isSharedView={true} />}
+                {previewActiveTab === 'demographics' && <DemographicsTab isSharedView={true} />}
+                {previewActiveTab === 'offers' && <OffersTab isSharedView={true} />}
               </ClientDataProvider>
             )}
           </div>
@@ -230,15 +225,6 @@ const SharedDashboardPreview = ({ onClose }) => {
               Shared with you by {shareConfig.branding.companyName}
             </span>
           </div>
-
-          {/* Show only if we need client acknowledgment */}
-          {false && (
-            <button
-              className="px-4 py-2 bg-pink-600 text-white rounded-md text-sm font-medium hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500"
-            >
-              Acknowledge Receipt
-            </button>
-          )}
         </div>
       </div>
     </div>

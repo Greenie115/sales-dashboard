@@ -27,6 +27,7 @@ export const SharingProvider = ({ children }) => {
   } = useData();
   
   // State for sharing configuration
+  const [previewActiveTab, setPreviewActiveTab] = useState('summary');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [shareConfig, setShareConfig] = useState({
@@ -206,30 +207,55 @@ export const SharingProvider = ({ children }) => {
   const togglePreviewMode = useCallback(() => {
     // Prepare precomputed data when entering preview mode
     if (!isPreviewMode) {
+      // First ensure that activeTab is included in allowedTabs
+      if (activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
+        setShareConfig(prev => ({
+          ...prev,
+          allowedTabs: [...prev.allowedTabs, activeTab],
+          activeTab: activeTab
+        }));
+        
+        // Set the preview active tab
+        setPreviewActiveTab(activeTab);
+      } else if (shareConfig.allowedTabs.length > 0) {
+        // Use the first allowed tab if active tab is not in allowed tabs
+        setPreviewActiveTab(shareConfig.allowedTabs[0]);
+      }
+      
       const precomputedData = {
         filteredData: getFilteredData ? getFilteredData(shareConfig.filters) : [],
-        metrics: calculateMetrics ? calculateMetrics() : null,
+        metrics: calculateMetrics ? calculateMetrics() : null, 
         retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
         productDistribution: getProductDistribution ? getProductDistribution() : [],
         salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
       };
       
-      // Update the share config with precomputed data
+      // Update the share config with precomputed data and active tab
       setShareConfig(prev => ({
         ...prev,
-        precomputedData
+        precomputedData,
+        activeTab: activeTab // Ensure active tab is set
       }));
+      
+      console.log("Entering preview mode with tabs:", {
+        activeTab,
+        allowedTabs: shareConfig.allowedTabs,
+        previewActiveTab
+      });
     }
     
     setIsPreviewMode(prev => !prev);
   }, [
-    isPreviewMode, 
-    shareConfig.filters, 
-    getFilteredData, 
-    calculateMetrics, 
-    getRetailerDistribution, 
-    getProductDistribution, 
-    salesData
+    isPreviewMode,
+    activeTab,
+    shareConfig.allowedTabs,
+    shareConfig.filters,
+    getFilteredData,
+    calculateMetrics,
+    getRetailerDistribution,
+    getProductDistribution,
+    salesData,
+    previewActiveTab
   ]);
   
   // Handle saving current filters
@@ -362,7 +388,9 @@ export const SharingProvider = ({ children }) => {
       loadingSharedDashboards,
       deleteSharedDashboard,
       shareError,
-      handleSaveCurrentFilters
+      handleSaveCurrentFilters,
+      previewActiveTab,
+      setPreviewActiveTab // Make this available in the context
     }}>
       {children}
     </SharingContext.Provider>
