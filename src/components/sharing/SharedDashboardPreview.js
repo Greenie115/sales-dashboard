@@ -10,67 +10,71 @@ import OffersTab from '../dashboard/tabs/OffersTab';
 
 const SharedDashboardPreview = ({ onClose }) => {
   const { darkMode } = useTheme();
-  const { 
-    shareConfig, 
-    transformDataForSharing 
+  const {
+    shareConfig,
+    transformDataForSharing
   } = useSharing();
-  
-  const { 
-    getFilteredData, 
-    calculateMetrics, 
+
+  const {
+    getFilteredData,
+    calculateMetrics,
     getRetailerDistribution,
     getProductDistribution,
-    brandNames, 
+    brandNames,
     clientName,
     brandMapping
   } = useData();
-  
+
   // State for currently active tab in the preview
   const [activeTab, setActiveTab] = useState(shareConfig.allowedTabs[0] || 'summary');
-  
-  // Get data for preview
-  const filteredData = getFilteredData ? getFilteredData() : [];
-  const metrics = calculateMetrics ? calculateMetrics() : null;
-  const retailerData = getRetailerDistribution ? getRetailerDistribution() : [];
-  const productDistribution = getProductDistribution ? getProductDistribution() : [];
-  
+
+  // IMPORTANT: Use precomputed data if available.  Fall back to live calculations *only* if precomputed data is missing.
+  const precomputed = shareConfig.precomputedData;
+  const filteredData = precomputed?.filteredData || (getFilteredData ? getFilteredData(shareConfig.filters) : []); //Pass filters
+  const metrics = precomputed?.metrics || (calculateMetrics ? calculateMetrics(filteredData) : null); // Pass filtered data
+  const retailerData = precomputed?.retailerData || (getRetailerDistribution ? getRetailerDistribution(filteredData) : []); //pass filteredData
+  const productDistribution = precomputed?.productDistribution || (getProductDistribution ? getProductDistribution(filteredData) : []); //pass filteredData
+  const usedBrandNames = precomputed?.brandNames || brandNames || [];
+  const usedClientName = shareConfig.metadata?.clientName || clientName || 'Client';
+  const usedBrandMapping = precomputed?.brandMapping || brandMapping || {};
+
+
   // Create data object to pass to the tabs
   const clientData = {
-    // Use precomputed data from the share config instead of trying to calculate from scratch
-    filteredData: shareConfig.precomputedData?.filteredData || filteredData,
-    metrics: shareConfig.precomputedData?.metrics || metrics,
-    retailerData: shareConfig.precomputedData?.retailerData || retailerData,
-    productDistribution: shareConfig.precomputedData?.productDistribution || productDistribution,
-    brandMapping: brandMapping || {},
-    brandNames: shareConfig.precomputedData?.brandNames || brandNames || [],
-    clientName: shareConfig.metadata?.clientName || clientName || 'Client',
+    filteredData,
+    metrics,
+    retailerData,
+    productDistribution,
+    brandMapping: usedBrandMapping,
+    brandNames: usedBrandNames,
+    clientName: usedClientName,
     filters: shareConfig?.filters || {},
     // Add flag to indicate this is a shared view
     isSharedView: true,
     // Add getter functions
-    getFilteredData: () => shareConfig.precomputedData?.filteredData || filteredData,
-    calculateMetrics: () => shareConfig.precomputedData?.metrics || metrics,
-    getRetailerDistribution: () => shareConfig.precomputedData?.retailerData || retailerData,
-    getProductDistribution: () => shareConfig.precomputedData?.productDistribution || productDistribution,
+    getFilteredData: () => filteredData,  // Return the already filtered data
+    calculateMetrics: () => metrics,      // Return the already calculated metrics
+    getRetailerDistribution: () => retailerData, // Return precomputed data
+    getProductDistribution: () => productDistribution, // Return precomputed data
     // Empty setter functions
-    setSelectedProducts: () => {},
-    setSelectedRetailers: () => {},
-    setDateRange: () => {},
-    setActiveTab: () => {}
+    setSelectedProducts: () => { },
+    setSelectedRetailers: () => { },
+    setDateRange: () => { },
+    setActiveTab: () => { }
   };
-  
-  // Transform data based on sharing config
-  const transformedData = transformDataForSharing ? 
-    transformDataForSharing({...clientData, shareConfig}) : 
-    clientData;
-  
+
+    // Transform data based on sharing config.  Pass `clientData`, NOT an overridden object.
+    // Also, only call transformDataForSharing *once*.
+    const transformedData = transformDataForSharing ? transformDataForSharing(clientData) : clientData;
+
+
   // Check if preview has data
   const hasData = transformedData?.filteredData?.length > 0;
-  
+
   // If expiry date is set, calculate days remaining
-  const daysRemaining = shareConfig.expiryDate ? 
+  const daysRemaining = shareConfig.expiryDate ?
     Math.ceil((new Date(shareConfig.expiryDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
-  
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
       <div className={`relative w-full h-full max-w-7xl max-h-[90vh] rounded-lg shadow-xl overflow-hidden flex flex-col ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
@@ -78,7 +82,7 @@ const SharedDashboardPreview = ({ onClose }) => {
         <div className={`px-6 py-4 border-b flex justify-between items-center ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
           <div className="flex items-center">
             {shareConfig.branding.showLogo && (
-              <div 
+              <div
                 className="h-8 w-8 rounded-full mr-3 flex items-center justify-center"
                 style={{ backgroundColor: shareConfig.branding.primaryColor }}
               >
@@ -96,13 +100,13 @@ const SharedDashboardPreview = ({ onClose }) => {
               </p>
             </div>
           </div>
-          
+
           {/* Preview Controls */}
           <div className="flex items-center space-x-2">
             <div className={`px-3 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 ${darkMode ? 'text-purple-300' : 'text-purple-800'}`}>
               Preview Mode
             </div>
-            <button 
+            <button
               onClick={onClose}
               className="ml-4 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
             >
@@ -112,14 +116,14 @@ const SharedDashboardPreview = ({ onClose }) => {
             </button>
           </div>
         </div>
-        
+
         {/* Watermark */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className={`text-9xl font-bold opacity-5 transform rotate-45 select-none ${darkMode ? 'text-gray-700' : 'text-gray-300'}`}>
             PREVIEW
           </div>
         </div>
-        
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
           {/* Client note if provided */}
@@ -128,11 +132,11 @@ const SharedDashboardPreview = ({ onClose }) => {
               <p>{shareConfig.clientNote}</p>
             </div>
           )}
-          
+
           {/* Expiry notice if set */}
           {daysRemaining !== null && (
-            <div className={`mb-6 p-3 rounded-lg text-sm flex items-center 
-              ${daysRemaining <= 3 
+            <div className={`mb-6 p-3 rounded-lg text-sm flex items-center
+              ${daysRemaining <= 3
                 ? (darkMode ? 'bg-red-900/20 text-red-300' : 'bg-red-50 text-red-800')
                 : (darkMode ? 'bg-yellow-900/20 text-yellow-300' : 'bg-yellow-50 text-yellow-800')
               }`}
@@ -141,13 +145,13 @@ const SharedDashboardPreview = ({ onClose }) => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span>
-                {daysRemaining > 0 
-                  ? `This dashboard link will expire in ${daysRemaining} day${daysRemaining > 1 ? 's' : ''}.` 
+                {daysRemaining > 0
+                  ? `This dashboard link will expire in ${daysRemaining} day${daysRemaining > 1 ? 's' : ''}.`
                   : 'This dashboard link has expired.'}
               </span>
             </div>
           )}
-          
+
           {/* Tab navigation */}
           {shareConfig.allowedTabs.length > 1 && (
             <div className={`mb-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -156,11 +160,10 @@ const SharedDashboardPreview = ({ onClose }) => {
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`py-3 px-4 border-b-2 font-medium text-sm ${
-                      activeTab === tab
+                    className={`py-3 px-4 border-b-2 font-medium text-sm ${activeTab === tab
                         ? `border-pink-500 ${darkMode ? 'text-pink-400' : 'text-pink-600'}`
                         : `border-transparent ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'}`
-                    }`}
+                      }`}
                   >
                     <span className="capitalize">{tab}</span>
                   </button>
@@ -168,7 +171,7 @@ const SharedDashboardPreview = ({ onClose }) => {
               </div>
             </div>
           )}
-          
+
           {/* Main content */}
           <div className={`bg-white dark:bg-gray-800 shadow rounded-lg ${!hasData ? 'p-6' : ''}`}>
             {!hasData ? (
@@ -192,7 +195,7 @@ const SharedDashboardPreview = ({ onClose }) => {
             )}
           </div>
         </div>
-        
+
         {/* Footer with shared branding */}
         <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-between items-center`}>
           <div className="flex items-center">
@@ -200,7 +203,7 @@ const SharedDashboardPreview = ({ onClose }) => {
               Shared with you by {shareConfig.branding.companyName}
             </span>
           </div>
-          
+
           {/* Show only if we need client acknowledgment */}
           {false && (
             <button

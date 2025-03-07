@@ -56,4 +56,4 @@ const RechartsThemeWrapper = ({ children, ...props }) => {
   return addDarkModeStyles(children);
 };
 
-export default RechartsThemeWrapper;
+export default RechartsThemeWrapper;    

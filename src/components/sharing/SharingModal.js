@@ -9,10 +9,10 @@ import SupabaseDebugger from '../debug/SupabaseDebugger';
 
 const SharingModal = () => {
   const { darkMode } = useTheme();
-  const { 
-    salesData, 
-    activeTab, 
-    brandNames, 
+  const {
+    salesData,
+    activeTab,
+    brandNames,
     clientName,
     getFilteredData,
     calculateMetrics,
@@ -20,18 +20,18 @@ const SharingModal = () => {
     getProductDistribution,
     brandMapping
   } = useData();
-  
+
   const [shareConfig, setShareConfig] = useState({
     allowedTabs: ['summary'], // Default tabs to share
     hideRetailers: false,     // Whether to anonymize retailer names
     hideTotals: false,        // Whether to hide total values
     showOnlyPercent: false,   // Whether to show only percentages
-    clientNote: '',           // Optional message to display to client
-    expiryDate: null,         // When the share link expires
+    clientNote: '',          // Optional message to display to client
+    expiryDate: null,        // When the share link expires
     // Fixed branding for Shopmium
     branding: {
       showLogo: true,
-      primaryColor: '#FF0066', 
+      primaryColor: '#FF0066',
       companyName: 'Shopmium',
     },
     // Filter state tracking
@@ -47,9 +47,9 @@ const SharingModal = () => {
     precomputedData: null
   });
 
-  const { 
-    isShareModalOpen, 
-    toggleShareModal, 
+  const {
+    isShareModalOpen,
+    toggleShareModal,
     generateShareableLink,
     shareableLink,
     setShareableLink,
@@ -57,7 +57,7 @@ const SharingModal = () => {
     togglePreviewMode,
     handleSaveCurrentFilters
   } = useSharing();
-  
+
   const { filters } = useFilter();
   const [copySuccess, setCopySuccess] = useState(false);
   const [inlinePreview, setInlinePreview] = useState(false);
@@ -65,16 +65,21 @@ const SharingModal = () => {
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [showDebugger, setShowDebugger] = useState(false);
   const [fallbackMode, setFallbackMode] = useState(false);
-  
+
   // When modal opens, ensure current tab is selected
   useEffect(() => {
-    if (isShareModalOpen && activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
-      setShareConfig({
-        allowedTabs: [...shareConfig.allowedTabs, activeTab]
-      });
+    if (isShareModalOpen && activeTab) {
+      // Initialize allowedTabs with activeTab if it's empty
+      if (shareConfig.allowedTabs.length === 0) {
+        setShareConfig(prevConfig => ({
+          ...prevConfig,
+          allowedTabs: [activeTab]
+        }));
+      }
     }
-  }, [isShareModalOpen, activeTab, shareConfig.allowedTabs, setShareConfig]);
-  
+  }, [isShareModalOpen, activeTab, shareConfig.allowedTabs.length]); // Use allowedTabs.length
+
+
   // Reset copy success message
   useEffect(() => {
     if (copySuccess) {
@@ -82,36 +87,30 @@ const SharingModal = () => {
       return () => clearTimeout(timer);
     }
   }, [copySuccess]);
-  
+
   if (!isShareModalOpen) return null;
-  
+
   // Handle tab selection
   const handleTabToggle = (tab) => {
     if (shareConfig.allowedTabs.includes(tab)) {
-      // Allow deselecting tabs as long as there's at least one tab selected
-      if (shareConfig.allowedTabs.length > 1) {
-        // Create new allowedTabs array without the current tab
-        const newAllowedTabs = shareConfig.allowedTabs.filter(t => t !== tab);
-        
-        // Check if we need a default tab
-        if (newAllowedTabs.length === 0) {
-          // If summary was the last tab, select 'sales' by default
-          if (tab === 'summary') {
-            newAllowedTabs.push('sales');
-          } else {
-            // Otherwise, select 'summary' by default
-            newAllowedTabs.push('summary');
-          }
-        }
-        
-        setShareConfig({
-          allowedTabs: newAllowedTabs
-        });
+      // Check if it's the last tab and prevent deselection
+      if (shareConfig.allowedTabs.length === 1) {
+        return; // Do nothing if it's the last tab
       }
+      
+      // Create new allowedTabs array without the current tab
+      const newAllowedTabs = shareConfig.allowedTabs.filter(t => t !== tab);
+          
+      setShareConfig(prevConfig => ({
+          ...prevConfig,
+          allowedTabs: newAllowedTabs
+      }));
     } else {
-      setShareConfig({
-        allowedTabs: [...shareConfig.allowedTabs, tab]
-      });
+        // Add the tab
+        setShareConfig(prevConfig => ({
+            ...prevConfig,
+            allowedTabs: [...prevConfig.allowedTabs, tab]
+        }));
     }
   };
   // Helper function to get display name without brand prefix
@@ -120,7 +119,7 @@ const SharingModal = () => {
     if (brandMapping && brandMapping[product]) {
       return brandMapping[product].displayName || product;
     }
-    
+
     // Fallback: Remove the brand prefix (first word or two)
     const words = product.split(' ');
     if (words.length >= 3) {
@@ -128,21 +127,21 @@ const SharingModal = () => {
       const wordsToRemove = words.length >= 5 ? 2 : 1;
       return words.slice(wordsToRemove).join(' ');
     }
-    
+
     return product;
   };
-  
+
   // Create a fallback link using Base64 encoding (like the original implementation)
   const generateFallbackLink = () => {
     try {
       // Create a copy of the current sharing configuration
       const configToShare = { ...shareConfig };
-      
+
       // Add current active tab if not in allowed tabs
       if (activeTab && !configToShare.allowedTabs.includes(activeTab)) {
         configToShare.allowedTabs = [...configToShare.allowedTabs, activeTab];
       }
-      
+
       // Add metadata
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
@@ -150,7 +149,7 @@ const SharingModal = () => {
         clientName: clientName || 'Client',
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
-      
+
       // IMPORTANT: Add precomputed data for the client view
       configToShare.precomputedData = {
         filteredData: getFilteredData ? getFilteredData(configToShare.filters) : [],
@@ -161,21 +160,21 @@ const SharingModal = () => {
         brandNames: brandNames || [],
         salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
       };
-      
+
       // Generate an ID using Base64 encoding (Original method)
       const shareId = btoa(JSON.stringify(configToShare)).replace(/=/g, '');
-      
+
       // Create the shareable URL with hash for HashRouter
       const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/#/shared/${shareId}`;
-      
+      const shareUrl = `<span class="math-inline">\{baseUrl\}/\#/shared/</span>{shareId}`;
+
       return shareUrl;
     } catch (error) {
       console.error("Error generating fallback link:", error);
       return "";
     }
   };
-  
+
   // Handle generating and copying link
   const handleGenerateLink = async () => {
     setIsGeneratingLink(true);
@@ -200,25 +199,25 @@ const SharingModal = () => {
       setIsGeneratingLink(false);
     }
   };
-  
+
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareableLink)
       .then(() => setCopySuccess(true))
       .catch(err => console.error('Failed to copy link:', err));
   };
-  
+
   // Toggle inline preview
   const toggleInlinePreview = () => {
     setInlinePreview(!inlinePreview);
   };
-  
+
   // Toggle fallback mode
   const toggleFallbackMode = () => {
     setFallbackMode(!fallbackMode);
     // Clear existing link when toggling mode
     setShareableLink('');
   };
-  
+
   // If in full preview mode, render the preview
   if (isPreviewMode) {
     return <SharedDashboardPreview onClose={togglePreviewMode} />;
