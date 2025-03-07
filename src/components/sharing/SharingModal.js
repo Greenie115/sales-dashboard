@@ -179,6 +179,14 @@ const SharingModal = () => {
   const handleGenerateLink = async () => {
     setIsGeneratingLink(true);
     try {
+      // Ensure active tab is included in allowed tabs
+      if (activeTab && !shareConfig.allowedTabs.includes(activeTab)) {
+        setShareConfig(prev => ({
+          ...prev,
+          allowedTabs: [...prev.allowedTabs, activeTab]
+        }));
+      }
+      
       if (fallbackMode) {
         // Use the fallback method
         const shareUrl = generateFallbackLink();
@@ -198,6 +206,26 @@ const SharingModal = () => {
     } finally {
       setIsGeneratingLink(false);
     }
+  };
+
+  const applyCurrentFilters = () => {
+    // Call the handler
+    handleSaveCurrentFilters();
+    
+    // Force update the UI by updating local state
+    setShareConfig(prev => {
+      return {
+        ...prev,
+        filters: {
+          selectedProducts: [...filters.selectedProducts],
+          selectedRetailers: [...filters.selectedRetailers],
+          dateRange: filters.dateRange,
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+          selectedMonth: filters.selectedMonth
+        }
+      };
+    });
   };
 
   const handleCopyLink = () => {
@@ -349,7 +377,7 @@ const SharingModal = () => {
                     <div className="flex justify-between items-center mb-2">
                       <h3 className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Data Filters</h3>
                       <button
-                        onClick={handleSaveCurrentFilters}
+                        onClick={applyCurrentFilters}
                         className={`text-xs py-1 px-2 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                       >
                         Use Current Filters

@@ -80,12 +80,11 @@ const SharedDashboardsManager = () => {
   // Copy the share URL to clipboard
   const copyShareUrl = (shareId) => {
     const baseUrl = window.location.origin;
-    const shareUrl = `${baseUrl}/shared/${shareId}`;
+    const shareUrl = `${baseUrl}/#/shared/${shareId}`;
     
     navigator.clipboard.writeText(shareUrl)
       .then(() => {
         // Show a temporary copy success message
-        // This could be improved with a toast notification system
         const row = document.getElementById(`dashboard-${shareId}`);
         if (row) {
           const originalBg = row.style.backgroundColor;
@@ -99,6 +98,12 @@ const SharedDashboardsManager = () => {
         console.error('Failed to copy URL:', err);
       });
   };
+
+  const openDashboardLink = (shareId) => {
+  const baseUrl = window.location.origin;
+  const shareUrl = `${baseUrl}/#/shared/${shareId}`;
+  window.open(shareUrl, '_blank');
+};
   
   return (
     <div className="mt-6">
@@ -219,22 +224,7 @@ const SharedDashboardsManager = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                           </svg>
                         </button>
-                        <a
-                          href={`/shared/${dashboard.share_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`p-1 rounded-md ${
-                            darkMode ? 
-                              'text-green-400 hover:bg-green-900/30' : 
-                              'text-green-600 hover:bg-green-100'
-                          }`}
-                          title="View dashboard"
-                        >
-                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </a>
+                        title="View dashboard"
                         <button
                           onClick={() => openDeleteModal(dashboard)}
                           className={`p-1 rounded-md ${

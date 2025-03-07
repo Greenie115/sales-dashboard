@@ -113,6 +113,14 @@ export const SharingProvider = ({ children }) => {
         configToShare.allowedTabs = [...configToShare.allowedTabs, activeTab];
       }
       
+      // Ensure we have at least one tab
+      if (configToShare.allowedTabs.length === 0) {
+        configToShare.allowedTabs = ['summary'];
+      }
+      
+      // Set the active tab as the first allowed tab
+      configToShare.activeTab = activeTab || configToShare.allowedTabs[0];
+      
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
         brandNames: brandNames || [],
@@ -226,8 +234,7 @@ export const SharingProvider = ({ children }) => {
   
   // Handle saving current filters
   const handleSaveCurrentFilters = useCallback(() => {
-    // Log values to verify they're available
-    console.log("Applying current filters to share config:", {
+    console.log("Saving current filters to share config:", {
       selectedProducts,
       selectedRetailers,
       dateRange,
@@ -236,19 +243,32 @@ export const SharingProvider = ({ children }) => {
       selectedMonth
     });
   
-    // Update share config with current filter values
-    updateShareConfig({
-      filters: {
-        selectedProducts: [...selectedProducts],
-        selectedRetailers: [...selectedRetailers],
-        dateRange,
-        startDate,
-        endDate,
-        selectedMonth
-      }
+    // First make sure we have the latest values
+    const currentFilters = {
+      selectedProducts: [...selectedProducts],
+      selectedRetailers: [...selectedRetailers],
+      dateRange,
+      startDate,
+      endDate,
+      selectedMonth
+    };
+  
+    // Directly update the shareConfig object with a new object
+    setShareConfig(prev => {
+      const updatedConfig = {
+        ...prev,
+        filters: currentFilters
+      };
+      
+      console.log("Updated share config filters:", updatedConfig.filters);
+      return updatedConfig;
     });
+  
+    // This is important - force a refresh to show the update was applied
+    setTimeout(() => {
+      console.log("Current share config filters:", shareConfig.filters);
+    }, 100);
   }, [
-    updateShareConfig,
     selectedProducts, 
     selectedRetailers, 
     dateRange, 

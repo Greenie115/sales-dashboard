@@ -1,3 +1,6 @@
+// src/components/sharing/SharedDashboardPreview.js
+// Replace the entire component with this code
+
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { useSharing } from '../../context/SharingContext';
@@ -16,31 +19,56 @@ const SharedDashboardPreview = ({ onClose }) => {
   } = useSharing();
 
   const {
+    salesData,
     getFilteredData,
     calculateMetrics,
     getRetailerDistribution,
     getProductDistribution,
     brandNames,
     clientName,
-    brandMapping
+    brandMapping,
+    selectedProducts,
+    selectedRetailers,
+    dateRange,
+    startDate,
+    endDate,
+    selectedMonth
   } = useData();
 
   // State for currently active tab in the preview
-  const [activeTab, setActiveTab] = useState(shareConfig.allowedTabs[0] || 'summary');
+  const [activeTab, setActiveTab] = useState(shareConfig.activeTab || shareConfig.allowedTabs[0] || 'summary');
 
-  // IMPORTANT: Use precomputed data if available.  Fall back to live calculations *only* if precomputed data is missing.
+  // Create precomputed data if not already present
+  useEffect(() => {
+    if (!shareConfig.precomputedData) {
+      const precomputedData = {
+        filteredData: getFilteredData ? getFilteredData(shareConfig.filters) : [],
+        metrics: calculateMetrics ? calculateMetrics() : null,
+        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
+        productDistribution: getProductDistribution ? getProductDistribution() : [],
+        brandMapping: brandMapping || {},
+        brandNames: brandNames || [],
+        salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
+      };
+      
+      // Update the shareConfig with precomputed data
+      shareConfig.precomputedData = precomputedData;
+    }
+  }, [shareConfig, getFilteredData, calculateMetrics, getRetailerDistribution, getProductDistribution, brandMapping, brandNames, salesData]);
+
+  // IMPORTANT: Use precomputed data if available
   const precomputed = shareConfig.precomputedData;
-  const filteredData = precomputed?.filteredData || (getFilteredData ? getFilteredData(shareConfig.filters) : []); //Pass filters
-  const metrics = precomputed?.metrics || (calculateMetrics ? calculateMetrics(filteredData) : null); // Pass filtered data
-  const retailerData = precomputed?.retailerData || (getRetailerDistribution ? getRetailerDistribution(filteredData) : []); //pass filteredData
-  const productDistribution = precomputed?.productDistribution || (getProductDistribution ? getProductDistribution(filteredData) : []); //pass filteredData
+  const filteredData = precomputed?.filteredData || (getFilteredData ? getFilteredData(shareConfig.filters) : []);
+  const metrics = precomputed?.metrics || (calculateMetrics ? calculateMetrics() : null);
+  const retailerData = precomputed?.retailerData || (getRetailerDistribution ? getRetailerDistribution() : []);
+  const productDistribution = precomputed?.productDistribution || (getProductDistribution ? getProductDistribution() : []);
   const usedBrandNames = precomputed?.brandNames || brandNames || [];
   const usedClientName = shareConfig.metadata?.clientName || clientName || 'Client';
   const usedBrandMapping = precomputed?.brandMapping || brandMapping || {};
 
-
   // Create data object to pass to the tabs
   const clientData = {
+    salesData: precomputed?.salesData || [],
     filteredData,
     metrics,
     retailerData,
@@ -51,11 +79,12 @@ const SharedDashboardPreview = ({ onClose }) => {
     filters: shareConfig?.filters || {},
     // Add flag to indicate this is a shared view
     isSharedView: true,
+    hasData: filteredData && filteredData.length > 0, // Important: set hasData flag
     // Add getter functions
-    getFilteredData: () => filteredData,  // Return the already filtered data
-    calculateMetrics: () => metrics,      // Return the already calculated metrics
-    getRetailerDistribution: () => retailerData, // Return precomputed data
-    getProductDistribution: () => productDistribution, // Return precomputed data
+    getFilteredData: () => filteredData,  
+    calculateMetrics: () => metrics,
+    getRetailerDistribution: () => retailerData,
+    getProductDistribution: () => productDistribution,
     // Empty setter functions
     setSelectedProducts: () => { },
     setSelectedRetailers: () => { },
@@ -63,10 +92,8 @@ const SharedDashboardPreview = ({ onClose }) => {
     setActiveTab: () => { }
   };
 
-    // Transform data based on sharing config.  Pass `clientData`, NOT an overridden object.
-    // Also, only call transformDataForSharing *once*.
-    const transformedData = transformDataForSharing ? transformDataForSharing(clientData) : clientData;
-
+  // Transform data based on sharing config
+  const transformedData = transformDataForSharing ? transformDataForSharing(clientData) : clientData;
 
   // Check if preview has data
   const hasData = transformedData?.filteredData?.length > 0;
