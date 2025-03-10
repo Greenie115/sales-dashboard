@@ -166,22 +166,17 @@ const SharedDashboardView = () => {
         }
         
         setShareConfig(config);
-        console.log("Share config set:", config);
-        
-        // ONLY NOW that we have config, check for active tab settings
+      
+        // Set active tab from config, ensuring it's in the allowed tabs
         if (config.activeTab && config.allowedTabs && config.allowedTabs.includes(config.activeTab)) {
-          // If there's an explicit active tab set and it's allowed, use it
+          console.log("Setting active tab to config value:", config.activeTab);
           setActiveTab(config.activeTab);
-          console.log("Setting active tab to:", config.activeTab);
         } else if (config.allowedTabs && config.allowedTabs.length > 0) {
-          // Fallback to first allowed tab
-          const defaultTab = config.allowedTabs[0];
-          setActiveTab(defaultTab);
-          console.log("Setting default active tab to:", defaultTab);
+          console.log("Setting active tab to first allowed tab:", config.allowedTabs[0]);
+          setActiveTab(config.allowedTabs[0]);
         } else {
-          // Ultimate fallback
+          console.log("No valid tabs found, defaulting to summary");
           setActiveTab('summary');
-          console.log("No allowed tabs found, defaulting to summary");
         }
 
         console.log("Shared dashboard configuration:", {
@@ -241,10 +236,12 @@ const SharedDashboardView = () => {
   }, [shareId, setSalesData, setSelectedProducts, setSelectedRetailers, setDateRange, setStartDate, setEndDate, setSelectedMonth]);
 
   // Handle tab selection
-  const handleTabChange = (tab) => {
-    console.log("Tab changed to:", tab);
+const handleTabChange = (tab) => {
+  console.log("Changing active tab to:", tab);
+  if (tab && shareConfig.allowedTabs.includes(tab)) {
     setActiveTab(tab);
-  };
+  }
+};
   
   // If still loading
   if (loading) {
@@ -377,7 +374,7 @@ const SharedDashboardView = () => {
         )}
         
         {/* Tabs navigation if multiple tabs are allowed */}
-        {shareConfig.allowedTabs.length > 1 && (
+        {shareConfig.allowedTabs && shareConfig.allowedTabs.length > 1 && (
           <div className={`mb-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
             <div className="flex flex-wrap">
               {shareConfig.allowedTabs.map(tab => (
@@ -397,7 +394,7 @@ const SharedDashboardView = () => {
           </div>
         )}
         
-        {/* Main content based on active tab */}
+       {/* Main content based on active tab */}
         <div className={`bg-white dark:bg-gray-800 shadow rounded-lg ${!hasData ? 'p-6' : ''}`}>
           {!hasData ? (
             <div className="text-center py-12">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 /**
- * TabSelector for the Sharing Modal
+ * TabSelector for the Sharing Modal - FIXED VERSION
  * 
  * This component manages tab selection independently from the main dashboard.
  * It maintains its own state of selected tabs and active tab.
@@ -12,29 +12,47 @@ const ShareConfigTabSelector = ({
   onChange,
   darkMode
 }) => {
+  console.log("ShareConfigTabSelector initializing with:", {
+    initialTabs,
+    initialActiveTab,
+  });
+  
   // Local state for selected tabs and active tab
   const [selectedTabs, setSelectedTabs] = useState(initialTabs);
   const [activeTab, setActiveTab] = useState(initialActiveTab);
 
   // Initialize with passed props
   useEffect(() => {
+    // Always ensure we have valid initialTabs
     if (initialTabs.length > 0) {
       setSelectedTabs(initialTabs);
+      
+      // Ensure activeTab is one of the selected tabs
+      if (initialTabs.includes(initialActiveTab)) {
+        setActiveTab(initialActiveTab);
+      } else {
+        // Default to first tab if active tab isn't in the selected tabs
+        setActiveTab(initialTabs[0]);
+      }
     }
-    
-    if (initialActiveTab && initialTabs.includes(initialActiveTab)) {
-      setActiveTab(initialActiveTab);
-    } else if (initialTabs.length > 0) {
-      setActiveTab(initialTabs[0]);
-    }
-  }, []);
+  }, [initialTabs, initialActiveTab]);
 
   // Notify parent component of changes
   useEffect(() => {
     if (onChange) {
+      // Ensure we have at least one tab selected
+      const tabs = selectedTabs.length > 0 ? selectedTabs : ['summary'];
+      // Make sure activeTab is in the selected tabs
+      const validActiveTab = tabs.includes(activeTab) ? activeTab : tabs[0];
+      
+      console.log("ShareConfigTabSelector notifying parent of change:", {
+        allowedTabs: tabs,
+        activeTab: validActiveTab
+      });
+      
       onChange({
-        allowedTabs: selectedTabs,
-        activeTab: activeTab
+        allowedTabs: tabs,
+        activeTab: validActiveTab
       });
     }
   }, [selectedTabs, activeTab, onChange]);
@@ -69,6 +87,7 @@ const ShareConfigTabSelector = ({
   // Set active tab (when user clicks on an already selected tab)
   const handleSetActiveTab = (tab) => {
     if (selectedTabs.includes(tab)) {
+      console.log("Setting active tab to:", tab);
       setActiveTab(tab);
     }
   };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSharing } from '../../context/SharingContext';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -12,7 +12,7 @@ const SharingModal = () => {
   const { darkMode } = useTheme();
   const {
     salesData,
-    activeTab,
+    activeTab: mainActiveTab,
     brandNames,
     clientName,
     getFilteredData,
@@ -28,7 +28,7 @@ const SharingModal = () => {
     selectedMonth
   } = useData();
 
-  // IMPORTANT: Add previewActiveTab and setPreviewActiveTab from the SharingContext
+  // Get sharing context functions
   const {
     isShareModalOpen,
     toggleShareModal,
@@ -36,14 +36,14 @@ const SharingModal = () => {
     shareableLink,
     setShareableLink,
     isPreviewMode,
-    togglePreviewMode,
-    handleSaveCurrentFilters,
-    previewActiveTab,
-    setPreviewActiveTab
+    setIsPreviewMode,
+    handleSaveCurrentFilters
   } = useSharing();
 
+  // Local state for the sharing configuration
   const [shareConfig, setShareConfig] = useState({
     allowedTabs: [], // Start with an empty array
+    activeTab: null, // No active tab initially
     hideRetailers: false,
     hideTotals: false,
     showOnlyPercent: false,
@@ -64,30 +64,49 @@ const SharingModal = () => {
     },
     precomputedData: null
   });
+  
+  // Reference to the current configuration to avoid stale closures
+  const configRef = useRef(shareConfig);
+  
+  // Update the ref whenever the shareConfig changes
+  useEffect(() => {
+    configRef.current = shareConfig;
+  }, [shareConfig]);
 
-  const { filters } = useFilter();
+  // Local UI state
   const [copySuccess, setCopySuccess] = useState(false);
   const [inlinePreview, setInlinePreview] = useState(false);
   const [activeView, setActiveView] = useState('create'); // 'create', 'manage', or 'debug'
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
-  const [showDebugger, setShowDebugger] = useState(false);
   const [fallbackMode, setFallbackMode] = useState(false);
 
-
-// When modal opens, ensure current tab is selected
-useEffect(() => {
-  if (isShareModalOpen) {
-    console.log("Modal opened with activeTab:", activeTab);
-    
-    // When modal opens, start fresh with ONLY the current tab
-    setShareConfig(prev => ({
-      ...prev,
-      allowedTabs: [activeTab || 'summary'],
-      activeTab: activeTab || 'summary'
-    }));
-  }
-}, [isShareModalOpen, activeTab]);
-
+  // Initialize sharing config when modal opens
+  useEffect(() => {
+    if (isShareModalOpen) {
+      console.log("Modal opened with activeTab:", mainActiveTab);
+      
+      // When modal opens, initialize with the current main tab
+      setShareConfig(prev => {
+        const currentMainTab = mainActiveTab || 'summary';
+        
+        // Either use the existing allowed tabs, or start fresh with the current tab
+        let allowedTabs = prev.allowedTabs.length > 0 ? 
+                          [...prev.allowedTabs] : 
+                          [currentMainTab];
+        
+        // Ensure current tab is included in allowed tabs
+        if (!allowedTabs.includes(currentMainTab)) {
+          allowedTabs.push(currentMainTab);
+        }
+        
+        return {
+          ...prev,
+          allowedTabs,
+          activeTab: currentMainTab
+        };
+      });
+    }
+  }, [isShareModalOpen, mainActiveTab]);
 
   // Reset copy success message
   useEffect(() => {
@@ -97,6 +116,7 @@ useEffect(() => {
     }
   }, [copySuccess]);
 
+  // Exit if modal is closed
   if (!isShareModalOpen) return null;
 
   // Helper function to get display name without brand prefix
@@ -117,19 +137,16 @@ useEffect(() => {
     return product;
   };
 
-  // Create a fallback link using Base64 encoding (like the original implementation)
+  // Create a fallback link using Base64 encoding
   const generateFallbackLink = () => {
     try {
       // Create a copy of the current sharing configuration
-      const configToShare = { ...shareConfig };
+      const configToShare = { ...configRef.current };
   
-      // Add current active tab if not in allowed tabs
-      if (activeTab && !configToShare.allowedTabs.includes(activeTab)) {
-        configToShare.allowedTabs = [...configToShare.allowedTabs, activeTab];
+      // Ensure we have an active tab that's in the allowed tabs
+      if (!configToShare.allowedTabs.includes(configToShare.activeTab)) {
+        configToShare.activeTab = configToShare.allowedTabs[0];
       }
-      
-      // Ensure we set the activeTab property
-      configToShare.activeTab = configToShare.allowedTabs[0];
 
       // Add metadata
       configToShare.metadata = {
@@ -155,7 +172,7 @@ useEffect(() => {
         allowedTabs: configToShare.allowedTabs
       });
   
-      // Generate an ID using Base64 encoding (Original method)
+      // Generate an ID using Base64 encoding
       const shareId = btoa(JSON.stringify(configToShare)).replace(/=/g, '');
   
       // Create the shareable URL with hash for HashRouter
@@ -183,16 +200,19 @@ useEffect(() => {
       
       // Ensure active tab is set and valid
       if (!shareConfig.activeTab || !shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
-        setShareConfig(prev => ({
-          ...prev,
-          activeTab: prev.allowedTabs[0]
-        }));
+        setShareConfig(prev => {
+          const updated = {
+            ...prev,
+            activeTab: prev.allowedTabs[0]
+          };
+          configRef.current = updated;
+          return updated;
+        });
         
         // Add a small delay to ensure state update
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       
-      // Log the configuration for debugging
       console.log("Generating share link with config:", {
         allowedTabs: shareConfig.allowedTabs,
         activeTab: shareConfig.activeTab
@@ -225,7 +245,7 @@ useEffect(() => {
     
     // Force update the UI by updating local state
     setShareConfig(prev => {
-      return {
+      const updated = {
         ...prev,
         filters: {
           selectedProducts: [...selectedProducts],
@@ -236,6 +256,8 @@ useEffect(() => {
           selectedMonth: selectedMonth
         }
       };
+      configRef.current = updated;
+      return updated;
     });
   };
   
@@ -245,23 +267,30 @@ useEffect(() => {
       .catch(err => console.error('Failed to copy link:', err));
   };
 
+  // Enter preview mode with current configuration
   const handlePreviewClick = () => {
     // Make sure we have the latest tab configuration
     if (shareConfig.allowedTabs.length === 0) {
       // If no tabs are selected, default to summary
-      setShareConfig(prev => ({
-        ...prev,
-        allowedTabs: ['summary'],
-        activeTab: 'summary'
-      }));
-      setPreviewActiveTab('summary');
+      setShareConfig(prev => {
+        const updated = {
+          ...prev,
+          allowedTabs: ['summary'],
+          activeTab: 'summary'
+        };
+        configRef.current = updated;
+        return updated;
+      });
     } else if (!shareConfig.activeTab || !shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
       // Make sure active tab is valid
-      setShareConfig(prev => ({
-        ...prev,
-        activeTab: prev.allowedTabs[0]
-      }));
-      setPreviewActiveTab(shareConfig.allowedTabs[0]);
+      setShareConfig(prev => {
+        const updated = {
+          ...prev,
+          activeTab: prev.allowedTabs[0]
+        };
+        configRef.current = updated;
+        return updated;
+      });
     }
     
     console.log("Opening preview with tab config:", {
@@ -269,8 +298,31 @@ useEffect(() => {
       activeTab: shareConfig.activeTab
     });
     
+    // Prepare precomputed data
+    const currentConfig = configRef.current;
+    setShareConfig(prev => {
+      // Precompute data for the preview - for ALL tabs, not just the active one
+      const precomputedData = {
+        filteredData: getFilteredData ? getFilteredData(prev.filters) : [],
+        metrics: calculateMetrics ? calculateMetrics() : null, 
+        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
+        productDistribution: getProductDistribution ? getProductDistribution() : [],
+        salesData: salesData ? salesData.slice(0, 1000) : [], // Include a subset of the data
+        brandNames: brandNames || [],
+        brandMapping: brandMapping || {}
+      };
+      
+      const updated = {
+        ...prev,
+        precomputedData
+      };
+      
+      configRef.current = updated;
+      return updated;
+    });
+    
     // Toggle to preview mode
-    togglePreviewMode();
+    setIsPreviewMode(true);
   };
 
   // Toggle inline preview
@@ -287,7 +339,7 @@ useEffect(() => {
 
   // If in full preview mode, render the preview
   if (isPreviewMode) {
-    return <SharedDashboardPreview onClose={togglePreviewMode} />;
+    return <SharedDashboardPreview config={shareConfig} onClose={() => setIsPreviewMode(false)} />;
   }
   
   return (
@@ -389,14 +441,17 @@ useEffect(() => {
                       initialTabs={shareConfig.allowedTabs || ['summary']}
                       initialActiveTab={shareConfig.activeTab || 'summary'}
                       onChange={(tabConfig) => {
-                        setShareConfig(prev => ({
-                          ...prev,
-                          allowedTabs: tabConfig.allowedTabs,
-                          activeTab: tabConfig.activeTab
-                        }));
+                        console.log("TabSelector onChange event:", tabConfig);
                         
-                        // Also update the preview active tab when active tab changes
-                        setPreviewActiveTab(tabConfig.activeTab);
+                        setShareConfig(prev => {
+                          const updated = {
+                            ...prev,
+                            allowedTabs: tabConfig.allowedTabs,
+                            activeTab: tabConfig.activeTab
+                          };
+                          configRef.current = updated;
+                          return updated;
+                        });
                       }}
                       darkMode={darkMode}
                       />
@@ -450,7 +505,13 @@ useEffect(() => {
                         <input
                           type="checkbox"
                           checked={shareConfig.hideRetailers}
-                          onChange={(e) => setShareConfig(prev => ({...prev, hideRetailers: e.target.checked}))}
+                          onChange={(e) => {
+                            setShareConfig(prev => {
+                              const updated = {...prev, hideRetailers: e.target.checked};
+                              configRef.current = updated;
+                              return updated;
+                            });
+                          }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide retailer names (anonymize)</span>
@@ -459,7 +520,13 @@ useEffect(() => {
                         <input
                           type="checkbox"
                           checked={shareConfig.hideTotals}
-                          onChange={(e) => setShareConfig(prev => ({...prev, hideTotals: e.target.checked}))}
+                          onChange={(e) => {
+                            setShareConfig(prev => {
+                              const updated = {...prev, hideTotals: e.target.checked};
+                              configRef.current = updated;
+                              return updated;
+                            });
+                          }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide total values</span>
@@ -468,7 +535,13 @@ useEffect(() => {
                         <input
                           type="checkbox"
                           checked={shareConfig.showOnlyPercent}
-                          onChange={(e) => setShareConfig(prev => ({...prev, showOnlyPercent: e.target.checked}))}
+                          onChange={(e) => {
+                            setShareConfig(prev => {
+                              const updated = {...prev, showOnlyPercent: e.target.checked};
+                              configRef.current = updated;
+                              return updated;
+                            });
+                          }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Show only percentages (hide count values)</span>
@@ -482,7 +555,13 @@ useEffect(() => {
                     <textarea
                       placeholder="Add a message to display to the client (optional)"
                       value={shareConfig.clientNote}
-                      onChange={(e) => setShareConfig(prev => ({...prev, clientNote: e.target.value}))}
+                      onChange={(e) => {
+                        setShareConfig(prev => {
+                          const updated = {...prev, clientNote: e.target.value};
+                          configRef.current = updated;
+                          return updated;
+                        });
+                      }}
                       className={`w-full px-3 py-2 border ${
                         darkMode 
                           ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
@@ -498,7 +577,13 @@ useEffect(() => {
                     <input
                       type="date"
                       value={shareConfig.expiryDate || ''}
-                      onChange={(e) => setShareConfig(prev => ({...prev, expiryDate: e.target.value || null}))}
+                      onChange={(e) => {
+                        setShareConfig(prev => {
+                          const updated = {...prev, expiryDate: e.target.value || null};
+                          configRef.current = updated;
+                          return updated;
+                        });
+                      }}
                       min={new Date().toISOString().split('T')[0]}
                       className={`w-full px-3 py-2 border ${
                         darkMode 
@@ -555,56 +640,7 @@ useEffect(() => {
             <SharedDashboardsManager />
           </div>
         )}
-        
-        {/* Debug View */}
-        {activeView === 'debug' && (
-          <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
-            <div className="mb-4">
-              <h3 className={`text-lg font-medium mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                Supabase Connection Troubleshooting
-              </h3>
-              <p className={`mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                Use this page to diagnose and fix problems with Supabase connection.
-              </p>
-              
-              <div className="mb-4 p-4 rounded-lg border bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800/30">
-                <h4 className={`font-medium mb-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Setup Instructions</h4>
-                <ol className={`list-decimal ml-5 ${darkMode ? 'text-blue-200' : 'text-blue-700'}`}>
-                  <li className="mb-1">Create a <code>.env</code> file in your project root</li>
-                  <li className="mb-1">Add your Supabase credentials:
-                    <pre className="mt-1 p-2 bg-blue-100 dark:bg-blue-900/40 rounded text-xs overflow-x-auto">
-                      REACT_APP_SUPABASE_URL=your_supabase_url<br/>
-                      REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
-                    </pre>
-                  </li>
-                  <li className="mb-1">Restart your development server</li>
-                  <li>Run the SQL from <code>supabase/migrations/20250306000000_create_shared_dashboards.sql</code> in your Supabase SQL editor</li>
-                </ol>
-              </div>
-              
-              <div className="flex items-center mb-4">
-                <button
-                  onClick={toggleFallbackMode}
-                  className={`py-2 px-4 rounded ${
-                    fallbackMode 
-                      ? (darkMode ? 'bg-amber-700 text-white' : 'bg-amber-500 text-white') 
-                      : (darkMode ? 'bg-green-700 text-white' : 'bg-green-500 text-white')
-                  }`}
-                >
-                  {fallbackMode ? 'Currently Using Fallback Mode' : 'Currently Using Supabase'}
-                </button>
-                <div className={`ml-3 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  {fallbackMode 
-                    ? 'Click to try using Supabase database storage again' 
-                    : 'Click to switch to URL-based fallback mode'}
-                </div>
-              </div>
-            </div>
-            
-            <SupabaseDebugger />
-          </div>
-        )}
-        
+          
         {/* Footer with Actions */}
         <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-between items-center`}>
           <div className="flex items-center space-x-2">

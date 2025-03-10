@@ -28,7 +28,6 @@ export const SharingProvider = ({ children }) => {
   } = useData();
   
   // State for sharing configuration
-  const [previewActiveTab, setPreviewActiveTab] = useState(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [shareConfig, setShareConfig] = useState({
@@ -64,35 +63,6 @@ export const SharingProvider = ({ children }) => {
   const [sharedDashboards, setSharedDashboards] = useState([]);
   const [loadingSharedDashboards, setLoadingSharedDashboards] = useState(false);
   const [shareError, setShareError] = useState(null);
-  
-  // When modal opens, just initialize previewActiveTab if needed
-  useEffect(() => {
-    if (isShareModalOpen) {
-      console.log("Modal opened");
-      // Only initialize previewActiveTab if not already set
-      if (!previewActiveTab) {
-        setPreviewActiveTab(shareConfig.activeTab || 'summary');
-      }
-    }
-  }, [isShareModalOpen, shareConfig.activeTab, previewActiveTab]);
-
-  // Update filters in shareConfig when they change in DataContext
-  useEffect(() => {
-    // Only update if the modal is open to avoid unnecessary updates
-    if (isShareModalOpen) {
-      setShareConfig(prev => ({
-        ...prev,
-        filters: {
-          selectedProducts,
-          selectedRetailers,
-          dateRange,
-          startDate,
-          endDate,
-          selectedMonth,
-        }
-      }));
-    }
-  }, [isShareModalOpen, selectedProducts, selectedRetailers, dateRange, startDate, endDate, selectedMonth]);
   
   // Load existing shared dashboards when the component mounts
   useEffect(() => {
@@ -202,88 +172,12 @@ export const SharingProvider = ({ children }) => {
   const toggleShareModal = useCallback(() => {
     setIsShareModalOpen(prev => !prev);
     
-    // When opening the modal, initialize preview tab only if not already set
-    if (!isShareModalOpen) {
-      if (!previewActiveTab) {
-        setPreviewActiveTab(shareConfig.activeTab || 'summary');
-      }
-    } else {
-      // Reset preview mode when closing
+    // Reset preview mode when closing
+    if (isShareModalOpen) {
       setIsPreviewMode(false);
     }
-  }, [isShareModalOpen, shareConfig.activeTab, previewActiveTab]);
+  }, [isShareModalOpen]);
 
-  // Update share configuration
-  const updateShareConfig = useCallback((updates) => {
-    setShareConfig(prev => {
-      const newConfig = {
-        ...prev,
-        ...updates,
-      };
-      
-      console.log("Updated share config:", newConfig);
-      return newConfig;
-    });
-  }, []);
-  
-  // Toggle preview mode
-  const togglePreviewMode = useCallback(() => {
-    // Prepare precomputed data when entering preview mode
-    if (!isPreviewMode) {
-      // Make sure we have at least one allowed tab
-      if (shareConfig.allowedTabs.length === 0) {
-        setShareConfig(prev => ({
-          ...prev,
-          allowedTabs: ['summary']
-        }));
-      }
-      
-      // Make sure active tab is valid and set
-      let updatedConfig = { ...shareConfig };
-      if (!updatedConfig.activeTab || !updatedConfig.allowedTabs.includes(updatedConfig.activeTab)) {
-        updatedConfig.activeTab = updatedConfig.allowedTabs[0];
-      }
-      
-      // Also set the preview active tab state
-      setPreviewActiveTab(updatedConfig.activeTab);
-      
-      console.log("Setting preview active tab to:", updatedConfig.activeTab);
-      
-      // Precompute data for the preview
-      const precomputedData = {
-        filteredData: getFilteredData ? getFilteredData(updatedConfig.filters) : [],
-        metrics: calculateMetrics ? calculateMetrics() : null, 
-        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? getProductDistribution() : [],
-        salesData: salesData ? salesData.slice(0, 1000) : [], // Include a subset of the data
-        brandNames: brandNames || [],
-        brandMapping: brandMapping || {}
-      };
-      
-      // Update the share config with precomputed data
-      updatedConfig.precomputedData = precomputedData;
-      setShareConfig(updatedConfig);
-      
-      console.log("Entering preview mode with tabs:", {
-        allowedTabs: updatedConfig.allowedTabs,
-        activeTab: updatedConfig.activeTab,
-        previewActiveTab: updatedConfig.activeTab
-      });
-    }
-    
-    setIsPreviewMode(prev => !prev);
-  }, [
-    isPreviewMode,
-    shareConfig,
-    getFilteredData,
-    calculateMetrics,
-    getRetailerDistribution,
-    getProductDistribution,
-    salesData,
-    brandNames,
-    brandMapping
-  ]);
-  
   // Handle saving current filters
   const handleSaveCurrentFilters = useCallback(() => {
     console.log("Saving current filters to share config:", {
@@ -329,95 +223,22 @@ export const SharingProvider = ({ children }) => {
     selectedMonth
   ]);
   
-  // Transform data for sharing (removes sensitive data based on config)
-  const transformDataForSharing = useCallback((data) => {
-    if (!data) return null;
-    
-    try {
-      // Create deep copy to avoid modifying original data
-      const clientData = JSON.parse(JSON.stringify(data));
-      
-      // Apply transformations based on share config
-      if (shareConfig?.hideRetailers && Array.isArray(clientData.retailerData)) {
-        clientData.retailerData = clientData.retailerData.map((item, index) => ({
-          ...item,
-          name: `Retailer ${index + 1}`
-        }));
-      }
-      
-      if (shareConfig?.hideTotals) {
-        // Remove total values from metrics
-        if (clientData.metrics) {
-          if (clientData.metrics.totalUnits) {
-            clientData.metrics.totalUnits = '—'; // Replace with em dash
-          }
-          if (clientData.metrics.totalValue) {
-            clientData.metrics.totalValue = '—';
-          }
-        }
-        
-        // Remove count values from retailer data
-        if (Array.isArray(clientData.retailerData)) {
-          clientData.retailerData = clientData.retailerData.map(item => ({
-            ...item,
-            value: shareConfig?.showOnlyPercent ? '—' : item.value
-          }));
-        }
-        
-        // Remove count values from product data
-        if (Array.isArray(clientData.productDistribution)) {
-          clientData.productDistribution = clientData.productDistribution.map(item => ({
-            ...item,
-            count: shareConfig?.showOnlyPercent ? '—' : item.count
-          }));
-        }
-      }
-      
-      // Add shared context for client-specific view
-      clientData.isSharedView = true;
-      clientData.shareConfig = {
-        // Default values if shareConfig is undefined
-        allowedTabs: shareConfig?.allowedTabs || ['summary'],
-        activeTab: shareConfig?.activeTab || 'summary', // Explicitly include activeTab
-        hideRetailers: !!shareConfig?.hideRetailers,
-        hideTotals: !!shareConfig?.hideTotals,
-        showOnlyPercent: !!shareConfig?.showOnlyPercent,
-        branding: shareConfig?.branding || {
-          showLogo: true,
-          companyName: 'Your Company',
-          primaryColor: '#FF0066'
-        },
-        clientNote: shareConfig?.clientNote || '',
-        expiryDate: shareConfig?.expiryDate || null,
-      };
-      
-      return clientData;
-    } catch (err) {
-      console.error('Error in transformDataForSharing:', err);
-      // Return data as-is if there's an error
-      return data;
-    }
-  }, [shareConfig]);
-  
   return (
     <SharingContext.Provider value={{
       isShareModalOpen,
       toggleShareModal,
       shareConfig,
-      updateShareConfig,
+      setShareConfig,
       generateShareableLink,
       shareableLink,
       setShareableLink,
       isPreviewMode,
-      togglePreviewMode,
-      transformDataForSharing,
+      setIsPreviewMode,
       sharedDashboards,
       loadingSharedDashboards,
       deleteSharedDashboard,
       shareError,
-      handleSaveCurrentFilters,
-      previewActiveTab,
-      setPreviewActiveTab
+      handleSaveCurrentFilters
     }}>
       {children}
     </SharingContext.Provider>

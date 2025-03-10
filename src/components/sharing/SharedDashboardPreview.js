@@ -1,123 +1,140 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useTheme } from '../../context/ThemeContext';
-import { useSharing } from '../../context/SharingContext';
-import { useData } from '../../context/DataContext';
 import { ClientDataProvider } from '../../context/ClientDataContext';
 import SummaryTab from '../dashboard/tabs/SummaryTab';
 import SalesTab from '../dashboard/tabs/SalesTab';
 import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
 
-const SharedDashboardPreview = ({ onClose }) => {
+/**
+ * SharedDashboardPreview component displays a preview of how the shared dashboard will look
+ * This version is greatly simplified to avoid active tab state synchronization issues
+ */
+const SharedDashboardPreview = ({ config, onClose }) => {
+  // Get dark mode status
   const { darkMode } = useTheme();
+  
+  // Everything should come from the config prop now, no context usage
   const {
-    shareConfig,
-    transformDataForSharing,
-    previewActiveTab,
-    setPreviewActiveTab
-  } = useSharing();
+    allowedTabs,
+    activeTab,
+    clientNote,
+    expiryDate,
+    branding,
+    precomputedData,
+    hideRetailers,
+    hideTotals,
+    showOnlyPercent
+  } = config;
 
-  const {
-    activeTab, // Get the current active tab from DataContext
-    salesData,
-    getFilteredData,
-    calculateMetrics,
-    getRetailerDistribution,
-    getProductDistribution,
-    brandNames,
-    clientName,
-    brandMapping
-  } = useData();
+  // Check if we have precomputed data
+  const hasData = precomputedData?.filteredData?.length > 0 || precomputedData?.salesData?.length > 0;
+  
+  // If expiry date is set, calculate days remaining
+  const daysRemaining = expiryDate ?
+    Math.ceil((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
 
-  // Effect to initialize preview tab or sync with current tab
-  useEffect(() => {
-    console.log("SharedDashboardPreview initializing with shareConfig:", {
-      shareConfig: shareConfig,
-      allowedTabs: shareConfig.allowedTabs,
-      configActiveTab: shareConfig.activeTab,
-      previewActiveTab: previewActiveTab,
-      mainActiveTab: activeTab
-    });
+  // Transform data for sharing (removes sensitive data based on config)
+  const transformDataForSharing = (data) => {
+    if (!data) return null;
     
-    // Use the active tab from the config, and ensure it's in allowedTabs
-    if (shareConfig.activeTab && shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
-      // If the config has an active tab and it's allowed, use it
-      if (previewActiveTab !== shareConfig.activeTab) {
-        console.log("Setting previewActiveTab to config's activeTab:", shareConfig.activeTab);
-        setPreviewActiveTab(shareConfig.activeTab);
+    try {
+      // Create deep copy to avoid modifying original data
+      const clientData = JSON.parse(JSON.stringify(data));
+      
+      // Apply transformations based on share config
+      if (hideRetailers && Array.isArray(clientData.retailerData)) {
+        clientData.retailerData = clientData.retailerData.map((item, index) => ({
+          ...item,
+          name: `Retailer ${index + 1}`
+        }));
       }
-    } 
-    // Fallback to the first allowed tab if needed
-    else if (shareConfig.allowedTabs && shareConfig.allowedTabs.length > 0) {
-      // If no explicitly set active tab, use the first allowed tab
-      console.log("Setting previewActiveTab to first allowed tab:", shareConfig.allowedTabs[0]);
-      setPreviewActiveTab(shareConfig.allowedTabs[0]);
+      
+      if (hideTotals) {
+        // Remove total values from metrics
+        if (clientData.metrics) {
+          if (clientData.metrics.totalUnits) {
+            clientData.metrics.totalUnits = '—'; // Replace with em dash
+          }
+          if (clientData.metrics.totalValue) {
+            clientData.metrics.totalValue = '—';
+          }
+        }
+        
+        // Remove count values from retailer data
+        if (Array.isArray(clientData.retailerData)) {
+          clientData.retailerData = clientData.retailerData.map(item => ({
+            ...item,
+            value: showOnlyPercent ? '—' : item.value
+          }));
+        }
+        
+        // Remove count values from product data
+        if (Array.isArray(clientData.productDistribution)) {
+          clientData.productDistribution = clientData.productDistribution.map(item => ({
+            ...item,
+            count: showOnlyPercent ? '—' : item.count
+          }));
+        }
+      }
+      
+      // Add shared context for client-specific view
+      clientData.isSharedView = true;
+      clientData.shareConfig = {
+        // Default values if config is undefined
+        allowedTabs: allowedTabs || ['summary'],
+        activeTab: activeTab || 'summary', // Explicitly include activeTab
+        hideRetailers: !!hideRetailers,
+        hideTotals: !!hideTotals,
+        showOnlyPercent: !!showOnlyPercent,
+        branding: branding || {
+          showLogo: true,
+          companyName: 'Your Company',
+          primaryColor: '#FF0066'
+        },
+        clientNote: clientNote || '',
+        expiryDate: expiryDate || null,
+      };
+      
+      return clientData;
+    } catch (err) {
+      console.error('Error in transformDataForSharing:', err);
+      // Return data as-is if there's an error
+      return data;
     }
-  }, [shareConfig, shareConfig.activeTab, shareConfig.allowedTabs, previewActiveTab, setPreviewActiveTab, activeTab]);
+  };
 
-  // IMPORTANT: Use precomputed data if available
-  const precomputed = shareConfig.precomputedData;
-  const filteredData = precomputed?.filteredData || (getFilteredData ? getFilteredData(shareConfig.filters) : []);
-  const metrics = precomputed?.metrics || (calculateMetrics ? calculateMetrics() : null);
-  const retailerData = precomputed?.retailerData || (getRetailerDistribution ? getRetailerDistribution() : []);
-  const productDistribution = precomputed?.productDistribution || (getProductDistribution ? getProductDistribution() : []);
-  const usedBrandNames = precomputed?.brandNames || brandNames || [];
-  const usedClientName = shareConfig.metadata?.clientName || clientName || 'Client';
-  const usedBrandMapping = precomputed?.brandMapping || brandMapping || {};
-
-  // Create data object to pass to the tabs
-  const clientData = {
-    salesData: precomputed?.salesData || [],
-    filteredData,
-    metrics,
-    retailerData,
-    productDistribution,
-    brandMapping: usedBrandMapping,
-    brandNames: usedBrandNames,
-    clientName: usedClientName,
-    filters: shareConfig?.filters || {},
+  // Ensure we have filtered data by either using precomputed data or an empty array
+  const clientData = precomputedData ? {
+    salesData: precomputedData.salesData || [],
+    filteredData: precomputedData.filteredData || [],
+    metrics: precomputedData.metrics || null,
+    retailerData: precomputedData.retailerData || [],
+    productDistribution: precomputedData.productDistribution || [],
+    brandMapping: precomputedData.brandMapping || {},
+    brandNames: precomputedData.brandNames || [],
+    clientName: config.metadata?.clientName || 'Client',
+    filters: config.filters || {},
     // Add flag to indicate this is a shared view
     isSharedView: true,
-    hasData: filteredData && filteredData.length > 0, // Important: set hasData flag
-    // Add getter functions
-    getFilteredData: () => filteredData,  
-    calculateMetrics: () => metrics,
-    getRetailerDistribution: () => retailerData,
-    getProductDistribution: () => productDistribution,
+    hasData: hasData,
+    // Add getter functions to maintain compatibility with tab components
+    getFilteredData: () => precomputedData.filteredData || [],  
+    calculateMetrics: () => precomputedData.metrics || null,
+    getRetailerDistribution: () => precomputedData.retailerData || [],
+    getProductDistribution: () => precomputedData.productDistribution || [],
     // Empty setter functions for data context compatibility
     setSelectedProducts: () => { },
     setSelectedRetailers: () => { },
     setDateRange: () => { },
-    setActiveTab: () => { } // This is just a placeholder, we manage activeTab separately
+    setActiveTab: () => { }
+  } : {
+    isSharedView: true,
+    hasData: false,
   };
 
-  // Transform data based on sharing config
-  const transformedData = transformDataForSharing ? transformDataForSharing(clientData) : clientData;
-
-  // Check if preview has data
-  const hasData = transformedData?.filteredData?.length > 0;
-
-  // If expiry date is set, calculate days remaining
-  const daysRemaining = shareConfig.expiryDate ?
-    Math.ceil((new Date(shareConfig.expiryDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
-
-  // Log current state to help debug
-  console.log("Preview rendering with tab states:", {
-    previewActiveTab,
-    shareConfigActiveTab: shareConfig.activeTab,
-    mainActiveTab: activeTab,
-    allowedTabs: shareConfig.allowedTabs
-  });
-
-  // Handle tab change
-  const handleTabChange = (tab) => {
-    console.log("Changing preview tab to:", tab);
-    // Update both the preview state and the config
-    setPreviewActiveTab(tab);
-    
-    // Update the activeTab in the shareConfig as well
-    shareConfig.activeTab = tab;
-  };
+  // Transform the data based on display options
+  const transformedData = transformDataForSharing(clientData);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -125,13 +142,13 @@ const SharedDashboardPreview = ({ onClose }) => {
         {/* Client View Header */}
         <div className={`px-6 py-4 border-b flex justify-between items-center ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
           <div className="flex items-center">
-            {shareConfig.branding.showLogo && (
+            {branding.showLogo && (
               <div
                 className="h-8 w-8 rounded-full mr-3 flex items-center justify-center"
-                style={{ backgroundColor: shareConfig.branding.primaryColor }}
+                style={{ backgroundColor: branding.primaryColor }}
               >
                 <span className="text-white font-bold">
-                  {shareConfig.branding.companyName.slice(0, 1)}
+                  {branding.companyName.slice(0, 1)}
                 </span>
               </div>
             )}
@@ -140,7 +157,7 @@ const SharedDashboardPreview = ({ onClose }) => {
                 Dashboard Preview
               </h1>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Shared by {shareConfig.branding.companyName}
+                Shared by {branding.companyName}
               </p>
             </div>
           </div>
@@ -171,9 +188,9 @@ const SharedDashboardPreview = ({ onClose }) => {
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
           {/* Client note if provided */}
-          {shareConfig.clientNote && (
+          {clientNote && (
             <div className={`mb-6 p-4 rounded-lg ${darkMode ? 'bg-blue-900/20 text-blue-300' : 'bg-blue-50 text-blue-800'}`}>
-              <p>{shareConfig.clientNote}</p>
+              <p>{clientNote}</p>
             </div>
           )}
 
@@ -202,27 +219,26 @@ const SharedDashboardPreview = ({ onClose }) => {
               darkMode ? 'bg-gray-800 text-gray-300 border border-gray-700' : 
                          'bg-gray-100 text-gray-700 border border-gray-200'
             }`}>
-              <strong>Debug:</strong> Current Tab: {previewActiveTab} | 
-              Config Active Tab: {shareConfig.activeTab} | 
-              Allowed Tabs: {shareConfig.allowedTabs.join(', ')}
+              <strong>Debug:</strong> Current Tab: {activeTab} | 
+              Config Active Tab: {activeTab} | 
+              Allowed Tabs: {allowedTabs.join(', ')}
             </div>
           )}
 
           {/* Tab navigation */}
-          {shareConfig.allowedTabs && shareConfig.allowedTabs.length > 1 && (
+          {allowedTabs && allowedTabs.length > 1 && (
             <div className={`mb-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
               <div className="flex space-x-2">
-                {shareConfig.allowedTabs.map(tab => (
-                  <button
+                {allowedTabs.map(tab => (
+                  <div
                     key={tab}
-                    onClick={() => handleTabChange(tab)}
-                    className={`py-3 px-4 border-b-2 font-medium text-sm ${previewActiveTab === tab
+                    className={`py-3 px-4 border-b-2 font-medium text-sm ${activeTab === tab
                         ? `border-pink-500 ${darkMode ? 'text-pink-400' : 'text-pink-600'}`
                         : `border-transparent ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'}`
                       }`}
                   >
                     <span className="capitalize">{tab}</span>
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -242,11 +258,11 @@ const SharedDashboardPreview = ({ onClose }) => {
               </div>
             ) : (
               <ClientDataProvider clientData={transformedData}>
-                {/* Render appropriate tab content based on previewActiveTab */}
-                {previewActiveTab === 'summary' && <SummaryTab isSharedView={true} />}
-                {previewActiveTab === 'sales' && <SalesTab isSharedView={true} />}
-                {previewActiveTab === 'demographics' && <DemographicsTab isSharedView={true} />}
-                {previewActiveTab === 'offers' && <OffersTab isSharedView={true} />}
+                {/* Show the correct tab content based on activeTab */}
+                {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
+                {activeTab === 'sales' && <SalesTab isSharedView={true} />}
+                {activeTab === 'demographics' && <DemographicsTab isSharedView={true} />}
+                {activeTab === 'offers' && <OffersTab isSharedView={true} />}
               </ClientDataProvider>
             )}
           </div>
@@ -256,7 +272,7 @@ const SharedDashboardPreview = ({ onClose }) => {
         <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-between items-center`}>
           <div className="flex items-center">
             <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              Shared with you by {shareConfig.branding.companyName}
+              Shared with you by {branding.companyName}
             </span>
           </div>
         </div>
