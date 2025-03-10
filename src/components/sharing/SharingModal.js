@@ -1,25 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSharing } from '../../context/SharingContext';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useFilter } from '../../context/FilterContext';
 import SharedDashboardPreview from './SharedDashboardPreview';
 import SharedDashboardsManager from './SharedDashboardsManager';
-import SupabaseDebugger from '../debug/SupabaseDebugger';
 import ShareConfigTabSelector from '../ShareConfigTabSelector';
 
 const SharingModal = () => {
   const { darkMode } = useTheme();
   const {
-    salesData,
-    activeTab: mainActiveTab,
-    brandNames,
+    // Get data context for brand information
+    salesData, 
+    brandNames, 
     clientName,
+    brandMapping,
     getFilteredData,
     calculateMetrics,
     getRetailerDistribution,
     getProductDistribution,
-    brandMapping,
     selectedProducts,
     selectedRetailers,
     dateRange,
@@ -32,116 +30,32 @@ const SharingModal = () => {
   const {
     isShareModalOpen,
     toggleShareModal,
-    generateShareableLink,
+    shareConfig,
+    updateShareConfig, // Use this instead of setShareConfig
+    setShareActiveTab,
+    setShareAllowedTabs,
     shareableLink,
     setShareableLink,
     isPreviewMode,
     setIsPreviewMode,
-    handleSaveCurrentFilters
+    generateShareableLink,
+    saveCurrentFilters,
+    getPreviewData
   } = useSharing();
 
-  // Local state for the sharing configuration
-  const [shareConfig, setShareConfig] = useState({
-    allowedTabs: [], // Start with an empty array
-    activeTab: null, // No active tab initially
-    hideRetailers: false,
-    hideTotals: false,
-    showOnlyPercent: false,
-    clientNote: '',
-    expiryDate: null,
-    branding: {
-      showLogo: true,
-      primaryColor: '#FF0066',
-      companyName: 'Shopmium',
-    },
-    filters: {
-      selectedProducts: ['all'],
-      selectedRetailers: ['all'],
-      dateRange: 'all',
-      startDate: '',
-      endDate: '',
-      selectedMonth: '',
-    },
-    precomputedData: null
-  });
-  
-  // Reference to the current configuration to avoid stale closures
-  const configRef = useRef(shareConfig);
-  
-  // Update the ref whenever the shareConfig changes
-  useEffect(() => {
-    configRef.current = shareConfig;
-  }, [shareConfig]);
-
-  // Local UI state
+  // Local UI state only - no duplication of share configuration
+  const [activeView, setActiveView] = useState('create');
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [inlinePreview, setInlinePreview] = useState(false);
-  const [activeView, setActiveView] = useState('create'); // 'create', 'manage', or 'debug'
-  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [fallbackMode, setFallbackMode] = useState(false);
-
-  // Initialize sharing config when modal opens
-  useEffect(() => {
-    if (isShareModalOpen) {
-      console.log("Modal opened with activeTab:", mainActiveTab);
-      
-      // When modal opens, initialize with the current main tab
-      setShareConfig(prev => {
-        const currentMainTab = mainActiveTab || 'summary';
-        
-        // Either use the existing allowed tabs, or start fresh with the current tab
-        let allowedTabs = prev.allowedTabs.length > 0 ? 
-                          [...prev.allowedTabs] : 
-                          [currentMainTab];
-        
-        // Ensure current tab is included in allowed tabs
-        if (!allowedTabs.includes(currentMainTab)) {
-          allowedTabs.push(currentMainTab);
-        }
-        
-        return {
-          ...prev,
-          allowedTabs,
-          activeTab: currentMainTab
-        };
-      });
-    }
-  }, [isShareModalOpen, mainActiveTab]);
-
-  // Reset copy success message
-  useEffect(() => {
-    if (copySuccess) {
-      const timer = setTimeout(() => setCopySuccess(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [copySuccess]);
-
-  // Exit if modal is closed
-  if (!isShareModalOpen) return null;
-
-  // Helper function to get display name without brand prefix
-  const getProductDisplayName = (product) => {
-    // Use the brand mapping if available
-    if (brandMapping && brandMapping[product]) {
-      return brandMapping[product].displayName || product;
-    }
-
-    // Fallback: Remove the brand prefix (first word or two)
-    const words = product.split(' ');
-    if (words.length >= 3) {
-      // Remove first word or two words for longer product names
-      const wordsToRemove = words.length >= 5 ? 2 : 1;
-      return words.slice(wordsToRemove).join(' ');
-    }
-
-    return product;
-  };
+  const [datePickerValue, setDatePickerValue] = useState('');
 
   // Create a fallback link using Base64 encoding
   const generateFallbackLink = () => {
     try {
       // Create a copy of the current sharing configuration
-      const configToShare = { ...configRef.current };
+      const configToShare = { ...shareConfig };
   
       // Ensure we have an active tab that's in the allowed tabs
       if (!configToShare.allowedTabs.includes(configToShare.activeTab)) {
@@ -179,155 +93,12 @@ const SharingModal = () => {
       const baseUrl = window.location.origin;
       const shareUrl = `${baseUrl}/#/shared/${shareId}`;
   
+      setShareableLink(shareUrl);
       return shareUrl;
     } catch (error) {
       console.error("Error generating fallback link:", error);
       return "";
     }
-  };
-
-  // Handle generating and copying link
-  const handleGenerateLink = async () => {
-    setIsGeneratingLink(true);
-    
-    try {
-      // Ensure we have at least one tab selected
-      if (shareConfig.allowedTabs.length === 0) {
-        alert("Please select at least one tab to share.");
-        setIsGeneratingLink(false);
-        return;
-      }
-      
-      // Ensure active tab is set and valid
-      if (!shareConfig.activeTab || !shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
-        setShareConfig(prev => {
-          const updated = {
-            ...prev,
-            activeTab: prev.allowedTabs[0]
-          };
-          configRef.current = updated;
-          return updated;
-        });
-        
-        // Add a small delay to ensure state update
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      
-      console.log("Generating share link with config:", {
-        allowedTabs: shareConfig.allowedTabs,
-        activeTab: shareConfig.activeTab
-      });
-      
-      // Use appropriate generation method
-      if (fallbackMode) {
-        const shareUrl = generateFallbackLink();
-        setShareableLink(shareUrl);
-      } else {
-        await generateShareableLink();
-      }
-      
-      setIsGeneratingLink(false);
-    } catch (error) {
-      console.error("Error generating link:", error);
-      // If Supabase fails, try fallback method
-      if (!fallbackMode) {
-        setFallbackMode(true);
-        const shareUrl = generateFallbackLink();
-        setShareableLink(shareUrl);
-      }
-      setIsGeneratingLink(false);
-    }
-  };
-
-  const applyCurrentFilters = () => {
-    // Call the handler
-    handleSaveCurrentFilters();
-    
-    // Force update the UI by updating local state
-    setShareConfig(prev => {
-      const updated = {
-        ...prev,
-        filters: {
-          selectedProducts: [...selectedProducts],
-          selectedRetailers: [...selectedRetailers],
-          dateRange: dateRange,
-          startDate: startDate,
-          endDate: endDate,
-          selectedMonth: selectedMonth
-        }
-      };
-      configRef.current = updated;
-      return updated;
-    });
-  };
-  
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareableLink)
-      .then(() => setCopySuccess(true))
-      .catch(err => console.error('Failed to copy link:', err));
-  };
-
-  // Enter preview mode with current configuration
-  const handlePreviewClick = () => {
-    // Make sure we have the latest tab configuration
-    if (shareConfig.allowedTabs.length === 0) {
-      // If no tabs are selected, default to summary
-      setShareConfig(prev => {
-        const updated = {
-          ...prev,
-          allowedTabs: ['summary'],
-          activeTab: 'summary'
-        };
-        configRef.current = updated;
-        return updated;
-      });
-    } else if (!shareConfig.activeTab || !shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
-      // Make sure active tab is valid
-      setShareConfig(prev => {
-        const updated = {
-          ...prev,
-          activeTab: prev.allowedTabs[0]
-        };
-        configRef.current = updated;
-        return updated;
-      });
-    }
-    
-    console.log("Opening preview with tab config:", {
-      allowedTabs: shareConfig.allowedTabs,
-      activeTab: shareConfig.activeTab
-    });
-    
-    // Prepare precomputed data
-    const currentConfig = configRef.current;
-    setShareConfig(prev => {
-      // Precompute data for the preview - for ALL tabs, not just the active one
-      const precomputedData = {
-        filteredData: getFilteredData ? getFilteredData(prev.filters) : [],
-        metrics: calculateMetrics ? calculateMetrics() : null, 
-        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? getProductDistribution() : [],
-        salesData: salesData ? salesData.slice(0, 1000) : [], // Include a subset of the data
-        brandNames: brandNames || [],
-        brandMapping: brandMapping || {}
-      };
-      
-      const updated = {
-        ...prev,
-        precomputedData
-      };
-      
-      configRef.current = updated;
-      return updated;
-    });
-    
-    // Toggle to preview mode
-    setIsPreviewMode(true);
-  };
-
-  // Toggle inline preview
-  const toggleInlinePreview = () => {
-    setInlinePreview(!inlinePreview);
   };
 
   // Toggle fallback mode
@@ -337,9 +108,126 @@ const SharingModal = () => {
     setShareableLink('');
   };
 
+  // Copy the share URL to clipboard
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareableLink)
+      .then(() => setCopySuccess(true))
+      .catch(err => console.error('Failed to copy link:', err));
+  };
+
+  // Reset copy success message
+  useEffect(() => {
+    if (copySuccess) {
+      const timer = setTimeout(() => setCopySuccess(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [copySuccess]);
+
+  // Handle generating share link
+  const handleGenerateLink = async () => {
+    // Ensure we have at least one tab selected
+    if (shareConfig.allowedTabs.length === 0) {
+      alert("Please select at least one tab to share.");
+      return;
+    }
+    
+    setIsGeneratingLink(true);
+    
+    try {
+      if (fallbackMode) {
+        generateFallbackLink();
+      } else {
+        await generateShareableLink();
+      }
+    } catch (error) {
+      console.error("Error generating link:", error);
+      // If normal generation fails, try fallback mode
+      if (!fallbackMode) {
+        setFallbackMode(true);
+        generateFallbackLink();
+      }
+    } finally {
+      setIsGeneratingLink(false);
+    }
+  };
+
+  // Show the preview
+  const handlePreviewClick = () => {
+    // Make sure we have the latest tab configuration
+    if (shareConfig.allowedTabs.length === 0) {
+      // If no tabs are selected, default to summary
+      setShareAllowedTabs(['summary']);
+      setShareActiveTab('summary');
+    } else if (!shareConfig.activeTab || !shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
+      // Make sure active tab is valid
+      setShareActiveTab(shareConfig.allowedTabs[0]);
+    }
+    
+    // Toggle to preview mode
+    setIsPreviewMode(true);
+  };
+
+  // Handle tab configuration changes
+  const handleTabConfigChange = (tabConfig) => {
+    if (tabConfig.allowedTabs?.length) {
+      setShareAllowedTabs(tabConfig.allowedTabs);
+    }
+    
+    if (tabConfig.activeTab && shareConfig.allowedTabs.includes(tabConfig.activeTab)) {
+      setShareActiveTab(tabConfig.activeTab);
+    }
+  };
+
+  // Helper function to get display name without brand prefix
+  const getProductDisplayName = (product) => {
+    // Use the brand mapping if available
+    if (brandMapping && brandMapping[product]) {
+      return brandMapping[product].displayName || product;
+    }
+    
+    // Fallback: Remove the brand prefix (first word or two)
+    const words = product.split(' ');
+    if (words.length >= 3) {
+      // Remove first word or two words for longer product names
+      const wordsToRemove = words.length >= 5 ? 2 : 1;
+      return words.slice(wordsToRemove).join(' ');
+    }
+    
+    return product;
+  };
+
+  // Handle adding a custom excluded date
+  const handleAddExcludedDate = () => {
+    if (!datePickerValue) return;
+    
+    const updatedConfig = {
+      ...shareConfig,
+      customExcludedDates: [...(shareConfig.customExcludedDates || []), datePickerValue]
+    };
+    
+    updateShareConfig(updatedConfig);
+    setDatePickerValue('');
+  };
+
+  // Handle removing a custom excluded date
+  const handleRemoveExcludedDate = (date) => {
+    const updatedConfig = {
+      ...shareConfig,
+      customExcludedDates: (shareConfig.customExcludedDates || []).filter(d => d !== date)
+    };
+    
+    updateShareConfig(updatedConfig);
+  };
+
+  // Exit if modal is closed
+  if (!isShareModalOpen) return null;
+
   // If in full preview mode, render the preview
   if (isPreviewMode) {
-    return <SharedDashboardPreview config={shareConfig} onClose={() => setIsPreviewMode(false)} />;
+    return <SharedDashboardPreview 
+      config={getPreviewData()} 
+      onClose={() => setIsPreviewMode(false)} 
+    />;
   }
   
   return (
@@ -375,16 +263,6 @@ const SharingModal = () => {
                 }`}
               >
                 Manage Shares
-              </button>
-              <button
-                onClick={() => setActiveView('debug')}
-                className={`px-4 py-2 text-sm ${
-                  activeView === 'debug' 
-                    ? `bg-pink-600 text-white` 
-                    : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
-                }`}
-              >
-                Debug
               </button>
             </div>
             
@@ -435,34 +313,22 @@ const SharingModal = () => {
                 )}
                 
                 <div className="space-y-6">
-               {/* Tab Selection */}
+                  {/* Tab Selection */}
                   <div>
                     <ShareConfigTabSelector 
-                      initialTabs={shareConfig.allowedTabs || ['summary']}
-                      initialActiveTab={shareConfig.activeTab || 'summary'}
-                      onChange={(tabConfig) => {
-                        console.log("TabSelector onChange event:", tabConfig);
-                        
-                        setShareConfig(prev => {
-                          const updated = {
-                            ...prev,
-                            allowedTabs: tabConfig.allowedTabs,
-                            activeTab: tabConfig.activeTab
-                          };
-                          configRef.current = updated;
-                          return updated;
-                        });
-                      }}
+                      allowedTabs={shareConfig.allowedTabs || ['summary']}
+                      activeTab={shareConfig.activeTab || 'summary'}
+                      onChange={handleTabConfigChange}
                       darkMode={darkMode}
-                      />
-                   </div>
+                    />
+                  </div>
                   
                   {/* Data Filters */}
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <h3 className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Data Filters</h3>
                       <button
-                        onClick={applyCurrentFilters}
+                        onClick={saveCurrentFilters}
                         className={`text-xs py-1 px-2 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                       >
                         Use Current Filters
@@ -506,11 +372,7 @@ const SharingModal = () => {
                           type="checkbox"
                           checked={shareConfig.hideRetailers}
                           onChange={(e) => {
-                            setShareConfig(prev => {
-                              const updated = {...prev, hideRetailers: e.target.checked};
-                              configRef.current = updated;
-                              return updated;
-                            });
+                            updateShareConfig({ hideRetailers: e.target.checked });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
@@ -521,11 +383,7 @@ const SharingModal = () => {
                           type="checkbox"
                           checked={shareConfig.hideTotals}
                           onChange={(e) => {
-                            setShareConfig(prev => {
-                              const updated = {...prev, hideTotals: e.target.checked};
-                              configRef.current = updated;
-                              return updated;
-                            });
+                            updateShareConfig({ hideTotals: e.target.checked });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
@@ -536,11 +394,7 @@ const SharingModal = () => {
                           type="checkbox"
                           checked={shareConfig.showOnlyPercent}
                           onChange={(e) => {
-                            setShareConfig(prev => {
-                              const updated = {...prev, showOnlyPercent: e.target.checked};
-                              configRef.current = updated;
-                              return updated;
-                            });
+                            updateShareConfig({ showOnlyPercent: e.target.checked });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
@@ -556,11 +410,7 @@ const SharingModal = () => {
                       placeholder="Add a message to display to the client (optional)"
                       value={shareConfig.clientNote}
                       onChange={(e) => {
-                        setShareConfig(prev => {
-                          const updated = {...prev, clientNote: e.target.value};
-                          configRef.current = updated;
-                          return updated;
-                        });
+                        updateShareConfig({ clientNote: e.target.value });
                       }}
                       className={`w-full px-3 py-2 border ${
                         darkMode 
@@ -578,11 +428,7 @@ const SharingModal = () => {
                       type="date"
                       value={shareConfig.expiryDate || ''}
                       onChange={(e) => {
-                        setShareConfig(prev => {
-                          const updated = {...prev, expiryDate: e.target.value || null};
-                          configRef.current = updated;
-                          return updated;
-                        });
+                        updateShareConfig({ expiryDate: e.target.value || null });
                       }}
                       min={new Date().toISOString().split('T')[0]}
                       className={`w-full px-3 py-2 border ${
@@ -658,6 +504,18 @@ const SharingModal = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
                   Preview Client View
+                </button>
+                <button
+                  onClick={() => setInlinePreview(!inlinePreview)}
+                  className={`
+                    px-4 py-2 rounded-md flex items-center text-sm font-medium
+                    ${inlinePreview ? 
+                      (darkMode ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-900') :
+                      (darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900')
+                    }
+                  `}
+                >
+                  {inlinePreview ? 'Hide Preview' : 'Show Preview'}
                 </button>
               </>
             )}

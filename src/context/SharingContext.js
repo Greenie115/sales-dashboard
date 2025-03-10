@@ -9,6 +9,7 @@ const SharingContext = createContext();
 export const useSharing = () => useContext(SharingContext);
 
 export const SharingProvider = ({ children }) => {
+  const dataContext = useData();
   const { 
     salesData, 
     activeTab, 
@@ -25,25 +26,28 @@ export const SharingProvider = ({ children }) => {
     startDate,
     endDate,
     selectedMonth
-  } = useData();
+  } = dataContext;
   
-  // State for sharing configuration
+  // UI State
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [shareableLink, setShareableLink] = useState('');
+  const [shareError, setShareError] = useState(null);
+  
+  // Share Configuration - Single Source of Truth
   const [shareConfig, setShareConfig] = useState({
-    allowedTabs: ['summary'], // Default tabs to share
+    allowedTabs: ['summary'],
     activeTab: 'summary',
-    hideRetailers: false,     // Whether to anonymize retailer names
-    hideTotals: false,        // Whether to hide total values
-    showOnlyPercent: false,   // Whether to show only percentages
-    clientNote: '',           // Optional message to display to client
-    expiryDate: null,         // When the share link expires
+    hideRetailers: false,
+    hideTotals: false,
+    showOnlyPercent: false,
+    clientNote: '',
+    expiryDate: null,
     branding: {
-      showLogo: true,         // Whether to show your company logo
-      primaryColor: '#FF0066', // Primary brand color
-      companyName: 'Your Company', // Company name to display
+      showLogo: true,
+      primaryColor: '#FF0066',
+      companyName: 'Your Company',
     },
-    // Filter state tracking
     filters: {
       selectedProducts: ['all'],
       selectedRetailers: ['all'],
@@ -52,86 +56,162 @@ export const SharingProvider = ({ children }) => {
       endDate: '',
       selectedMonth: '',
     },
-    // Add precomputed data field
+    customExcludedDates: [],
     precomputedData: null
   });
-
-  // Shareable link state
-  const [shareableLink, setShareableLink] = useState('');
   
-  // State for shared dashboards
+  // Shared dashboards list
   const [sharedDashboards, setSharedDashboards] = useState([]);
   const [loadingSharedDashboards, setLoadingSharedDashboards] = useState(false);
-  const [shareError, setShareError] = useState(null);
-  
-  // Load existing shared dashboards when the component mounts
+
+  // Initialize share config when modal opens
   useEffect(() => {
-    const loadSharedDashboards = async () => {
-      setLoadingSharedDashboards(true);
-      try {
-        const dashboards = await sharingService.listSharedDashboards();
-        setSharedDashboards(dashboards);
-        setShareError(null);
-      } catch (error) {
-        console.error('Error loading shared dashboards:', error);
-        setShareError('Failed to load shared dashboards');
-      } finally {
-        setLoadingSharedDashboards(false);
-      }
-    };
-    
-    loadSharedDashboards();
+    if (isShareModalOpen) {
+      const mainTab = activeTab || 'summary';
+      
+      setShareConfig(prev => ({
+        ...prev,
+        activeTab: mainTab,
+        allowedTabs: prev.allowedTabs.includes(mainTab) 
+          ? prev.allowedTabs 
+          : [...prev.allowedTabs, mainTab]
+      }));
+    }
+  }, [isShareModalOpen, activeTab]);
+  
+  // Load shared dashboards from the server
+  useEffect(() => {
+    if (isShareModalOpen) {
+      loadSharedDashboards();
+    }
+  }, [isShareModalOpen]);
+  
+  // Load shared dashboards
+  const loadSharedDashboards = async () => {
+    setLoadingSharedDashboards(true);
+    try {
+      const dashboards = await sharingService.listSharedDashboards();
+      setSharedDashboards(dashboards);
+      setShareError(null);
+    } catch (error) {
+      console.error('Error loading shared dashboards:', error);
+      setShareError('Failed to load shared dashboards');
+    } finally {
+      setLoadingSharedDashboards(false);
+    }
+  };
+
+  // Update share config - maintain immutability and stable references
+  const updateShareConfig = useCallback((updates) => {
+    setShareConfig(prev => {
+      // Create a new config object
+      const newConfig = { ...prev };
+      
+      // Update top-level properties
+      Object.keys(updates).forEach(key => {
+        // Handle nested objects specially
+        if (key === 'filters' && updates.filters) {
+          newConfig.filters = { ...prev.filters, ...updates.filters };
+        } else if (key === 'branding' && updates.branding) {
+          newConfig.branding = { ...prev.branding, ...updates.branding };
+        } else {
+          // Update normal properties
+          newConfig[key] = updates[key];
+        }
+      });
+      
+      return newConfig;
+    });
   }, []);
 
-  // Generate a shareable link using Supabase
+  // Clear visible error
+  const clearError = useCallback(() => {
+    setShareError(null);
+  }, []);
+
+  // Toggle share modal
+  const toggleShareModal = useCallback(() => {
+    setIsShareModalOpen(prev => !prev);
+    if (isShareModalOpen) {
+      setIsPreviewMode(false);
+    }
+  }, [isShareModalOpen]);
+
+  // Save current filters from DataContext
+  const saveCurrentFilters = useCallback(() => {
+    updateShareConfig({
+      filters: {
+        selectedProducts: [...selectedProducts],
+        selectedRetailers: [...selectedRetailers],
+        dateRange,
+        startDate,
+        endDate,
+        selectedMonth
+      }
+    });
+  }, [
+    updateShareConfig,
+    selectedProducts, 
+    selectedRetailers, 
+    dateRange, 
+    startDate, 
+    endDate, 
+    selectedMonth
+  ]);
+
+  // Generate shareable link - recompute data for the dashboard
   const generateShareableLink = useCallback(async () => {
     try {
-      // Set loading state if needed
       setShareError(null);
       
-      // Create a copy of the current sharing configuration
-      const configToShare = { ...shareConfig };
+      // Create deep copy of the share config to avoid reference issues
+      const configToShare = JSON.parse(JSON.stringify(shareConfig));
       
       // Ensure we have at least one tab
       if (configToShare.allowedTabs.length === 0) {
         configToShare.allowedTabs = ['summary'];
       }
       
+      // Ensure active tab is in allowed tabs
+      if (!configToShare.allowedTabs.includes(configToShare.activeTab)) {
+        configToShare.activeTab = configToShare.allowedTabs[0];
+      }
+      
+      // Add metadata
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
         brandNames: brandNames || [],
-        clientName: brandNames?.length > 0 ? brandNames.join(', ') : (clientName || 'Client'),
-        datasetSize: Array.isArray(salesData) ? salesData.length : 0,
+        clientName: brandNames?.length > 0 ? 
+          brandNames.join(', ') : 
+          (clientName || 'Client'),
+        datasetSize: Array.isArray(salesData) ? 
+          salesData.length : 0,
       };
       
-      // Add precomputed data for the client view
+      // Precompute data for the client view
       configToShare.precomputedData = {
-        filteredData: getFilteredData ? getFilteredData(configToShare.filters) : [],
-        metrics: calculateMetrics ? calculateMetrics() : null,
-        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? getProductDistribution() : [],
+        filteredData: getFilteredData ? 
+          getFilteredData(configToShare.filters) : [],
+        metrics: calculateMetrics ? 
+          calculateMetrics() : null,
+        retailerData: getRetailerDistribution ? 
+          getRetailerDistribution() : [],
+        productDistribution: getProductDistribution ? 
+          getProductDistribution() : [],
         brandMapping: brandMapping || {},
         brandNames: brandNames || [],
-        salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
+        salesData: salesData ? 
+          salesData.slice(0, 1000) : [] // Include subset of data
       };
       
-      console.log("Generating share link with config:", {
-        activeTab: configToShare.activeTab,
-        allowedTabs: configToShare.allowedTabs
-      });
-      
-      // Create the shared dashboard in Supabase
+      // Create the shared dashboard in database
       const { url } = await sharingService.createSharedDashboard(
         configToShare, 
         configToShare.expiryDate ? new Date(configToShare.expiryDate) : null
       );
       
-      // Set the shareable URL
       setShareableLink(url);
-      
-      // Refresh the shared dashboards list
-      const dashboards = await sharingService.listSharedDashboards();
-      setSharedDashboards(dashboards);
+      await loadSharedDashboards();
       
       return url;
     } catch (error) {
@@ -156,10 +236,9 @@ export const SharingProvider = ({ children }) => {
     try {
       setShareError(null);
       await sharingService.deleteSharedDashboard(shareId);
-      
-      // Update the shared dashboards list
-      setSharedDashboards(prev => prev.filter(dashboard => dashboard.share_id !== shareId));
-      
+      setSharedDashboards(prev => 
+        prev.filter(dashboard => dashboard.share_id !== shareId)
+      );
       return true;
     } catch (error) {
       console.error('Error deleting shared dashboard:', error);
@@ -168,78 +247,147 @@ export const SharingProvider = ({ children }) => {
     }
   }, []);
   
-  // Toggle share modal
-  const toggleShareModal = useCallback(() => {
-    setIsShareModalOpen(prev => !prev);
+  // Transform data for sharing (apply hideRetailers, hideTotals, etc.)
+  const transformDataForSharing = useCallback((data) => {
+    if (!data) return data;
     
-    // Reset preview mode when closing
-    if (isShareModalOpen) {
-      setIsPreviewMode(false);
-    }
-  }, [isShareModalOpen]);
-
-  // Handle saving current filters
-  const handleSaveCurrentFilters = useCallback(() => {
-    console.log("Saving current filters to share config:", {
-      selectedProducts,
-      selectedRetailers,
-      dateRange,
-      startDate,
-      endDate,
-      selectedMonth
-    });
-  
-    // First make sure we have the latest values
-    const currentFilters = {
-      selectedProducts: [...selectedProducts],
-      selectedRetailers: [...selectedRetailers],
-      dateRange,
-      startDate,
-      endDate,
-      selectedMonth
-    };
-  
-    // Directly update the shareConfig object with a new object
-    setShareConfig(prev => {
-      const updatedConfig = {
-        ...prev,
-        filters: currentFilters
-      };
+    try {
+      // Create deep copy to avoid modifying original data
+      const clientData = JSON.parse(JSON.stringify(data));
+      const config = clientData.shareConfig || shareConfig;
       
-      console.log("Updated share config filters:", updatedConfig.filters);
-      return updatedConfig;
-    });
+      // Apply transformations based on share config
+      if (config.hideRetailers && Array.isArray(clientData.retailerData)) {
+        clientData.retailerData = clientData.retailerData.map((item, index) => ({
+          ...item,
+          name: `Retailer ${index + 1}`
+        }));
+      }
+      
+      if (config.hideTotals) {
+        // Remove total values from metrics
+        if (clientData.metrics) {
+          if (clientData.metrics.totalUnits) {
+            clientData.metrics.totalUnits = '—';
+          }
+          if (clientData.metrics.totalValue) {
+            clientData.metrics.totalValue = '—';
+          }
+        }
+        
+        // Remove count values if showOnlyPercent is true
+        if (config.showOnlyPercent) {
+          if (Array.isArray(clientData.retailerData)) {
+            clientData.retailerData = clientData.retailerData.map(item => ({
+              ...item,
+              value: '—'
+            }));
+          }
+          
+          if (Array.isArray(clientData.productDistribution)) {
+            clientData.productDistribution = clientData.productDistribution.map(item => ({
+              ...item,
+              count: '—'
+            }));
+          }
+        }
+      }
+      
+      return clientData;
+    } catch (err) {
+      console.error('Error in transformDataForSharing:', err);
+      return data;
+    }
+  }, [shareConfig]);
   
-    // This is important - force a refresh to show the update was applied
-    setTimeout(() => {
-      console.log("Current share config filters:", shareConfig.filters);
-    }, 100);
+  // Set active tab in share config
+  const setShareActiveTab = useCallback((tab) => {
+    if (tab && shareConfig.allowedTabs.includes(tab)) {
+      updateShareConfig({ activeTab: tab });
+    }
+  }, [shareConfig.allowedTabs, updateShareConfig]);
+  
+  // Update allowed tabs in share config
+  const setShareAllowedTabs = useCallback((tabs) => {
+    if (Array.isArray(tabs) && tabs.length > 0) {
+      const newConfig = { allowedTabs: tabs };
+      
+      // If current active tab isn't in the new allowed tabs, update it
+      if (!tabs.includes(shareConfig.activeTab)) {
+        newConfig.activeTab = tabs[0];
+      }
+      
+      updateShareConfig(newConfig);
+    }
+  }, [shareConfig.activeTab, updateShareConfig]);
+  
+  // Create preview data for SharedDashboardPreview
+  const getPreviewData = useCallback(() => {
+    // Create a copy of the current shareConfig
+    const previewConfig = { ...shareConfig };
+    
+    // Add precomputed data for the preview if it doesn't exist
+    if (!previewConfig.precomputedData) {
+      previewConfig.precomputedData = {
+        filteredData: getFilteredData ? 
+          getFilteredData(previewConfig.filters) : [],
+        metrics: calculateMetrics ? 
+          calculateMetrics() : null,
+        retailerData: getRetailerDistribution ? 
+          getRetailerDistribution() : [],
+        productDistribution: getProductDistribution ? 
+          getProductDistribution() : [],
+        salesData: salesData ? 
+          salesData.slice(0, 1000) : [],
+        brandNames: brandNames || [],
+        brandMapping: brandMapping || {}
+      };
+    }
+    
+    return previewConfig;
   }, [
-    selectedProducts, 
-    selectedRetailers, 
-    dateRange, 
-    startDate, 
-    endDate, 
-    selectedMonth
+    shareConfig, 
+    getFilteredData, 
+    calculateMetrics, 
+    getRetailerDistribution, 
+    getProductDistribution,
+    salesData,
+    brandNames,
+    brandMapping
   ]);
-  
+
+  // Provide value to consumers
+  const value = {
+    // UI State
+    isShareModalOpen,
+    isPreviewMode,
+    shareableLink,
+    shareError,
+    sharedDashboards,
+    loadingSharedDashboards,
+    
+    // Share configuration
+    shareConfig,
+    
+    // Actions
+    toggleShareModal,
+    setIsPreviewMode,
+    setShareableLink,
+    generateShareableLink,
+    deleteSharedDashboard,
+    updateShareConfig,
+    setShareActiveTab,
+    setShareAllowedTabs,
+    saveCurrentFilters,
+    clearError,
+    
+    // Helper methods
+    transformDataForSharing,
+    getPreviewData
+  };
+
   return (
-    <SharingContext.Provider value={{
-      isShareModalOpen,
-      toggleShareModal,
-      shareConfig,
-      setShareConfig,
-      generateShareableLink,
-      shareableLink,
-      setShareableLink,
-      isPreviewMode,
-      setIsPreviewMode,
-      sharedDashboards,
-      loadingSharedDashboards,
-      deleteSharedDashboard,
-      shareError,
-      handleSaveCurrentFilters
-    }}>
+    <SharingContext.Provider value={value}>
       {children}
     </SharingContext.Provider>
   );

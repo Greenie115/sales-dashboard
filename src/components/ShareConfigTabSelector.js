@@ -1,94 +1,69 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 
 /**
- * TabSelector for the Sharing Modal - FIXED VERSION
+ * TabSelector for the Sharing Modal
  * 
- * This component manages tab selection independently from the main dashboard.
- * It maintains its own state of selected tabs and active tab.
+ * This component is fully controlled - it doesn't maintain its own state
+ * and instead relies on props for values and callbacks for changes.
  */
 const ShareConfigTabSelector = ({ 
-  initialTabs = ['summary'], 
-  initialActiveTab = 'summary',
+  allowedTabs = ['summary'], 
+  activeTab = 'summary',
   onChange,
   darkMode
 }) => {
-  console.log("ShareConfigTabSelector initializing with:", {
-    initialTabs,
-    initialActiveTab,
+  console.log("ShareConfigTabSelector rendering with:", {
+    allowedTabs,
+    activeTab
   });
   
-  // Local state for selected tabs and active tab
-  const [selectedTabs, setSelectedTabs] = useState(initialTabs);
-  const [activeTab, setActiveTab] = useState(initialActiveTab);
-
-  // Initialize with passed props
-  useEffect(() => {
-    // Always ensure we have valid initialTabs
-    if (initialTabs.length > 0) {
-      setSelectedTabs(initialTabs);
-      
-      // Ensure activeTab is one of the selected tabs
-      if (initialTabs.includes(initialActiveTab)) {
-        setActiveTab(initialActiveTab);
-      } else {
-        // Default to first tab if active tab isn't in the selected tabs
-        setActiveTab(initialTabs[0]);
-      }
-    }
-  }, [initialTabs, initialActiveTab]);
-
-  // Notify parent component of changes
-  useEffect(() => {
-    if (onChange) {
-      // Ensure we have at least one tab selected
-      const tabs = selectedTabs.length > 0 ? selectedTabs : ['summary'];
-      // Make sure activeTab is in the selected tabs
-      const validActiveTab = tabs.includes(activeTab) ? activeTab : tabs[0];
-      
-      console.log("ShareConfigTabSelector notifying parent of change:", {
-        allowedTabs: tabs,
-        activeTab: validActiveTab
-      });
-      
-      onChange({
-        allowedTabs: tabs,
-        activeTab: validActiveTab
-      });
-    }
-  }, [selectedTabs, activeTab, onChange]);
-
   // Handle tab toggle
   const handleTabToggle = (tab) => {
-    const isSelected = selectedTabs.includes(tab);
+    if (!onChange) return;
+    
+    const isSelected = allowedTabs.includes(tab);
+    let newAllowedTabs;
+    let newActiveTab = activeTab;
     
     if (isSelected) {
       // Only allow removal if it's not the last tab
-      if (selectedTabs.length > 1) {
-        const newSelectedTabs = selectedTabs.filter(t => t !== tab);
+      if (allowedTabs.length > 1) {
+        newAllowedTabs = allowedTabs.filter(t => t !== tab);
         
         // If we're removing the active tab, select a new active tab
         if (activeTab === tab) {
-          setActiveTab(newSelectedTabs[0]);
+          newActiveTab = newAllowedTabs[0];
         }
-        
-        setSelectedTabs(newSelectedTabs);
+      } else {
+        // Can't remove the last tab
+        return;
       }
     } else {
       // Add the tab
-      setSelectedTabs([...selectedTabs, tab]);
+      newAllowedTabs = [...allowedTabs, tab];
       
       // If this is the first tab, make it active
-      if (selectedTabs.length === 0) {
-        setActiveTab(tab);
+      if (allowedTabs.length === 0) {
+        newActiveTab = tab;
       }
     }
+    
+    // Notify parent component
+    onChange({
+      allowedTabs: newAllowedTabs,
+      activeTab: newActiveTab
+    });
   };
 
   // Set active tab (when user clicks on an already selected tab)
   const handleSetActiveTab = (tab) => {
-    if (selectedTabs.includes(tab)) {
-      console.log("Setting active tab to:", tab);
-      setActiveTab(tab);
+    if (!onChange) return;
+    
+    if (allowedTabs.includes(tab) && tab !== activeTab) {
+      onChange({
+        allowedTabs,
+        activeTab: tab
+      });
     }
   };
 
@@ -107,7 +82,7 @@ const ShareConfigTabSelector = ({
             key={tab}
             className={`
               px-4 py-3 rounded-lg border flex items-center justify-between cursor-pointer
-              ${selectedTabs.includes(tab) 
+              ${allowedTabs.includes(tab) 
                 ? `bg-pink-50 dark:bg-pink-900/30 border-pink-200 dark:border-pink-800/50 ${darkMode ? 'text-pink-300' : 'text-pink-700'}` 
                 : `${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-gray-100 dark:hover:bg-gray-600`
               }
@@ -117,8 +92,12 @@ const ShareConfigTabSelector = ({
             <div className="flex items-center">
               <input
                 type="checkbox"
-                checked={selectedTabs.includes(tab)}
-                onChange={() => handleTabToggle(tab)}
+                checked={allowedTabs.includes(tab)}
+                onChange={(e) => {
+                  // Prevent double-firing when clicking on the checkbox directly
+                  e.stopPropagation();
+                  handleTabToggle(tab);
+                }}
                 className="h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded mr-3"
                 onClick={(e) => e.stopPropagation()}
               />
@@ -138,7 +117,7 @@ const ShareConfigTabSelector = ({
       </div>
       
       {/* Warning if no tabs selected */}
-      {selectedTabs.length === 0 && (
+      {allowedTabs.length === 0 && (
         <div className={`p-3 mb-4 rounded-lg border ${
           darkMode ? 'bg-amber-900/20 border-amber-800/30 text-amber-300' : 
                    'bg-amber-50 border-amber-200 text-amber-800'
@@ -153,13 +132,13 @@ const ShareConfigTabSelector = ({
       )}
       
       {/* Active tab selector (only show if multiple tabs are selected) */}
-      {selectedTabs.length > 1 && (
+      {allowedTabs.length > 1 && (
         <div className="mt-2 mb-4">
           <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
             Set Active Tab:
           </label>
           <div className="flex flex-wrap gap-2">
-            {selectedTabs.map(tab => (
+            {allowedTabs.map(tab => (
               <button
                 key={tab}
                 onClick={() => handleSetActiveTab(tab)}

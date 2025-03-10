@@ -8,23 +8,20 @@ import OffersTab from '../dashboard/tabs/OffersTab';
 
 /**
  * SharedDashboardPreview component displays a preview of how the shared dashboard will look
- * This version is greatly simplified to avoid active tab state synchronization issues
+ * This version is a pure presentational component that receives all its props
  */
 const SharedDashboardPreview = ({ config, onClose }) => {
   // Get dark mode status
   const { darkMode } = useTheme();
   
-  // Everything should come from the config prop now, no context usage
+  // Everything comes from the config prop
   const {
     allowedTabs,
     activeTab,
     clientNote,
     expiryDate,
     branding,
-    precomputedData,
-    hideRetailers,
-    hideTotals,
-    showOnlyPercent
+    precomputedData
   } = config;
 
   // Check if we have precomputed data
@@ -34,107 +31,14 @@ const SharedDashboardPreview = ({ config, onClose }) => {
   const daysRemaining = expiryDate ?
     Math.ceil((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
 
-  // Transform data for sharing (removes sensitive data based on config)
-  const transformDataForSharing = (data) => {
-    if (!data) return null;
-    
-    try {
-      // Create deep copy to avoid modifying original data
-      const clientData = JSON.parse(JSON.stringify(data));
-      
-      // Apply transformations based on share config
-      if (hideRetailers && Array.isArray(clientData.retailerData)) {
-        clientData.retailerData = clientData.retailerData.map((item, index) => ({
-          ...item,
-          name: `Retailer ${index + 1}`
-        }));
-      }
-      
-      if (hideTotals) {
-        // Remove total values from metrics
-        if (clientData.metrics) {
-          if (clientData.metrics.totalUnits) {
-            clientData.metrics.totalUnits = '—'; // Replace with em dash
-          }
-          if (clientData.metrics.totalValue) {
-            clientData.metrics.totalValue = '—';
-          }
-        }
-        
-        // Remove count values from retailer data
-        if (Array.isArray(clientData.retailerData)) {
-          clientData.retailerData = clientData.retailerData.map(item => ({
-            ...item,
-            value: showOnlyPercent ? '—' : item.value
-          }));
-        }
-        
-        // Remove count values from product data
-        if (Array.isArray(clientData.productDistribution)) {
-          clientData.productDistribution = clientData.productDistribution.map(item => ({
-            ...item,
-            count: showOnlyPercent ? '—' : item.count
-          }));
-        }
-      }
-      
-      // Add shared context for client-specific view
-      clientData.isSharedView = true;
-      clientData.shareConfig = {
-        // Default values if config is undefined
-        allowedTabs: allowedTabs || ['summary'],
-        activeTab: activeTab || 'summary', // Explicitly include activeTab
-        hideRetailers: !!hideRetailers,
-        hideTotals: !!hideTotals,
-        showOnlyPercent: !!showOnlyPercent,
-        branding: branding || {
-          showLogo: true,
-          companyName: 'Your Company',
-          primaryColor: '#FF0066'
-        },
-        clientNote: clientNote || '',
-        expiryDate: expiryDate || null,
-      };
-      
-      return clientData;
-    } catch (err) {
-      console.error('Error in transformDataForSharing:', err);
-      // Return data as-is if there's an error
-      return data;
-    }
-  };
-
-  // Ensure we have filtered data by either using precomputed data or an empty array
-  const clientData = precomputedData ? {
-    salesData: precomputedData.salesData || [],
-    filteredData: precomputedData.filteredData || [],
-    metrics: precomputedData.metrics || null,
-    retailerData: precomputedData.retailerData || [],
-    productDistribution: precomputedData.productDistribution || [],
-    brandMapping: precomputedData.brandMapping || {},
-    brandNames: precomputedData.brandNames || [],
-    clientName: config.metadata?.clientName || 'Client',
-    filters: config.filters || {},
-    // Add flag to indicate this is a shared view
-    isSharedView: true,
-    hasData: hasData,
-    // Add getter functions to maintain compatibility with tab components
-    getFilteredData: () => precomputedData.filteredData || [],  
-    calculateMetrics: () => precomputedData.metrics || null,
-    getRetailerDistribution: () => precomputedData.retailerData || [],
-    getProductDistribution: () => precomputedData.productDistribution || [],
-    // Empty setter functions for data context compatibility
-    setSelectedProducts: () => { },
-    setSelectedRetailers: () => { },
-    setDateRange: () => { },
-    setActiveTab: () => { }
-  } : {
-    isSharedView: true,
-    hasData: false,
-  };
-
-  // Transform the data based on display options
-  const transformedData = transformDataForSharing(clientData);
+  // Add watermark in preview mode
+  const Watermark = () => (
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <div className={`text-9xl font-bold opacity-5 transform rotate-45 select-none ${darkMode ? 'text-gray-700' : 'text-gray-300'}`}>
+        PREVIEW
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -179,11 +83,7 @@ const SharedDashboardPreview = ({ config, onClose }) => {
         </div>
 
         {/* Watermark */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className={`text-9xl font-bold opacity-5 transform rotate-45 select-none ${darkMode ? 'text-gray-700' : 'text-gray-300'}`}>
-            PREVIEW
-          </div>
-        </div>
+        <Watermark />
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
@@ -217,10 +117,9 @@ const SharedDashboardPreview = ({ config, onClose }) => {
           {process.env.NODE_ENV === 'development' && (
             <div className={`mb-6 p-3 rounded-lg text-xs ${
               darkMode ? 'bg-gray-800 text-gray-300 border border-gray-700' : 
-                         'bg-gray-100 text-gray-700 border border-gray-200'
+                        'bg-gray-100 text-gray-700 border border-gray-200'
             }`}>
-              <strong>Debug:</strong> Current Tab: {activeTab} | 
-              Config Active Tab: {activeTab} | 
+              <strong>Debug:</strong> Active Tab: {activeTab} | 
               Allowed Tabs: {allowedTabs.join(', ')}
             </div>
           )}
@@ -257,7 +156,7 @@ const SharedDashboardPreview = ({ config, onClose }) => {
                 </p>
               </div>
             ) : (
-              <ClientDataProvider clientData={transformedData}>
+              <ClientDataProvider clientData={precomputedData}>
                 {/* Show the correct tab content based on activeTab */}
                 {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
                 {activeTab === 'sales' && <SalesTab isSharedView={true} />}
