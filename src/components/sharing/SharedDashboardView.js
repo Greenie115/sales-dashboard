@@ -357,7 +357,7 @@ const handleTabChange = (tab) => {
                 {shareConfig.metadata?.clientName || 'Client'} Dashboard
               </h1>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Shared by {shareConfig.branding?.companyName || 'Your Company'}
+                Shared by {shareConfig.branding?.companyName || 'Shopmium Insights'}
               </p>
             </div>
           </div>
@@ -441,7 +441,7 @@ const handleTabChange = (tab) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center">
             <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              Shared with you by {shareConfig.branding?.companyName || 'Your Company'}
+              Shared with you by {shareConfig.branding?.companyName || 'Shopmium Insights'}
             </span>
           </div>
         </div>

@@ -151,9 +151,17 @@ export const DataProvider = ({ children }) => {
                     const mapping = identifyBrandPrefixes(uniqueProducts);
                     setBrandMapping(mapping);
                     
+                    // After setting brandNames
                     const brands = extractBrandNames(mapping);
                     console.log("Detected brands:", brands);
                     setBrandNames(brands);
+
+                    // Set client name to detected brand names
+                    if (brands && brands.length > 0) {
+                      const brandClientName = brands.join(', ');
+                      console.log("Setting client name to detected brands:", brandClientName);
+                      setClientName(brandClientName);
+                    }
                   } catch (e) {
                     console.error("Error in brand detection:", e);
                   }

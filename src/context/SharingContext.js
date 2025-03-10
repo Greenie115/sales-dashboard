@@ -46,7 +46,7 @@ export const SharingProvider = ({ children }) => {
     branding: {
       showLogo: true,
       primaryColor: '#FF0066',
-      companyName: 'Your Company',
+      companyName: 'Shopmium Insights',
     },
     filters: {
       selectedProducts: ['all'],
@@ -57,6 +57,7 @@ export const SharingProvider = ({ children }) => {
       selectedMonth: '',
     },
     customExcludedDates: [],
+    hiddenCharts: [],
     precomputedData: null
   });
   
@@ -291,6 +292,77 @@ export const SharingProvider = ({ children }) => {
             }));
           }
         }
+      }
+      
+      return clientData;
+    } catch (err) {
+      console.error('Error in transformDataForSharing:', err);
+      return data;
+    }
+  }, [shareConfig]);
+  
+  // Replace with this updated version:
+  const transformDataForSharing = useCallback((data) => {
+    if (!data) return data;
+    
+    try {
+      // Create deep copy to avoid modifying original data
+      const clientData = JSON.parse(JSON.stringify(data));
+      const config = clientData.shareConfig || shareConfig;
+      
+      // Apply transformations based on share config
+      if (config.hideRetailers && Array.isArray(clientData.retailerData)) {
+        clientData.retailerData = clientData.retailerData.map((item, index) => ({
+          ...item,
+          name: `Retailer ${index + 1}`
+        }));
+      }
+      
+      if (config.hideTotals) {
+        // Remove total values from metrics
+        if (clientData.metrics) {
+          if (clientData.metrics.totalUnits) {
+            clientData.metrics.totalUnits = '—';
+          }
+          if (clientData.metrics.totalValue) {
+            clientData.metrics.totalValue = '—';
+          }
+        }
+        
+        // Remove count values if showOnlyPercent is true
+        if (config.showOnlyPercent) {
+          if (Array.isArray(clientData.retailerData)) {
+            clientData.retailerData = clientData.retailerData.map(item => ({
+              ...item,
+              value: '—'
+            }));
+          }
+          
+          if (Array.isArray(clientData.productDistribution)) {
+            clientData.productDistribution = clientData.productDistribution.map(item => ({
+              ...item,
+              count: '—'
+            }));
+          }
+        }
+      }
+      
+      // Hide specified charts by marking them in the clientData
+      if (config.hiddenCharts && config.hiddenCharts.length > 0) {
+        clientData.hiddenCharts = config.hiddenCharts;
+      }
+      
+      // Apply date exclusions to time trend data
+      if (Array.isArray(clientData.trendData) && clientData.trendData.length > 0 && 
+          Array.isArray(config.customExcludedDates) && config.customExcludedDates.length > 0) {
+        
+        // Create a Set of dates to exclude for efficient lookup
+        const excludeDates = new Set(config.customExcludedDates);
+        
+        // Filter out excluded dates from trend data
+        clientData.trendData = clientData.trendData.filter(item => {
+          return !excludeDates.has(item.date);
+        });
       }
       
       return clientData;

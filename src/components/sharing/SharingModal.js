@@ -402,6 +402,74 @@ const SharingModal = () => {
                       </label>
                     </div>
                   </div>
+
+                  {/* Date Exclusion */}
+                    <div>
+                      <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                        Exclude Dates from Time Charts
+                      </h3>
+                      <div className="flex items-end space-x-2 mb-2">
+                        <div className="flex-grow">
+                          <input
+                            type="date"
+                            value={datePickerValue}
+                            onChange={(e) => setDatePickerValue(e.target.value)}
+                            className={`w-full px-3 py-2 border ${
+                              darkMode 
+                                ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                                : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                            } rounded-md text-sm focus:outline-none`}
+                          />
+                        </div>
+                        <button
+                          onClick={handleAddExcludedDate}
+                          disabled={!datePickerValue}
+                          className={`px-3 py-2 rounded ${
+                            !datePickerValue
+                              ? `${darkMode ? 'bg-gray-600 text-gray-400' : 'bg-gray-100 text-gray-400'} cursor-not-allowed`
+                              : `${darkMode ? 'bg-pink-600 text-white hover:bg-pink-700' : 'bg-pink-600 text-white hover:bg-pink-700'}`
+                          }`}
+                        >
+                          Add
+                        </button>
+                      </div>
+                      
+                      {/* Display excluded dates */}
+                      <div className={`mt-2 ${
+                        shareConfig.customExcludedDates.length > 0 
+                          ? `${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'} p-3 rounded-lg border`
+                          : ''
+                      }`}>
+                        {shareConfig.customExcludedDates.length > 0 ? (
+                          <div>
+                            <h4 className={`text-xs font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              Excluded Dates:
+                            </h4>
+                            <div className="max-h-32 overflow-y-auto">
+                              {shareConfig.customExcludedDates.map(date => (
+                                <div key={date} className="flex justify-between items-center py-1">
+                                  <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    {new Date(date).toLocaleDateString()}
+                                  </span>
+                                  <button
+                                    onClick={() => handleRemoveExcludedDate(date)}
+                                    className={`text-xs p-1 rounded ${darkMode ? 'text-red-400 hover:bg-red-900/30' : 'text-red-600 hover:bg-red-100'}`}
+                                  >
+                                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            No dates excluded. Add specific dates to exclude them from time-based charts.
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   
                   {/* Client Note */}
                   <div>
