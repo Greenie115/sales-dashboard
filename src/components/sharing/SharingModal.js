@@ -28,19 +28,17 @@ const SharingModal = () => {
   } = useData();
 
   const [shareConfig, setShareConfig] = useState({
-    allowedTabs: ['summary'], // Default tabs to share
-    hideRetailers: false,     // Whether to anonymize retailer names
-    hideTotals: false,        // Whether to hide total values
-    showOnlyPercent: false,   // Whether to show only percentages
-    clientNote: '',          // Optional message to display to client
-    expiryDate: null,        // When the share link expires
-    // Fixed branding for Shopmium
+    allowedTabs: [], // Start with an empty array
+    hideRetailers: false,
+    hideTotals: false,
+    showOnlyPercent: false,
+    clientNote: '',
+    expiryDate: null,
     branding: {
       showLogo: true,
       primaryColor: '#FF0066',
       companyName: 'Shopmium',
     },
-    // Filter state tracking
     filters: {
       selectedProducts: ['all'],
       selectedRetailers: ['all'],
@@ -49,7 +47,6 @@ const SharingModal = () => {
       endDate: '',
       selectedMonth: '',
     },
-    // Add precomputed data field
     precomputedData: null
   });
 
@@ -72,18 +69,20 @@ const SharingModal = () => {
   const [showDebugger, setShowDebugger] = useState(false);
   const [fallbackMode, setFallbackMode] = useState(false);
 
-  // When modal opens, ensure current tab is selected
-  useEffect(() => {
-    if (isShareModalOpen && activeTab) {
-      // Initialize allowedTabs with activeTab if it's empty
-      if (shareConfig.allowedTabs.length === 0) {
-        setShareConfig(prevConfig => ({
-          ...prevConfig,
-          allowedTabs: [activeTab]
-      }));
-      }
-    }
-  }, [isShareModalOpen, activeTab, shareConfig.allowedTabs.length]); // Use allowedTabs.length
+
+// When modal opens, ensure current tab is selected
+useEffect(() => {
+  if (isShareModalOpen) {
+    console.log("Modal opened with activeTab:", activeTab);
+    
+    // When modal opens, start fresh with ONLY the current tab
+    setShareConfig(prev => ({
+      ...prev,
+      allowedTabs: [activeTab || 'summary'],
+      activeTab: activeTab || 'summary'
+    }));
+  }
+}, [isShareModalOpen, activeTab]);
 
 
   // Reset copy success message
@@ -98,28 +97,54 @@ const SharingModal = () => {
 
   // Handle tab selection
   const handleTabToggle = (tab) => {
-    if (shareConfig.allowedTabs.includes(tab)) {
-      // Check if it's the last tab and prevent deselection
-      if (shareConfig.allowedTabs.length === 1) {
-        return; // Do nothing if it's the last tab
+    console.log(`Toggle tab: ${tab}`);
+    
+    setShareConfig(prev => {
+      // Check if this tab is already selected
+      const isSelected = prev.allowedTabs.includes(tab);
+      let newAllowedTabs;
+      let newActiveTab = prev.activeTab;
+      
+      if (isSelected) {
+        // We're removing this tab
+        // Only allow removal if it's not the last tab
+        if (prev.allowedTabs.length > 1) {
+          // Create new array without this tab
+          newAllowedTabs = prev.allowedTabs.filter(t => t !== tab);
+          
+          // If we're removing the active tab, set a new active tab
+          if (prev.activeTab === tab) {
+            newActiveTab = newAllowedTabs[0];
+          }
+          
+          console.log(`Removed ${tab}, new tabs:`, newAllowedTabs);
+        } else {
+          // Can't remove the last tab
+          console.log("Can't remove last tab");
+          return prev; // Return unchanged state
+        }
+      } else {
+        // We're adding this tab
+        newAllowedTabs = [...prev.allowedTabs, tab];
+        
+        // If this is the first tab or there's no active tab, 
+        // make this the active tab
+        if (prev.allowedTabs.length === 0 || !prev.activeTab) {
+          newActiveTab = tab;
+        }
+        
+        console.log(`Added ${tab}, new tabs:`, newAllowedTabs);
       }
       
-      // Create new allowedTabs array without the current tab
-      const newAllowedTabs = shareConfig.allowedTabs.filter(t => t !== tab);
-          
-      setShareConfig(prevConfig => ({
-          ...prevConfig,
-          allowedTabs: newAllowedTabs
-      }));
-    } else {
-      // Add the tab but don't make it active automatically
-      setShareConfig(prevConfig => ({
-          ...prevConfig,
-          allowedTabs: [...prevConfig.allowedTabs, tab]
-          // Removed the activeTab assignment here
-      }));
-    }
+      // Return updated state
+      return {
+        ...prev,
+        allowedTabs: newAllowedTabs,
+        activeTab: newActiveTab
+      };
+    });
   };
+
   // Helper function to get display name without brand prefix
   const getProductDisplayName = (product) => {
     // Use the brand mapping if available
@@ -191,41 +216,54 @@ const SharingModal = () => {
   };
 
   // Handle generating and copying link
-// Update the handleGenerateLink function
-const handleGenerateLink = async () => {
-  setIsGeneratingLink(true);
-  try {
-    // Make sure we have at least one allowed tab
-    if (shareConfig.allowedTabs.length === 0) {
-      setShareConfig(prev => ({
-        ...prev,
-        allowedTabs: ['summary']
-      }));
-    }
+  const handleGenerateLink = async () => {
+    setIsGeneratingLink(true);
     
-    // Add a small delay to ensure state updates before generating link
-    setTimeout(async () => {
+    try {
+      // Ensure we have at least one tab selected
+      if (shareConfig.allowedTabs.length === 0) {
+        alert("Please select at least one tab to share.");
+        setIsGeneratingLink(false);
+        return;
+      }
+      
+      // Ensure active tab is set and valid
+      if (!shareConfig.activeTab || !shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
+        setShareConfig(prev => ({
+          ...prev,
+          activeTab: prev.allowedTabs[0]
+        }));
+        
+        // Add a small delay to ensure state update
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      // Log the configuration for debugging
+      console.log("Generating share link with config:", {
+        allowedTabs: shareConfig.allowedTabs,
+        activeTab: shareConfig.activeTab
+      });
+      
+      // Use appropriate generation method
       if (fallbackMode) {
-        // Use the fallback method
         const shareUrl = generateFallbackLink();
         setShareableLink(shareUrl);
       } else {
-        // Try to use Supabase
         await generateShareableLink();
       }
+      
       setIsGeneratingLink(false);
-    }, 100);
-  } catch (error) {
-    console.error("Error generating link:", error);
-    // If Supabase fails, try fallback method
-    if (!fallbackMode) {
-      setFallbackMode(true);
-      const shareUrl = generateFallbackLink();
-      setShareableLink(shareUrl);
+    } catch (error) {
+      console.error("Error generating link:", error);
+      // If Supabase fails, try fallback method
+      if (!fallbackMode) {
+        setFallbackMode(true);
+        const shareUrl = generateFallbackLink();
+        setShareableLink(shareUrl);
+      }
+      setIsGeneratingLink(false);
     }
-    setIsGeneratingLink(false);
-  }
-};
+  };
 
   const applyCurrentFilters = () => {
     // Call the handler
@@ -283,6 +321,94 @@ const handleGenerateLink = async () => {
   if (isPreviewMode) {
     return <SharedDashboardPreview onClose={togglePreviewMode} />;
   }
+
+  const TabSelectionSection = () => (
+    <div>
+      <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+        Visible Tabs
+      </h3>
+      <p className={`text-xs mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+        Select which tabs to include in the shared dashboard:
+      </p>
+      
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        {['summary', 'sales', 'demographics', 'offers'].map(tab => (
+          <div 
+            key={tab}
+            className={`
+              px-4 py-3 rounded-lg border flex items-center justify-between cursor-pointer
+              ${shareConfig.allowedTabs.includes(tab) 
+                ? `bg-pink-50 dark:bg-pink-900/30 border-pink-200 dark:border-pink-800/50 ${darkMode ? 'text-pink-300' : 'text-pink-700'}` 
+                : `${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-gray-100 dark:hover:bg-gray-600`
+              }
+            `}
+            onClick={() => handleTabToggle(tab)}
+          >
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                checked={shareConfig.allowedTabs.includes(tab)}
+                onChange={() => handleTabToggle(tab)}
+                className="h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded mr-3"
+              />
+              <span className="capitalize">{tab}</span>
+            </div>
+            
+            {/* Show active indicator */}
+            {shareConfig.activeTab === tab && (
+              <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+                darkMode ? 'bg-pink-800 text-pink-200' : 'bg-pink-100 text-pink-800'
+              }`}>
+                Active
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      
+      {/* Warning if no tabs selected */}
+      {shareConfig.allowedTabs.length === 0 && (
+        <div className={`p-3 mb-4 rounded-lg border ${
+          darkMode ? 'bg-amber-900/20 border-amber-800/30 text-amber-300' : 
+                   'bg-amber-50 border-amber-200 text-amber-800'
+        }`}>
+          <div className="flex items-start">
+            <svg className="h-5 w-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>Please select at least one tab to share</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Active tab selector (only show if multiple tabs are selected) */}
+      {shareConfig.allowedTabs.length > 1 && (
+        <div className="mt-2 mb-4">
+          <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+            Set Active Tab:
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {shareConfig.allowedTabs.map(tab => (
+              <button
+                key={tab}
+                onClick={() => setShareConfig(prev => ({ ...prev, activeTab: tab }))}
+                className={`px-3 py-1 text-sm rounded-md ${
+                  shareConfig.activeTab === tab
+                    ? 'bg-pink-600 text-white'
+                    : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
+                }`}
+              >
+                <span className="capitalize">{tab}</span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            The active tab will be shown first when the client opens the shared dashboard.
+          </p>
+        </div>
+      )}
+    </div>
+  );
   
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -377,22 +503,34 @@ const handleGenerateLink = async () => {
                 )}
                 
                 <div className="space-y-6">
-                  {/* Tab Selection */}
-                  <div>
-                    <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Visible Tabs</h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      {['summary', 'sales', 'demographics', 'offers'].map(tab => (
-                        <div 
-                          key={tab}
-                          className={`
-                            px-4 py-3 rounded-lg border flex items-center cursor-pointer
-                            ${shareConfig.allowedTabs.includes(tab) 
-                              ? `bg-pink-50 dark:bg-pink-900/30 border-pink-200 dark:border-pink-800/50 ${darkMode ? 'text-pink-300' : 'text-pink-700'}` 
-                              : `${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-gray-100 dark:hover:bg-gray-600`
-                            }
-                          `}
-                          onClick={() => handleTabToggle(tab)}
-                        >
+               {/* Tab Selection */}
+                <div>
+                  <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Visible Tabs</h3>
+                  
+                  {/* Show warning if no tabs selected */}
+                  {shareConfig.allowedTabs.length === 0 && (
+                    <div className={`p-3 mb-3 rounded-lg text-sm ${
+                      darkMode ? 'bg-amber-900/20 text-amber-300 border border-amber-800/30' : 
+                              'bg-amber-50 text-amber-800 border border-amber-200'
+                    }`}>
+                      Select at least one tab to share.
+                    </div>
+                  )}
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    {['summary', 'sales', 'demographics', 'offers'].map(tab => (
+                      <div 
+                        key={tab}
+                        className={`
+                          px-4 py-3 rounded-lg border flex items-center justify-between cursor-pointer
+                          ${shareConfig.allowedTabs.includes(tab) 
+                            ? `bg-pink-50 dark:bg-pink-900/30 border-pink-200 dark:border-pink-800/50 ${darkMode ? 'text-pink-300' : 'text-pink-700'}` 
+                            : `${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-gray-100 dark:hover:bg-gray-600`
+                          }
+                        `}
+                        onClick={() => handleTabToggle(tab)}
+                      >
+                        <div className="flex items-center">
                           <input
                             type="checkbox"
                             checked={shareConfig.allowedTabs.includes(tab)}
@@ -401,9 +539,46 @@ const handleGenerateLink = async () => {
                           />
                           <span className="capitalize">{tab}</span>
                         </div>
-                      ))}
-                    </div>
+                        
+                        {/* Show active indicator */}
+                        {shareConfig.activeTab === tab && (
+                          <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+                            darkMode ? 'bg-pink-800 text-pink-200' : 'bg-pink-100 text-pink-800'
+                          }`}>
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    ))}
                   </div>
+                  
+                  {/* Active Tab Selector */}
+                  {shareConfig.allowedTabs.length > 1 && (
+                    <div className="mt-4">
+                      <label className={`block text-xs font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Set Active Tab:
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {shareConfig.allowedTabs.map(tab => (
+                          <button
+                            key={tab}
+                            onClick={() => setShareConfig(prev => ({ ...prev, activeTab: tab }))}
+                            className={`px-3 py-1 text-xs rounded-md ${
+                              shareConfig.activeTab === tab
+                                ? 'bg-pink-600 text-white'
+                                : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
+                            }`}
+                          >
+                            <span className="capitalize">{tab}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        This tab will be displayed first when shared.
+                      </p>
+                    </div>
+                  )}
+                </div>
                   
                   {/* Data Filters */}
                   <div>

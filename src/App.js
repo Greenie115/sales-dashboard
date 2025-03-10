@@ -12,6 +12,7 @@ import Footer from './components/dashboard/Footer';
 import MainContent from './components/dashboard/MainContent';
 import SharingModal from './components/sharing/SharingModal';
 import ErrorBoundary from './components/ErrorBoundary';
+import ActiveTabDebugger from './components/debug/ActiveTabDebugger';
 
 // Lazy load the SharedDashboardView to improve performance
 const SharedDashboardView = lazy(() => import('./components/sharing/SharedDashboardView'));
@@ -74,6 +75,7 @@ function App() {
                             <ErrorBoundary>
                               <SharingModal />
                             </ErrorBoundary>
+                            {process.env.NODE_ENV === 'development' && <ActiveTabDebugger />}
                           </div>
                         } />
                         

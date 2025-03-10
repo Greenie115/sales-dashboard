@@ -239,6 +239,12 @@ const SharedDashboardView = () => {
     
     fetchSharedDashboard();
   }, [shareId, setSalesData, setSelectedProducts, setSelectedRetailers, setDateRange, setStartDate, setEndDate, setSelectedMonth]);
+
+  // Handle tab selection
+  const handleTabChange = (tab) => {
+    console.log("Tab changed to:", tab);
+    setActiveTab(tab);
+  };
   
   // If still loading
   if (loading) {
@@ -377,7 +383,7 @@ const SharedDashboardView = () => {
               {shareConfig.allowedTabs.map(tab => (
                 <button
                   key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => handleTabChange(tab)}
                   className={`py-3 px-4 border-b-2 font-medium text-sm whitespace-nowrap ${
                     activeTab === tab
                       ? `border-pink-500 ${darkMode ? 'text-pink-400' : 'text-pink-600'}`

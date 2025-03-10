@@ -1,4 +1,3 @@
-// Updated SharedDashboardPreview.js component
 import React, { useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { useSharing } from '../../context/SharingContext';
@@ -19,6 +18,7 @@ const SharedDashboardPreview = ({ onClose }) => {
   } = useSharing();
 
   const {
+    activeTab, // Get the current active tab from DataContext
     salesData,
     getFilteredData,
     calculateMetrics,
@@ -29,18 +29,31 @@ const SharedDashboardPreview = ({ onClose }) => {
     brandMapping
   } = useData();
 
-  // Effect to initialize preview tab on mount
+  // Effect to initialize preview tab or sync with current tab
   useEffect(() => {
-    // Always set the preview tab to the first allowed tab
-    if (shareConfig.allowedTabs && shareConfig.allowedTabs.length > 0) {
+    console.log("SharedDashboardPreview initializing with shareConfig:", {
+      shareConfig: shareConfig,
+      allowedTabs: shareConfig.allowedTabs,
+      configActiveTab: shareConfig.activeTab,
+      previewActiveTab: previewActiveTab,
+      mainActiveTab: activeTab
+    });
+    
+    // Use the active tab from the config, and ensure it's in allowedTabs
+    if (shareConfig.activeTab && shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
+      // If the config has an active tab and it's allowed, use it
+      if (previewActiveTab !== shareConfig.activeTab) {
+        console.log("Setting previewActiveTab to config's activeTab:", shareConfig.activeTab);
+        setPreviewActiveTab(shareConfig.activeTab);
+      }
+    } 
+    // Fallback to the first allowed tab if needed
+    else if (shareConfig.allowedTabs && shareConfig.allowedTabs.length > 0) {
+      // If no explicitly set active tab, use the first allowed tab
+      console.log("Setting previewActiveTab to first allowed tab:", shareConfig.allowedTabs[0]);
       setPreviewActiveTab(shareConfig.allowedTabs[0]);
     }
-    
-    console.log("SharedDashboardPreview initialized with:", {
-      allowedTabs: shareConfig.allowedTabs,
-      previewActiveTab: shareConfig.allowedTabs[0]
-    });
-  }, [shareConfig, setPreviewActiveTab]);
+  }, [shareConfig, shareConfig.activeTab, shareConfig.allowedTabs, previewActiveTab, setPreviewActiveTab, activeTab]);
 
   // IMPORTANT: Use precomputed data if available
   const precomputed = shareConfig.precomputedData;
@@ -88,8 +101,23 @@ const SharedDashboardPreview = ({ onClose }) => {
   const daysRemaining = shareConfig.expiryDate ?
     Math.ceil((new Date(shareConfig.expiryDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
 
-  // Add logging to debug tab switching
-  console.log("Preview rendering with active tab:", previewActiveTab, "and allowed tabs:", shareConfig.allowedTabs);
+  // Log current state to help debug
+  console.log("Preview rendering with tab states:", {
+    previewActiveTab,
+    shareConfigActiveTab: shareConfig.activeTab,
+    mainActiveTab: activeTab,
+    allowedTabs: shareConfig.allowedTabs
+  });
+
+  // Handle tab change
+  const handleTabChange = (tab) => {
+    console.log("Changing preview tab to:", tab);
+    // Update both the preview state and the config
+    setPreviewActiveTab(tab);
+    
+    // Update the activeTab in the shareConfig as well
+    shareConfig.activeTab = tab;
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -168,6 +196,18 @@ const SharedDashboardPreview = ({ onClose }) => {
             </div>
           )}
 
+          {/* Debug info in development mode */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className={`mb-6 p-3 rounded-lg text-xs ${
+              darkMode ? 'bg-gray-800 text-gray-300 border border-gray-700' : 
+                         'bg-gray-100 text-gray-700 border border-gray-200'
+            }`}>
+              <strong>Debug:</strong> Current Tab: {previewActiveTab} | 
+              Config Active Tab: {shareConfig.activeTab} | 
+              Allowed Tabs: {shareConfig.allowedTabs.join(', ')}
+            </div>
+          )}
+
           {/* Tab navigation */}
           {shareConfig.allowedTabs && shareConfig.allowedTabs.length > 1 && (
             <div className={`mb-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -175,10 +215,7 @@ const SharedDashboardPreview = ({ onClose }) => {
                 {shareConfig.allowedTabs.map(tab => (
                   <button
                     key={tab}
-                    onClick={() => {
-                      console.log("Changing preview tab to:", tab);
-                      setPreviewActiveTab(tab);
-                    }}
+                    onClick={() => handleTabChange(tab)}
                     className={`py-3 px-4 border-b-2 font-medium text-sm ${previewActiveTab === tab
                         ? `border-pink-500 ${darkMode ? 'text-pink-400' : 'text-pink-600'}`
                         : `border-transparent ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'}`
@@ -205,7 +242,7 @@ const SharedDashboardPreview = ({ onClose }) => {
               </div>
             ) : (
               <ClientDataProvider clientData={transformedData}>
-                {/* IMPORTANT: Use previewActiveTab from the SharingContext */}
+                {/* Render appropriate tab content based on previewActiveTab */}
                 {previewActiveTab === 'summary' && <SummaryTab isSharedView={true} />}
                 {previewActiveTab === 'sales' && <SalesTab isSharedView={true} />}
                 {previewActiveTab === 'demographics' && <DemographicsTab isSharedView={true} />}
