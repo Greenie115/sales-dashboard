@@ -6,6 +6,7 @@ import { useFilter } from '../../context/FilterContext';
 import SharedDashboardPreview from './SharedDashboardPreview';
 import SharedDashboardsManager from './SharedDashboardsManager';
 import SupabaseDebugger from '../debug/SupabaseDebugger';
+import ShareConfigTabSelector from '../ShareConfigTabSelector';
 
 const SharingModal = () => {
   const { darkMode } = useTheme();
@@ -26,6 +27,20 @@ const SharingModal = () => {
     endDate,
     selectedMonth
   } = useData();
+
+  // IMPORTANT: Add previewActiveTab and setPreviewActiveTab from the SharingContext
+  const {
+    isShareModalOpen,
+    toggleShareModal,
+    generateShareableLink,
+    shareableLink,
+    setShareableLink,
+    isPreviewMode,
+    togglePreviewMode,
+    handleSaveCurrentFilters,
+    previewActiveTab,
+    setPreviewActiveTab
+  } = useSharing();
 
   const [shareConfig, setShareConfig] = useState({
     allowedTabs: [], // Start with an empty array
@@ -49,17 +64,6 @@ const SharingModal = () => {
     },
     precomputedData: null
   });
-
-  const {
-    isShareModalOpen,
-    toggleShareModal,
-    generateShareableLink,
-    shareableLink,
-    setShareableLink,
-    isPreviewMode,
-    togglePreviewMode,
-    handleSaveCurrentFilters
-  } = useSharing();
 
   const { filters } = useFilter();
   const [copySuccess, setCopySuccess] = useState(false);
@@ -94,56 +98,6 @@ useEffect(() => {
   }, [copySuccess]);
 
   if (!isShareModalOpen) return null;
-
-  // Handle tab selection
-  const handleTabToggle = (tab) => {
-    console.log(`Toggle tab: ${tab}`);
-    
-    setShareConfig(prev => {
-      // Check if this tab is already selected
-      const isSelected = prev.allowedTabs.includes(tab);
-      let newAllowedTabs;
-      let newActiveTab = prev.activeTab;
-      
-      if (isSelected) {
-        // We're removing this tab
-        // Only allow removal if it's not the last tab
-        if (prev.allowedTabs.length > 1) {
-          // Create new array without this tab
-          newAllowedTabs = prev.allowedTabs.filter(t => t !== tab);
-          
-          // If we're removing the active tab, set a new active tab
-          if (prev.activeTab === tab) {
-            newActiveTab = newAllowedTabs[0];
-          }
-          
-          console.log(`Removed ${tab}, new tabs:`, newAllowedTabs);
-        } else {
-          // Can't remove the last tab
-          console.log("Can't remove last tab");
-          return prev; // Return unchanged state
-        }
-      } else {
-        // We're adding this tab
-        newAllowedTabs = [...prev.allowedTabs, tab];
-        
-        // If this is the first tab or there's no active tab, 
-        // make this the active tab
-        if (prev.allowedTabs.length === 0 || !prev.activeTab) {
-          newActiveTab = tab;
-        }
-        
-        console.log(`Added ${tab}, new tabs:`, newAllowedTabs);
-      }
-      
-      // Return updated state
-      return {
-        ...prev,
-        allowedTabs: newAllowedTabs,
-        activeTab: newActiveTab
-      };
-    });
-  };
 
   // Helper function to get display name without brand prefix
   const getProductDisplayName = (product) => {
@@ -284,6 +238,7 @@ useEffect(() => {
       };
     });
   };
+  
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareableLink)
       .then(() => setCopySuccess(true))
@@ -291,15 +246,28 @@ useEffect(() => {
   };
 
   const handlePreviewClick = () => {
-    // Make sure we have at least one allowed tab
+    // Make sure we have the latest tab configuration
     if (shareConfig.allowedTabs.length === 0) {
+      // If no tabs are selected, default to summary
       setShareConfig(prev => ({
         ...prev,
-        allowedTabs: ['summary']
+        allowedTabs: ['summary'],
+        activeTab: 'summary'
       }));
+      setPreviewActiveTab('summary');
+    } else if (!shareConfig.activeTab || !shareConfig.allowedTabs.includes(shareConfig.activeTab)) {
+      // Make sure active tab is valid
+      setShareConfig(prev => ({
+        ...prev,
+        activeTab: prev.allowedTabs[0]
+      }));
+      setPreviewActiveTab(shareConfig.allowedTabs[0]);
     }
-  
-    console.log("Opening preview with allowedTabs:", shareConfig.allowedTabs);
+    
+    console.log("Opening preview with tab config:", {
+      allowedTabs: shareConfig.allowedTabs,
+      activeTab: shareConfig.activeTab
+    });
     
     // Toggle to preview mode
     togglePreviewMode();
@@ -321,94 +289,6 @@ useEffect(() => {
   if (isPreviewMode) {
     return <SharedDashboardPreview onClose={togglePreviewMode} />;
   }
-
-  const TabSelectionSection = () => (
-    <div>
-      <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-        Visible Tabs
-      </h3>
-      <p className={`text-xs mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-        Select which tabs to include in the shared dashboard:
-      </p>
-      
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        {['summary', 'sales', 'demographics', 'offers'].map(tab => (
-          <div 
-            key={tab}
-            className={`
-              px-4 py-3 rounded-lg border flex items-center justify-between cursor-pointer
-              ${shareConfig.allowedTabs.includes(tab) 
-                ? `bg-pink-50 dark:bg-pink-900/30 border-pink-200 dark:border-pink-800/50 ${darkMode ? 'text-pink-300' : 'text-pink-700'}` 
-                : `${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-gray-100 dark:hover:bg-gray-600`
-              }
-            `}
-            onClick={() => handleTabToggle(tab)}
-          >
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                checked={shareConfig.allowedTabs.includes(tab)}
-                onChange={() => handleTabToggle(tab)}
-                className="h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded mr-3"
-              />
-              <span className="capitalize">{tab}</span>
-            </div>
-            
-            {/* Show active indicator */}
-            {shareConfig.activeTab === tab && (
-              <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
-                darkMode ? 'bg-pink-800 text-pink-200' : 'bg-pink-100 text-pink-800'
-              }`}>
-                Active
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-      
-      {/* Warning if no tabs selected */}
-      {shareConfig.allowedTabs.length === 0 && (
-        <div className={`p-3 mb-4 rounded-lg border ${
-          darkMode ? 'bg-amber-900/20 border-amber-800/30 text-amber-300' : 
-                   'bg-amber-50 border-amber-200 text-amber-800'
-        }`}>
-          <div className="flex items-start">
-            <svg className="h-5 w-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span>Please select at least one tab to share</span>
-          </div>
-        </div>
-      )}
-      
-      {/* Active tab selector (only show if multiple tabs are selected) */}
-      {shareConfig.allowedTabs.length > 1 && (
-        <div className="mt-2 mb-4">
-          <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-            Set Active Tab:
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {shareConfig.allowedTabs.map(tab => (
-              <button
-                key={tab}
-                onClick={() => setShareConfig(prev => ({ ...prev, activeTab: tab }))}
-                className={`px-3 py-1 text-sm rounded-md ${
-                  shareConfig.activeTab === tab
-                    ? 'bg-pink-600 text-white'
-                    : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
-                }`}
-              >
-                <span className="capitalize">{tab}</span>
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            The active tab will be shown first when the client opens the shared dashboard.
-          </p>
-        </div>
-      )}
-    </div>
-  );
   
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -504,81 +384,23 @@ useEffect(() => {
                 
                 <div className="space-y-6">
                {/* Tab Selection */}
-                <div>
-                  <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Visible Tabs</h3>
-                  
-                  {/* Show warning if no tabs selected */}
-                  {shareConfig.allowedTabs.length === 0 && (
-                    <div className={`p-3 mb-3 rounded-lg text-sm ${
-                      darkMode ? 'bg-amber-900/20 text-amber-300 border border-amber-800/30' : 
-                              'bg-amber-50 text-amber-800 border border-amber-200'
-                    }`}>
-                      Select at least one tab to share.
-                    </div>
-                  )}
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    {['summary', 'sales', 'demographics', 'offers'].map(tab => (
-                      <div 
-                        key={tab}
-                        className={`
-                          px-4 py-3 rounded-lg border flex items-center justify-between cursor-pointer
-                          ${shareConfig.allowedTabs.includes(tab) 
-                            ? `bg-pink-50 dark:bg-pink-900/30 border-pink-200 dark:border-pink-800/50 ${darkMode ? 'text-pink-300' : 'text-pink-700'}` 
-                            : `${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-gray-100 dark:hover:bg-gray-600`
-                          }
-                        `}
-                        onClick={() => handleTabToggle(tab)}
-                      >
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={shareConfig.allowedTabs.includes(tab)}
-                            onChange={() => handleTabToggle(tab)}
-                            className="h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded mr-3"
-                          />
-                          <span className="capitalize">{tab}</span>
-                        </div>
+                  <div>
+                    <ShareConfigTabSelector 
+                      initialTabs={shareConfig.allowedTabs || ['summary']}
+                      initialActiveTab={shareConfig.activeTab || 'summary'}
+                      onChange={(tabConfig) => {
+                        setShareConfig(prev => ({
+                          ...prev,
+                          allowedTabs: tabConfig.allowedTabs,
+                          activeTab: tabConfig.activeTab
+                        }));
                         
-                        {/* Show active indicator */}
-                        {shareConfig.activeTab === tab && (
-                          <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
-                            darkMode ? 'bg-pink-800 text-pink-200' : 'bg-pink-100 text-pink-800'
-                          }`}>
-                            Active
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {/* Active Tab Selector */}
-                  {shareConfig.allowedTabs.length > 1 && (
-                    <div className="mt-4">
-                      <label className={`block text-xs font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                        Set Active Tab:
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {shareConfig.allowedTabs.map(tab => (
-                          <button
-                            key={tab}
-                            onClick={() => setShareConfig(prev => ({ ...prev, activeTab: tab }))}
-                            className={`px-3 py-1 text-xs rounded-md ${
-                              shareConfig.activeTab === tab
-                                ? 'bg-pink-600 text-white'
-                                : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
-                            }`}
-                          >
-                            <span className="capitalize">{tab}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        This tab will be displayed first when shared.
-                      </p>
-                    </div>
-                  )}
-                </div>
+                        // Also update the preview active tab when active tab changes
+                        setPreviewActiveTab(tabConfig.activeTab);
+                      }}
+                      darkMode={darkMode}
+                      />
+                   </div>
                   
                   {/* Data Filters */}
                   <div>
@@ -628,7 +450,7 @@ useEffect(() => {
                         <input
                           type="checkbox"
                           checked={shareConfig.hideRetailers}
-                          onChange={(e) => setShareConfig({ hideRetailers: e.target.checked })}
+                          onChange={(e) => setShareConfig(prev => ({...prev, hideRetailers: e.target.checked}))}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide retailer names (anonymize)</span>
@@ -637,7 +459,7 @@ useEffect(() => {
                         <input
                           type="checkbox"
                           checked={shareConfig.hideTotals}
-                          onChange={(e) => setShareConfig({ hideTotals: e.target.checked })}
+                          onChange={(e) => setShareConfig(prev => ({...prev, hideTotals: e.target.checked}))}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide total values</span>
@@ -646,7 +468,7 @@ useEffect(() => {
                         <input
                           type="checkbox"
                           checked={shareConfig.showOnlyPercent}
-                          onChange={(e) => setShareConfig({ showOnlyPercent: e.target.checked })}
+                          onChange={(e) => setShareConfig(prev => ({...prev, showOnlyPercent: e.target.checked}))}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Show only percentages (hide count values)</span>
@@ -660,7 +482,7 @@ useEffect(() => {
                     <textarea
                       placeholder="Add a message to display to the client (optional)"
                       value={shareConfig.clientNote}
-                      onChange={(e) => setShareConfig({ clientNote: e.target.value })}
+                      onChange={(e) => setShareConfig(prev => ({...prev, clientNote: e.target.value}))}
                       className={`w-full px-3 py-2 border ${
                         darkMode 
                           ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
@@ -676,7 +498,7 @@ useEffect(() => {
                     <input
                       type="date"
                       value={shareConfig.expiryDate || ''}
-                      onChange={(e) => setShareConfig({ expiryDate: e.target.value || null })}
+                      onChange={(e) => setShareConfig(prev => ({...prev, expiryDate: e.target.value || null}))}
                       min={new Date().toISOString().split('T')[0]}
                       className={`w-full px-3 py-2 border ${
                         darkMode 
@@ -688,72 +510,6 @@ useEffect(() => {
                       Leave blank for links that don't expire.
                     </p>
                   </div>
-                  
-                  {/* Branding */}
-                  {/* <div>
-                    <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Branding</h3>
-                    <div className="space-y-3">
-                      <label className="inline-flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={shareConfig.branding.showLogo}
-                          onChange={(e) => setShareConfig({ 
-                            branding: { ...shareConfig.branding, showLogo: e.target.checked }
-                          })}
-                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
-                        />
-                        <span className="ml-2">Show your logo</span>
-                      </label>
-                      
-                      <div>
-                        <label className={`block text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>
-                          Company Name
-                        </label>
-                        <input
-                          type="text"
-                          value={shareConfig.branding.companyName}
-                          onChange={(e) => setShareConfig({ 
-                            branding: { ...shareConfig.branding, companyName: e.target.value }
-                          })}
-                          placeholder="Your Company"
-                          className={`w-full px-3 py-2 border ${
-                            darkMode 
-                              ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
-                              : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
-                          } rounded-md text-sm focus:outline-none`}
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className={`block text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>
-                          Brand Color
-                        </label>
-                        <div className="flex items-center">
-                          <input
-                            type="color"
-                            value={shareConfig.branding.primaryColor}
-                            onChange={(e) => setShareConfig({ 
-                              branding: { ...shareConfig.branding, primaryColor: e.target.value }
-                            })}
-                            className="h-8 w-8 mr-3 rounded-md cursor-pointer"
-                          />
-                          <input
-                            type="text"
-                            value={shareConfig.branding.primaryColor}
-                            onChange={(e) => setShareConfig({ 
-                              branding: { ...shareConfig.branding, primaryColor: e.target.value }
-                            })}
-                            placeholder="#FF0066"
-                            className={`w-24 px-3 py-2 border ${
-                              darkMode 
-                                ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
-                                : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
-                            } rounded-md text-sm focus:outline-none`}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div> */}
                 </div>
               </div>
             </div>

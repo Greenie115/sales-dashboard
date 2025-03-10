@@ -28,12 +28,12 @@ export const SharingProvider = ({ children }) => {
   } = useData();
   
   // State for sharing configuration
-  // IMPORTANT: Initialize previewActiveTab with the current activeTab
-  const [previewActiveTab, setPreviewActiveTab] = useState(activeTab || 'summary');
+  const [previewActiveTab, setPreviewActiveTab] = useState(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [shareConfig, setShareConfig] = useState({
     allowedTabs: ['summary'], // Default tabs to share
+    activeTab: 'summary',
     hideRetailers: false,     // Whether to anonymize retailer names
     hideTotals: false,        // Whether to hide total values
     showOnlyPercent: false,   // Whether to show only percentages
@@ -65,40 +65,34 @@ export const SharingProvider = ({ children }) => {
   const [loadingSharedDashboards, setLoadingSharedDashboards] = useState(false);
   const [shareError, setShareError] = useState(null);
   
-  // Sync previewActiveTab with activeTab when the modal opens
-  useEffect(() => {
-    if (isShareModalOpen && activeTab) {
-      setPreviewActiveTab(activeTab);
-      
-      // Also ensure the active tab is in allowedTabs
-      setShareConfig(prev => {
-        if (!prev.allowedTabs.includes(activeTab)) {
-          return {
-            ...prev,
-            allowedTabs: [...prev.allowedTabs, activeTab],
-            activeTab: activeTab // Explicitly set activeTab in the config
-          };
-        }
-        return {
-          ...prev,
-          activeTab: activeTab
-        };
-      });
-      
-      console.log("Synced preview active tab with current tab:", activeTab);
-    }
-  }, [isShareModalOpen, activeTab]);
-  
-  // When modal opens, also sync with share configuration
+  // When modal opens, just initialize previewActiveTab if needed
   useEffect(() => {
     if (isShareModalOpen) {
-      // Sync the activeTab in the config with the current active tab
+      console.log("Modal opened");
+      // Only initialize previewActiveTab if not already set
+      if (!previewActiveTab) {
+        setPreviewActiveTab(shareConfig.activeTab || 'summary');
+      }
+    }
+  }, [isShareModalOpen, shareConfig.activeTab, previewActiveTab]);
+
+  // Update filters in shareConfig when they change in DataContext
+  useEffect(() => {
+    // Only update if the modal is open to avoid unnecessary updates
+    if (isShareModalOpen) {
       setShareConfig(prev => ({
         ...prev,
-        activeTab: activeTab || prev.allowedTabs[0] || 'summary'
+        filters: {
+          selectedProducts,
+          selectedRetailers,
+          dateRange,
+          startDate,
+          endDate,
+          selectedMonth,
+        }
       }));
     }
-  }, [isShareModalOpen, activeTab]);
+  }, [isShareModalOpen, selectedProducts, selectedRetailers, dateRange, startDate, endDate, selectedMonth]);
   
   // Load existing shared dashboards when the component mounts
   useEffect(() => {
@@ -119,24 +113,6 @@ export const SharingProvider = ({ children }) => {
     loadSharedDashboards();
   }, []);
 
-  // Update filters in shareConfig when they change in DataContext
-  useEffect(() => {
-    // Only update if the modal is open to avoid unnecessary updates
-    if (isShareModalOpen) {
-      setShareConfig(prev => ({
-        ...prev,
-        filters: {
-          selectedProducts,
-          selectedRetailers,
-          dateRange,
-          startDate,
-          endDate,
-          selectedMonth,
-        }
-      }));
-    }
-  }, [isShareModalOpen, selectedProducts, selectedRetailers, dateRange, startDate, endDate, selectedMonth]);
-  
   // Generate a shareable link using Supabase
   const generateShareableLink = useCallback(async () => {
     try {
@@ -146,22 +122,10 @@ export const SharingProvider = ({ children }) => {
       // Create a copy of the current sharing configuration
       const configToShare = { ...shareConfig };
       
-      // IMPORTANT: Use the current activeTab from the dashboard if not explicitly set
-      // This ensures the shared view matches what the user is seeing
-      const currentActiveTab = activeTab || configToShare.activeTab || 'summary';
-      
-      // Add current active tab if not in allowed tabs
-      if (currentActiveTab && !configToShare.allowedTabs.includes(currentActiveTab)) {
-        configToShare.allowedTabs = [...configToShare.allowedTabs, currentActiveTab];
-      }
-      
       // Ensure we have at least one tab
       if (configToShare.allowedTabs.length === 0) {
         configToShare.allowedTabs = ['summary'];
       }
-      
-      // IMPORTANT: Set the active tab explicitly
-      configToShare.activeTab = currentActiveTab;
       
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
@@ -207,7 +171,6 @@ export const SharingProvider = ({ children }) => {
     }
   }, [
     shareConfig, 
-    activeTab, 
     brandNames, 
     clientName, 
     salesData, 
@@ -239,29 +202,16 @@ export const SharingProvider = ({ children }) => {
   const toggleShareModal = useCallback(() => {
     setIsShareModalOpen(prev => !prev);
     
-    // If opening the modal, sync the active tab
+    // When opening the modal, initialize preview tab only if not already set
     if (!isShareModalOpen) {
-      setPreviewActiveTab(activeTab || 'summary');
-      
-      setShareConfig(prev => {
-        // Initialize with current active tab
-        const newConfig = {
-          ...prev,
-          activeTab: activeTab || 'summary'
-        };
-        
-        // Make sure activeTab is in allowedTabs
-        if (activeTab && !prev.allowedTabs.includes(activeTab)) {
-          newConfig.allowedTabs = [...prev.allowedTabs, activeTab];
-        }
-        
-        return newConfig;
-      });
+      if (!previewActiveTab) {
+        setPreviewActiveTab(shareConfig.activeTab || 'summary');
+      }
     } else {
       // Reset preview mode when closing
       setIsPreviewMode(false);
     }
-  }, [isShareModalOpen, activeTab]);
+  }, [isShareModalOpen, shareConfig.activeTab, previewActiveTab]);
 
   // Update share configuration
   const updateShareConfig = useCallback((updates) => {
@@ -288,22 +238,16 @@ export const SharingProvider = ({ children }) => {
         }));
       }
       
-      // IMPORTANT: First get the current active tab or use first allowed tab
-      const currentActiveTab = activeTab || shareConfig.activeTab || (shareConfig.allowedTabs.length > 0 ? shareConfig.allowedTabs[0] : 'summary');
-      
-      // Make sure the active tab is in allowed tabs
+      // Make sure active tab is valid and set
       let updatedConfig = { ...shareConfig };
-      if (!updatedConfig.allowedTabs.includes(currentActiveTab)) {
-        updatedConfig.allowedTabs = [...updatedConfig.allowedTabs, currentActiveTab];
+      if (!updatedConfig.activeTab || !updatedConfig.allowedTabs.includes(updatedConfig.activeTab)) {
+        updatedConfig.activeTab = updatedConfig.allowedTabs[0];
       }
       
-      // Always set the activeTab in the config
-      updatedConfig.activeTab = currentActiveTab;
-      
       // Also set the preview active tab state
-      setPreviewActiveTab(currentActiveTab);
+      setPreviewActiveTab(updatedConfig.activeTab);
       
-      console.log("Setting preview active tab to:", currentActiveTab);
+      console.log("Setting preview active tab to:", updatedConfig.activeTab);
       
       // Precompute data for the preview
       const precomputedData = {
@@ -322,8 +266,8 @@ export const SharingProvider = ({ children }) => {
       
       console.log("Entering preview mode with tabs:", {
         allowedTabs: updatedConfig.allowedTabs,
-        activeTab: currentActiveTab,
-        previewActiveTab: currentActiveTab
+        activeTab: updatedConfig.activeTab,
+        previewActiveTab: updatedConfig.activeTab
       });
     }
     
@@ -331,7 +275,6 @@ export const SharingProvider = ({ children }) => {
   }, [
     isPreviewMode,
     shareConfig,
-    activeTab,
     getFilteredData,
     calculateMetrics,
     getRetailerDistribution,
