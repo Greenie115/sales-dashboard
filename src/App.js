@@ -1,18 +1,15 @@
 import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { ThemeProvider } from './context/ThemeContext';
 import { DataProvider } from './context/DataContext';
 import { ExportProvider } from './context/ExportContext';
 import { DemographicsProvider } from './context/DemographicsContext';
-import { DashboardProvider } from './context/DashboardContext';
-import { ThemeProvider } from './context/ThemeContext';
 import { SharingProvider } from './context/SharingContext';
-import { FilterProvider } from './context/FilterContext';
 import Header from './components/dashboard/Header';
 import Footer from './components/dashboard/Footer'; 
 import MainContent from './components/dashboard/MainContent';
 import SharingModal from './components/sharing/SharingModal';
 import ErrorBoundary from './components/ErrorBoundary';
-// import ActiveTabDebugger from './components/debug/ActiveTabDebugger';
 
 // Lazy load the SharedDashboardView to improve performance
 const SharedDashboardView = lazy(() => import('./components/sharing/SharedDashboardView'));
@@ -50,52 +47,47 @@ function App() {
       <Router>
         <ThemeProvider>
           <DataProvider>
-            <FilterProvider>
-              <ExportProvider>
-                <DemographicsProvider>
-                  <DashboardProvider>
-                    <SharingProvider>
-                      <Routes>
-                        {/* Main dashboard route */}
-                        <Route path="/" element={
-                          <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+            <ExportProvider>
+              <DemographicsProvider>
+                <SharingProvider>
+                  <Routes>
+                    {/* Main dashboard route */}
+                    <Route path="/" element={
+                      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+                        <ErrorBoundary>
+                          <Header />
+                        </ErrorBoundary>
+                        <main className="flex-grow">
+                          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                             <ErrorBoundary>
-                              <Header />
+                              <MainContent />
                             </ErrorBoundary>
-                            <main className="flex-grow">
-                              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                                <ErrorBoundary>
-                                  <MainContent />
-                                </ErrorBoundary>
-                              </div>
-                            </main>
-                            <ErrorBoundary>
-                              <Footer />
-                            </ErrorBoundary>
-                            <ErrorBoundary>
-                              <SharingModal />
-                            </ErrorBoundary>
-                            {/* {process.env.NODE_ENV === 'development' && <ActiveTabDebugger />} */}
                           </div>
-                        } />
-                        
-                        {/* Shared dashboard view route */}
-                        <Route path="/shared/:shareId" element={
-                          <Suspense fallback={<LoadingFallback />}>
-                            <ErrorBoundary>
-                              <SharedDashboardView />
-                            </ErrorBoundary>
-                          </Suspense>
-                        } />
-                        
-                        {/* Fallback route for any unknown paths */}
-                        <Route path="*" element={<Navigate to="/" replace />} />
-                      </Routes>
-                    </SharingProvider>
-                  </DashboardProvider>
-                </DemographicsProvider>
-              </ExportProvider>
-            </FilterProvider>
+                        </main>
+                        <ErrorBoundary>
+                          <Footer />
+                        </ErrorBoundary>
+                        <ErrorBoundary>
+                          <SharingModal />
+                        </ErrorBoundary>
+                      </div>
+                    } />
+                    
+                    {/* Shared dashboard view route */}
+                    <Route path="/shared/:shareId" element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <ErrorBoundary>
+                          <SharedDashboardView />
+                        </ErrorBoundary>
+                      </Suspense>
+                    } />
+                    
+                    {/* Fallback route for any unknown paths */}
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </SharingProvider>
+              </DemographicsProvider>
+            </ExportProvider>
           </DataProvider>
         </ThemeProvider>
       </Router>

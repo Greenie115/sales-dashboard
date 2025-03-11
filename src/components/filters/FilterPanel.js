@@ -11,6 +11,7 @@ import ClientNameEditor from '../dashboard/ClientNameEditor';
 const FilterPanel = ({ activeTab }) => {
   const { darkMode } = useTheme();
   
+  // Use DataContext directly instead of FilterContext
   const { 
     salesData,
     offerData,
@@ -29,12 +30,23 @@ const FilterPanel = ({ activeTab }) => {
     setSelectedMonth,
     comparisonMode = false,
     setComparisonMode,
-    brandMapping = {} // Import the brandMapping
+    brandMapping = {}, // Import the brandMapping
+    handleProductSelection,
+    handleRetailerSelection,
+    getAvailableMonths,
+    formatMonth
   } = useData();
   
-  // Local state for UI
+  // Since we're having issues with the collapsing functionality from the context,
+  // let's implement it locally in this component
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedSection, setExpandedSection] = useState('all');
+  
+  // Toggle the filter panel
+  const toggleCollapse = () => {
+    setIsCollapsed(prev => !prev);
+    console.log("Toggle collapse called, new state:", !isCollapsed);
+  };
   
   // Toggle a specific section or all sections
   const toggleSection = (section) => {
@@ -61,73 +73,6 @@ const FilterPanel = ({ activeTab }) => {
     }
     
     return product;
-  };
-  
-  // Handle product selection
-  const handleProductSelection = (product) => {
-    if (!setSelectedProducts) return;
-    
-    let newSelectedProducts;
-    
-    if (product === 'all') {
-      newSelectedProducts = ['all'];
-    } else {
-      if (selectedProducts.includes('all')) {
-        newSelectedProducts = [product];
-      } else if (selectedProducts.includes(product)) {
-        newSelectedProducts = selectedProducts.filter(p => p !== product);
-        if (newSelectedProducts.length === 0) {
-          newSelectedProducts = ['all'];
-        }
-      } else {
-        newSelectedProducts = [...selectedProducts, product];
-      }
-    }
-    
-    setSelectedProducts(newSelectedProducts);
-  };
-  
-  // Handle retailer selection
-  const handleRetailerSelection = (retailer) => {
-    if (!setSelectedRetailers) return;
-    
-    let newSelectedRetailers;
-    
-    if (retailer === 'all') {
-      newSelectedRetailers = ['all'];
-    } else {
-      if (selectedRetailers.includes('all')) {
-        newSelectedRetailers = [retailer];
-      } else if (selectedRetailers.includes(retailer)) {
-        newSelectedRetailers = selectedRetailers.filter(r => r !== retailer);
-        if (newSelectedRetailers.length === 0) {
-          newSelectedRetailers = ['all'];
-        }
-      } else {
-        newSelectedRetailers = [...selectedRetailers, retailer];
-      }
-    }
-    
-    setSelectedRetailers(newSelectedRetailers);
-  };
-  
-  // Get available months from data
-  const getAvailableMonths = () => {
-    const data = salesData || [];
-    if (!data || data.length === 0) return [];
-    return _.uniq(data.map(item => item.month).filter(Boolean)).sort();
-  };
-  
-  // Format month for display
-  const formatMonth = (monthStr) => {
-    if (!monthStr) return '';
-    try {
-      const [year, month] = monthStr.split('-');
-      const date = new Date(parseInt(year), parseInt(month) - 1);
-      return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-    } catch (e) {
-      return monthStr;
-    }
   };
   
   // Available retailers from data
@@ -181,7 +126,7 @@ const FilterPanel = ({ activeTab }) => {
             </button>
           )}
           <button 
-            onClick={() => setIsCollapsed(!isCollapsed)}
+            onClick={toggleCollapse}
             className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
             aria-label={isCollapsed ? "Expand filter panel" : "Collapse filter panel"}
           >
@@ -390,9 +335,9 @@ const FilterPanel = ({ activeTab }) => {
                       className="block w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-white outline-none"
                     >
                       <option value="">Select Month</option>
-                      {getAvailableMonths().map(month => (
+                      {getAvailableMonths ? getAvailableMonths().map(month => (
                         <option key={month} value={month}>{formatMonth(month)}</option>
-                      ))}
+                      )) : null}
                     </select>
                   )}
                   
@@ -440,21 +385,7 @@ const FilterPanel = ({ activeTab }) => {
                   </div>
                 )}
                 
-                {/* Comparison period controls */}
-                {comparisonMode && (
-                  <div className="p-3 rounded-md bg-blue-50 dark:bg-blue-900/20">
-                    <div className="text-xs font-medium text-blue-700 dark:text-blue-400 mb-2 flex items-center">
-                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                        <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"></path>
-                      </svg>
-                      Comparison Period
-                    </div>
-                    
-                    <div className="text-sm text-gray-600 dark:text-gray-300">
-                      Configure comparison period settings here
-                    </div>
-                  </div>
-                )}
+                {/* Remaining date filter panel content goes here */}
               </div>
             </div>
           </div>

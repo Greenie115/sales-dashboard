@@ -9,23 +9,26 @@ const SharingContext = createContext();
 export const useSharing = () => useContext(SharingContext);
 
 export const SharingProvider = ({ children }) => {
-  const dataContext = useData();
+  // Get data from DataContext with safe fallbacks to prevent destructuring errors
+  const dataContext = useData() || {};
+  
+  // Safely destructure with fallbacks for each property
   const { 
-    salesData, 
-    activeTab, 
-    brandNames, 
-    clientName,
-    brandMapping,
-    getFilteredData,
-    calculateMetrics,
-    getRetailerDistribution,
-    getProductDistribution,
-    selectedProducts,
-    selectedRetailers,
-    dateRange,
-    startDate,
-    endDate,
-    selectedMonth
+    salesData = [], 
+    activeTab = 'summary', 
+    brandNames = [], 
+    clientName = '',
+    brandMapping = {},
+    getFilteredData = () => [],
+    calculateMetrics = () => null,
+    getRetailerDistribution = () => [],
+    getProductDistribution = () => [],
+    selectedProducts = ['all'],
+    selectedRetailers = ['all'],
+    dateRange = 'all',
+    startDate = '',
+    endDate = '',
+    selectedMonth = ''
   } = dataContext;
   
   // UI State
@@ -186,15 +189,15 @@ export const SharingProvider = ({ children }) => {
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
       
-      // Precompute data for the client view
+      // Precompute data for the client view - safely call these functions
       configToShare.precomputedData = {
-        filteredData: getFilteredData ? 
+        filteredData: typeof getFilteredData === 'function' ? 
           getFilteredData(configToShare.filters) : [],
-        metrics: calculateMetrics ? 
+        metrics: typeof calculateMetrics === 'function' ? 
           calculateMetrics() : null,
-        retailerData: getRetailerDistribution ? 
+        retailerData: typeof getRetailerDistribution === 'function' ? 
           getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? 
+        productDistribution: typeof getProductDistribution === 'function' ? 
           getProductDistribution() : [],
         brandMapping: brandMapping || {},
         brandNames: brandNames || [],
@@ -245,6 +248,7 @@ export const SharingProvider = ({ children }) => {
       return false;
     }
   }, []);
+  
   const transformDataForSharing = useCallback((data) => {
     if (!data) return data;
     
@@ -350,13 +354,13 @@ export const SharingProvider = ({ children }) => {
     // Add precomputed data for the preview if it doesn't exist
     if (!previewConfig.precomputedData) {
       previewConfig.precomputedData = {
-        filteredData: getFilteredData ? 
+        filteredData: typeof getFilteredData === 'function' ? 
           getFilteredData(previewConfig.filters) : [],
-        metrics: calculateMetrics ? 
+        metrics: typeof calculateMetrics === 'function' ? 
           calculateMetrics() : null,
-        retailerData: getRetailerDistribution ? 
+        retailerData: typeof getRetailerDistribution === 'function' ? 
           getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? 
+        productDistribution: typeof getProductDistribution === 'function' ? 
           getProductDistribution() : [],
         salesData: salesData ? 
           salesData.slice(0, 1000) : [],
