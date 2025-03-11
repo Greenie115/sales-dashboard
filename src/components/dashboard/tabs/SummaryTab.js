@@ -40,14 +40,15 @@ const SummaryTab = ({ isSharedView }) => {
     ? contextFilteredData 
     : (getFilteredData ? getFilteredData() : []);
     
-  console.log("SummaryTab filteredData:", filteredData?.length);
+    const shouldShowChart = (chartId) => {
+      if (!clientData || !clientData.hiddenCharts) return true;
+      return !clientData.hiddenCharts.includes(chartId);
+    };
   
   // Use pre-calculated metrics if available, otherwise calculate them
   const metrics = isSharedView && contextMetrics 
     ? contextMetrics 
     : (calculateMetrics ? calculateMetrics() : null);
-    
-  console.log("SummaryTab metrics:", metrics);
   
   // Get comparison metrics
   const comparisonMetrics = comparisonMode && calculateMetrics ? calculateMetrics(true) : null;

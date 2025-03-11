@@ -10,6 +10,7 @@ import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
 import ErrorBoundary from '../ErrorBoundary';
 import sharingService from '../../services/sharingService';
+import clientDisplayName from '../dashboard/ClientNameEditor';
 
 // This component acts as a bridge between the ClientDataContext and the tab components
 // It provides all the methods and properties expected by the tab components
@@ -184,6 +185,17 @@ const SharedDashboardView = () => {
           allowedTabs: config.allowedTabs,
           setActiveTabTo: activeTab
         });
+
+        let clientDisplayName = 'Client Dashboard';
+      if (config.metadata?.clientName) {
+        clientDisplayName = config.metadata.clientName + ' Dashboard';
+      } else if (config.brandNames && config.brandNames.length > 0) {
+        clientDisplayName = config.brandNames.join(', ') + ' Dashboard';
+      } else if (config.precomputedData?.clientName) {
+        clientDisplayName = config.precomputedData.clientName + ' Dashboard';
+      } else if (config.precomputedData?.brandNames && config.precomputedData.brandNames.length > 0) {
+        clientDisplayName = config.precomputedData.brandNames.join(', ') + ' Dashboard';
+      }
         
         
         // Important: Store the client data directly from the precomputed data
@@ -438,12 +450,12 @@ const processFallbackShareId = async (shareId) => {
               </div>
             )}
             <div>
-              <h1 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                {shareConfig.metadata?.clientName || 'Client'} Dashboard
-              </h1>
-              <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Shared by {shareConfig.branding?.companyName || 'Shopmium Insights'}
-              </p>
+            <h1 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              {clientDisplayName}
+            </h1>
+            <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Shared by {shareConfig.branding?.companyName || 'Shopmium Insights'}
+            </p>
             </div>
           </div>
         </div>

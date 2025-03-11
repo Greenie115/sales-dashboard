@@ -182,11 +182,8 @@ export const SharingProvider = ({ children }) => {
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
         brandNames: brandNames || [],
-        clientName: brandNames?.length > 0 ? 
-          brandNames.join(', ') : 
-          (clientName || 'Client'),
-        datasetSize: Array.isArray(salesData) ? 
-          salesData.length : 0,
+        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
+        datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
       
       // Precompute data for the client view
@@ -201,8 +198,9 @@ export const SharingProvider = ({ children }) => {
           getProductDistribution() : [],
         brandMapping: brandMapping || {},
         brandNames: brandNames || [],
+        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
         salesData: salesData ? 
-          salesData.slice(0, 1000) : [] // Include subset of data
+          salesData.slice(0, 1000) : []
       };
       
       // Create the shared dashboard in database

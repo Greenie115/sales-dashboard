@@ -143,6 +143,7 @@ export const DataProvider = ({ children }) => {
                   
                   // Process brand detection
                   try {
+                    // Process brand detection
                     const uniqueProducts = _.uniq(processedData.map(item => item.product_name)).filter(Boolean);
                     console.log("Unique products:", uniqueProducts.length);
                     
@@ -153,13 +154,17 @@ export const DataProvider = ({ children }) => {
                     const brands = extractBrandNames(mapping);
                     console.log("Detected brands:", brands);
                     setBrandNames(brands);
-
-                    // Set client name to detected brand names
+                  
+                    // Set client name to detected brand names if no custom client name has been set
                     if (brands && brands.length > 0) {
                       const brandClientName = brands.join(', ');
-                      setClientName(brandClientName);
+                      if (!clientName) { // Only update if no custom client name exists
+                        setClientName(brandClientName);
+                        console.log("Setting client name from brands:", brandClientName);
+                      } else {
+                        console.log("Keeping existing client name:", clientName);
+                      }
                     }
-
                   } catch (e) {
                     console.error("Error in brand detection:", e);
                   }

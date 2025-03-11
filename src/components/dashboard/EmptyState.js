@@ -15,14 +15,12 @@ const EmptyState = () => {
       return;
     }
     
-    console.log("Processing file:", file.name);
     setLoading(true);
     setProcessingFile(true);
     setError('');
     
     // Check if we're dealing with sales or offer data
     const isOfferData = file.name.toLowerCase().includes('hits_offer');
-    console.log("Is offer data:", isOfferData);
     
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -32,7 +30,6 @@ const EmptyState = () => {
           dynamicTyping: true,
           skipEmptyLines: true,
           complete: (results) => {
-            console.log("File parsed, rows:", results.data?.length);
             
             if (results.data && results.data.length > 0) {
               if (isOfferData) {

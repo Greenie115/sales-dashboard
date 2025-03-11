@@ -84,7 +84,6 @@ const OffersTab = ({ isSharedView }) => {
   // Debug offer data to examine date format
   useEffect(() => {
     if (offerData && offerData.length > 0) {
-      console.log("Examining first 5 offer data items:");
       for (let i = 0; i < Math.min(5, offerData.length); i++) {
         console.log(`Item ${i+1}:`, offerData[i]);
         console.log(`  created_at:`, offerData[i].created_at);
@@ -117,8 +116,6 @@ const OffersTab = ({ isSharedView }) => {
       const byRank = {};
       const uniqueOffers = new Set();
       const uniqueDates = new Set();
-
-      console.log("Processing offer data, total items:", offerData.length);
       let validDates = 0;
 
       offerData.forEach(item => {

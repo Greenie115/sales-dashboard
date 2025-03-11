@@ -99,8 +99,7 @@ const MainContent = () => {
             )}
           </nav>
         </div>
-
-        {/* Brand information */}
+          {/* Brand information */}
         <div className={`px-6 py-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center">
             <div>
@@ -111,19 +110,21 @@ const MainContent = () => {
                 {activeTab === 'offers' && 'Offer Insights'}
               </h1>
               <div className={`mt-1 flex flex-wrap items-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {Array.isArray(brandNames) && brandNames.length > 0 && (
-                  <>
-                    <span className="mr-2">
-                      Brand: <span className={`font-medium ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>{brandNames.join(', ')}</span>
-                    </span>
-                    <span className="mr-2 text-gray-300">•</span>
-                  </>
-                )}
-
+                {/* Show client name first if available */}
                 {clientName && (
                   <>
                     <span className="mr-2">
                       Client: <span className={`font-medium ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>{clientName}</span>
+                    </span>
+                    <span className="mr-2 text-gray-300">•</span>
+                  </>
+                )}
+                
+                {/* Show brand names if available */}
+                {Array.isArray(brandNames) && brandNames.length > 0 && (
+                  <>
+                    <span className="mr-2">
+                      Brand: <span className={`font-medium ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>{brandNames.join(', ')}</span>
                     </span>
                     <span className="mr-2 text-gray-300">•</span>
                   </>

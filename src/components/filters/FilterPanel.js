@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
 import _ from 'lodash';
+import ClientNameEditor from '../dashboard/ClientNameEditor';
 
 /**
  * FilterPanel component for filtering data across all tabs
@@ -198,6 +199,9 @@ const FilterPanel = ({ activeTab }) => {
       
       {/* Filter content */}
       <div className={`transition-all duration-300 overflow-hidden ${isCollapsed ? 'max-h-0' : 'max-h-[2000px]'}`}>
+        <div className="mb-4">
+          <ClientNameEditor />
+        </div>
         <div className="p-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Product filter section */}

@@ -50,13 +50,9 @@ const DemographicsTab = ({ isSharedView }) => {
   const { darkMode } = useTheme();
   
   // Use direct data in shared view
-  const dataToUse = isSharedView && directFilteredData ? directFilteredData : salesData;
-  
-  console.log("DemographicsTab data:", {
-    isSharedView,
-    hasData: dataToUse && dataToUse.length > 0,
-    dataLength: dataToUse?.length
-  });
+  // const dataToUse = isSharedView && directFilteredData ? directFilteredData : salesData;
+
+  // const hiddenCharts = isSharedView && clientData?.hiddenCharts ? clientData.hiddenCharts : [];
   
   // Use refs to track component mounting state
   const isMounted = useRef(true);
@@ -72,18 +68,12 @@ const DemographicsTab = ({ isSharedView }) => {
   const [selectedResponses, setSelectedResponses] = useState([]);
   const [questions, setQuestions] = useState([]);
   
-  // Debug log to check dark mode state changes
-  useEffect(() => {
-    console.log("DemographicsTab: Dark mode changed:", darkMode);
-  }, [darkMode]);
   
   // Extract questions from data
   useEffect(() => {
     if (salesData && salesData.length > 0) {
-      console.log("Extracting questions from salesData");
       // Check what fields are in the data
       const sampleRow = salesData[0];
-      console.log("Sample row:", sampleRow);
       
       // Look for question fields
       const questionFields = [];
@@ -130,7 +120,6 @@ const DemographicsTab = ({ isSharedView }) => {
         }
       });
       
-      console.log("Extracted questions:", extractedQuestions);
       setQuestions(extractedQuestions);
       setAvailableQuestions(extractedQuestions.map(q => q.number));
     }
@@ -150,9 +139,6 @@ const DemographicsTab = ({ isSharedView }) => {
   // Skip if unmounted
   if (!isMounted.current) return;
   
-  console.log("Processing demographics useEffect triggered");
-  console.log("Selected responses:", selectedResponses.length);
-  
   // Only process if we have selected responses and survey data
   if (selectedResponses.length > 0 && salesData && salesData.length > 0) {
     // Set processing flag to true
@@ -164,7 +150,6 @@ const DemographicsTab = ({ isSharedView }) => {
       if (!isMounted.current) return;
       
       try {
-        console.log("Processing demographic data...");
         // Get selected response text values
         const selectedResponseValues = selectedResponses.map(r => r.fullResponse);
         const propKey = `proposition_${selectedQuestionNumber}`;
@@ -182,8 +167,6 @@ const DemographicsTab = ({ isSharedView }) => {
           return responses.some(resp => selectedResponseValues.includes(resp));
         });
         
-        console.log(`Filtered data: ${filteredData.length} rows match selected responses`);
-        
         // Gender breakdown
         const genderCounts = {};
         filteredData.forEach(row => {
@@ -199,15 +182,12 @@ const DemographicsTab = ({ isSharedView }) => {
           total: totalGender,
           percentage: ((value / totalGender) * 100).toFixed(1)
         }));
-        
-        console.log("Gender data processed:", genderData.length);
-        
+      
         // Age breakdown
         const ageCounts = {};
         filteredData.forEach(row => {
           // Log a sample row to debug data structure
           if (!window.loggedSampleRow) {
-            console.log("Sample data row:", row);
             window.loggedSampleRow = true;
           }
           
@@ -252,9 +232,7 @@ const DemographicsTab = ({ isSharedView }) => {
           
           return a.name.localeCompare(b.name);
         });
-        
-        console.log("Age data processed:", ageData.length, ageData);
-        
+              
         // Skip update if component unmounted
         if (!isMounted.current) return;
         
@@ -274,7 +252,6 @@ const DemographicsTab = ({ isSharedView }) => {
     }, 100); // Short delay to ensure state updates properly
   } else if (selectedResponses.length === 0) {
     // Only clear if no responses are selected
-    console.log("No responses selected, clearing demographic data");
     setResponseByGender([]);
     setResponseByAge([]);
     setIsProcessingDemographics(false);
@@ -284,7 +261,6 @@ const DemographicsTab = ({ isSharedView }) => {
   // Handle user changing the selected question
   const handleQuestionChange = (e) => {
     const questionNum = e.target.value;
-    console.log("Question selected:", questionNum);
     setSelectedQuestionNumber(questionNum);
     setSelectedResponses([]);
     
@@ -294,7 +270,6 @@ const DemographicsTab = ({ isSharedView }) => {
       setQuestionText(question ? question.text : `Question ${parseInt(questionNum)}`);
       
       // Analyze responses for this question
-      console.log("Analyzing responses for question:", questionNum);
       analyzeResponses(questionNum);
     } else {
       setQuestionText('');
@@ -303,26 +278,17 @@ const DemographicsTab = ({ isSharedView }) => {
   };
 
   const analyzeResponses = (questionNum) => {
-    console.log("analyzeResponses called for question:", questionNum);
-    console.log("salesData available:", salesData ? salesData.length : 0);
-    
     if (!salesData || salesData.length === 0) {
-      console.log("No survey data available");
       return;
     }
-    
-    // Log a sample row to understand data structure
-    console.log("Sample survey data row:", salesData[0]);
     
     // Define the key for this question's proposition
     const propKey = `proposition_${questionNum}`;
     
     // Check if the proposition field exists in the data
     const propExists = salesData.some(row => row[propKey] !== undefined);
-    console.log(`Proposition field ${propKey} exists in data:`, propExists);
     
     if (!propExists) {
-      console.log("Proposition field not found in data");
       setResponseData([]);
       return;
     }
@@ -333,10 +299,7 @@ const DemographicsTab = ({ isSharedView }) => {
       row[propKey] !== null && 
       row[propKey] !== '');
     
-    console.log(`Found ${responses.length} responses for question ${questionNum}`);
-    
     if (responses.length === 0) {
-      console.log("No responses found for this question");
       setResponseData([]);
       return;
     }
@@ -362,8 +325,6 @@ const DemographicsTab = ({ isSharedView }) => {
       });
     });
     
-    console.log("Individual response counts:", individualResponseCounts);
-    
     // Convert to array for display
     const responseArray = Object.entries(individualResponseCounts).map(([fullResponse, count]) => {
       const percentage = ((count / totalResponses) * 100).toFixed(1);
@@ -373,27 +334,21 @@ const DemographicsTab = ({ isSharedView }) => {
     // Sort by count (descending)
     responseArray.sort((a, b) => b.count - a.count);
     
-    console.log("Response array:", responseArray);
     setResponseData(responseArray);
   };
 
   // Handle user selecting a response
   const handleResponseClick = (response) => {
-    console.log("Response clicked:", response.fullResponse);
     const isSelected = selectedResponses.some(r => r.fullResponse === response.fullResponse);
     
     if (isSelected) {
-      console.log("Deselecting response");
       setSelectedResponses(prev => {
         const newSelection = prev.filter(r => r.fullResponse !== response.fullResponse);
-        console.log("New selection count:", newSelection.length);
         return newSelection;
       });
     } else {
-      console.log("Selecting response");
       setSelectedResponses(prev => {
         const newSelection = [...prev, response];
-        console.log("New selection count:", newSelection.length);
         return newSelection;
       });
     }
@@ -585,7 +540,6 @@ const DemographicsTab = ({ isSharedView }) => {
                       
                       {/* Gender Breakdown - Chart and Table side by side */}
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Gender Bar Chart - Direct implementation with dark mode */}
                         <div className="h-80">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart

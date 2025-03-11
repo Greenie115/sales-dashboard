@@ -19,10 +19,21 @@ export const useClientData = () => {
 
 // Provider component for wrapping shared dashboard views
 export const ClientDataProvider = ({ children, clientData }) => {
+  // Ensure client name is available
+  const enhancedClientData = {
+    ...clientData,
+    // Add fallbacks for clientName
+    clientName: clientData?.clientName || 
+                clientData?.metadata?.clientName || 
+                (clientData?.brandNames?.length > 0 ? clientData.brandNames.join(', ') : 'Client')
+  };
+  
   // Add debugging if in development mode
   if (process.env.NODE_ENV === 'development') {
     console.group("ClientDataContext Debug Info");
     console.log("Data structure:", Object.keys(clientData || {}));
+    console.log("Client Name:", enhancedClientData.clientName);
+    console.log("Brand Names:", enhancedClientData.brandNames);
     
     // Check for critical data
     console.log("Has filteredData:", Boolean(clientData?.filteredData));
@@ -37,10 +48,9 @@ export const ClientDataProvider = ({ children, clientData }) => {
   }
 
   return (
-    <ClientDataContext.Provider value={clientData}>
+    <ClientDataContext.Provider value={enhancedClientData}>
       {children}
     </ClientDataContext.Provider>
   );
 };
-
 export default ClientDataContext;

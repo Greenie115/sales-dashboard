@@ -4,7 +4,8 @@ import { useData } from '../../context/DataContext';
 import ThemeToggle from '../ThemeToggle';
 import ShareButton from '../sharing/ShareButton';
 import Papa from 'papaparse';
-import logo from '../../assets/Shopmium-logo.jpg'
+import logo from '../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg'
+import clientName from '../../context/ClientDataContext';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -35,14 +36,12 @@ const Header = () => {
       return;
     }
     
-    console.log("Processing file:", file.name);
     setLoading(true);
     setProcessingFile(true);
     setError('');
     
     // Check if we're dealing with sales or offer data
     const isOfferData = file.name.toLowerCase().includes('hits_offer');
-    console.log("Is offer data:", isOfferData);
     
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -52,7 +51,6 @@ const Header = () => {
           dynamicTyping: true,
           skipEmptyLines: true,
           complete: (results) => {
-            console.log("File parsed, rows:", results.data?.length);
             
             if (results.data && results.data.length > 0) {
               if (isOfferData) {
@@ -82,7 +80,6 @@ const Header = () => {
                   
                   setOfferData(processedOfferData);
                   setHasOfferData(true);
-                  console.log("Offer data processed successfully", processedOfferData.length);
                   
                   // Set active tab to offers
                   setActiveTab('offers');
@@ -116,9 +113,7 @@ const Header = () => {
                       // Return the original row if date processing fails
                       return row;
                     }
-                  });
-                  
-                  console.log("Processed data:", processedData.length);
+                  })
                   setSalesData(processedData);
                   
                   // Set active tab to summary
@@ -171,15 +166,22 @@ const Header = () => {
         <div className="flex justify-between h-16">
           {/* Logo and brand */}
           <div className="flex items-center">
-            <div className="flex-shrink-0 flex items-center">
-              <img 
-                src={logo} 
-                className="w-12 h-12 rounded-lg"
-                alt="Logo"
-              />
-              <span className="ml-2 text-xl font-semibold text-gray-900 dark:text-white">Insights Dashboard</span>
+          <div className="flex-shrink-0 flex items-center">
+            <img 
+              src={logo} 
+              className="w-12 h-12 rounded-lg"
+              alt="Logo"
+            />
+            <div className="ml-2">
+              <span className="text-xl font-semibold text-gray-900 dark:text-white">Insights Dashboard</span>
+              {clientName && (
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {clientName}
+                </div>
+              )}
             </div>
           </div>
+        </div>
           
           {/* Actions and user menu */}
           <div className="flex items-center">
