@@ -1,8 +1,7 @@
 // src/components/filters/FilterPanel.js
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
-import _ from 'lodash';
 import ClientNameEditor from '../dashboard/ClientNameEditor';
 
 /**
@@ -11,7 +10,7 @@ import ClientNameEditor from '../dashboard/ClientNameEditor';
 const FilterPanel = ({ activeTab }) => {
   const { darkMode } = useTheme();
   
-  // Use DataContext directly instead of FilterContext
+  // Use DataContext directly instead of custom hooks for now
   const { 
     salesData,
     offerData,
@@ -76,14 +75,18 @@ const FilterPanel = ({ activeTab }) => {
   };
   
   // Available retailers from data
-  const availableRetailers = _.uniq((salesData || []).map(item => item.chain || ''))
-    .filter(Boolean)
-    .sort();
+  const availableRetailers = [...new Set(
+    (salesData || [])
+      .map(item => item.chain || '')
+      .filter(Boolean)
+  )].sort();
   
   // Available products from data
-  const availableProducts = _.uniq((salesData || []).map(item => item.product_name || ''))
-    .filter(Boolean)
-    .sort();
+  const availableProducts = [...new Set(
+    (salesData || [])
+      .map(item => item.product_name || '')
+      .filter(Boolean)
+  )].sort();
 
   // If no data is available, don't show the filter panel
   if (!hasData) {
@@ -107,7 +110,7 @@ const FilterPanel = ({ activeTab }) => {
             <span className="text-sm text-gray-400 dark:text-gray-500 mx-1">•</span>
             <span className="text-sm text-gray-500 dark:text-gray-400">
               {dateRange === 'all' ? 'All Time' : 
-               dateRange === 'month' ? `Month: ${formatMonth(selectedMonth)}` : 
+               dateRange === 'month' ? `Month: ${formatMonth ? formatMonth(selectedMonth) : selectedMonth}` : 
                `${startDate} to ${endDate}`}
             </span>
           </div>
@@ -336,7 +339,7 @@ const FilterPanel = ({ activeTab }) => {
                     >
                       <option value="">Select Month</option>
                       {getAvailableMonths ? getAvailableMonths().map(month => (
-                        <option key={month} value={month}>{formatMonth(month)}</option>
+                        <option key={month} value={month}>{formatMonth ? formatMonth(month) : month}</option>
                       )) : null}
                     </select>
                   )}
@@ -410,7 +413,7 @@ const FilterPanel = ({ activeTab }) => {
               {dateRange !== 'all' && setDateRange && (
                 <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300">
                   <span>
-                    Date: {dateRange === 'month' ? formatMonth(selectedMonth) : `${startDate} to ${endDate}`}
+                    Date: {dateRange === 'month' ? (formatMonth ? formatMonth(selectedMonth) : selectedMonth) : `${startDate} to ${endDate}`}
                   </span>
                   <button 
                     onClick={() => setDateRange('all')}
