@@ -5,9 +5,10 @@ import ThemeToggle from '../ThemeToggle';
 import ShareButton from '../sharing/ShareButton';
 import Papa from 'papaparse';
 import logo from '../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg'
-import clientName from '../../context/ClientDataContext';
+import { useClientData } from '../../context/ClientDataContext';
 
 const Header = () => {
+  const { clientName } = useClientData();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
   const [processingFile, setProcessingFile] = useState(false);

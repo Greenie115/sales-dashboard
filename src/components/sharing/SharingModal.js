@@ -125,7 +125,47 @@ const SharingModal = () => {
       return () => clearTimeout(timer);
     }
   }, [copySuccess]);
-
+  
+  const getEnhancedPreviewData = () => {
+    // Get the base preview data from the context
+    const previewData = getPreviewData();
+    
+    // Add metadata if it doesn't exist
+    if (!previewData.metadata) {
+      previewData.metadata = {
+        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
+      };
+    } else if (!previewData.metadata.clientName) {
+      // Ensure client name is set in metadata
+      previewData.metadata.clientName = clientName || 
+        (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
+    }
+    
+    // Add precomputed data if it doesn't exist
+    if (!previewData.precomputedData) {
+      previewData.precomputedData = {
+        filteredData: getFilteredData ? 
+          getFilteredData(previewData.filters) : [],
+        metrics: calculateMetrics ? 
+          calculateMetrics() : null,
+        retailerData: getRetailerDistribution ? 
+          getRetailerDistribution() : [],
+        productDistribution: getProductDistribution ? 
+          getProductDistribution() : [],
+        salesData: salesData ? 
+          salesData.slice(0, 1000) : [],
+        brandNames: brandNames || [],
+        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
+        brandMapping: brandMapping || {}
+      };
+    } else if (!previewData.precomputedData.clientName) {
+      // Ensure client name is set in precomputed data
+      previewData.precomputedData.clientName = clientName || 
+        (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
+    }
+    
+    return previewData;
+  };
   // Handle generating share link
   const handleGenerateLink = async () => {
     // Ensure we have at least one tab selected
@@ -251,46 +291,6 @@ const SharingModal = () => {
     />;
   }
 
-  const getEnhancedPreviewData = () => {
-    // Get the base preview data from the context
-    const previewData = getPreviewData();
-    
-    // Add metadata if it doesn't exist
-    if (!previewData.metadata) {
-      previewData.metadata = {
-        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-      };
-    } else if (!previewData.metadata.clientName) {
-      // Ensure client name is set in metadata
-      previewData.metadata.clientName = clientName || 
-        (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
-    }
-    
-    // Add precomputed data if it doesn't exist
-    if (!previewData.precomputedData) {
-      previewData.precomputedData = {
-        filteredData: getFilteredData ? 
-          getFilteredData(previewData.filters) : [],
-        metrics: calculateMetrics ? 
-          calculateMetrics() : null,
-        retailerData: getRetailerDistribution ? 
-          getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? 
-          getProductDistribution() : [],
-        salesData: salesData ? 
-          salesData.slice(0, 1000) : [],
-        brandNames: brandNames || [],
-        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-        brandMapping: brandMapping || {}
-      };
-    } else if (!previewData.precomputedData.clientName) {
-      // Ensure client name is set in precomputed data
-      previewData.precomputedData.clientName = clientName || 
-        (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
-    }
-    
-    return previewData;
-  };
   
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
