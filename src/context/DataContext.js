@@ -159,9 +159,9 @@ export const DataProvider = ({ children }) => {
                     // Set client name to detected brand names
                     if (brands && brands.length > 0) {
                       const brandClientName = brands.join(', ');
-                      console.log("Setting client name to detected brands:", brandClientName);
                       setClientName(brandClientName);
                     }
+
                   } catch (e) {
                     console.error("Error in brand detection:", e);
                   }
