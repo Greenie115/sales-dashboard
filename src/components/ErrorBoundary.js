@@ -6,7 +6,8 @@ class ErrorBoundary extends Component {
     this.state = { 
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
+      errorCount: 0
     };
   }
 
@@ -18,9 +19,18 @@ class ErrorBoundary extends Component {
   componentDidCatch(error, errorInfo) {
     // You can log the error to an error reporting service
     console.error('ErrorBoundary caught an error', error, errorInfo);
-    this.setState({
+    this.setState(prevState => ({
       error: error,
-      errorInfo: errorInfo
+      errorInfo: errorInfo,
+      errorCount: prevState.errorCount + 1
+    }));
+  }
+  
+  handleRetry = () => {
+    this.setState({ 
+      hasError: false,
+      error: null,
+      errorInfo: null
     });
   }
 
@@ -30,7 +40,7 @@ class ErrorBoundary extends Component {
     if (this.state.hasError) {
       // You can render any custom fallback UI
       if (fallback) {
-        return fallback(this.state.error);
+        return fallback(this.state.error, this.handleRetry);
       }
       
       return (
@@ -41,6 +51,14 @@ class ErrorBoundary extends Component {
           <p className="text-gray-700 dark:text-gray-300 mb-4">
             We're sorry, but there was an error in this component. The rest of the dashboard should still work.
           </p>
+          
+          <button
+            onClick={this.handleRetry}
+            className="px-4 py-2 bg-pink-600 text-white rounded-md hover:bg-pink-700 mb-4"
+          >
+            Try Again
+          </button>
+          
           <details className="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-md">
             <summary className="cursor-pointer font-medium text-gray-800 dark:text-gray-200">
               Error details (for developers)

@@ -39,12 +39,10 @@ export const DataProvider = ({ children }) => {
   // Active tab state
   const [activeTab, setActiveTab] = useState('summary');
 
-  // Debug info
-  useEffect(() => {
-    console.log("DataContext initialized");
-    console.log("Selected products:", selectedProducts);
-    console.log("Selected retailers:", selectedRetailers);
-  }, [selectedProducts, selectedRetailers]);
+  const [excludedDates, setExcludedDates] = useState(() => {
+    const saved = localStorage.getItem('excludedDates');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Process uploaded file
   const handleFileUpload = useCallback((file) => {
@@ -235,31 +233,28 @@ export const DataProvider = ({ children }) => {
   }, []);
 
   // Get filtered data based on selections
-  const getFilteredData = useCallback((customFilterOrCompare, isComparisonArg) => {
-    // Handle multiple parameter patterns for backward compatibility
+  const getFilteredData = useCallback((arg1, arg2) => {
+    // For backward compatibility - handle different parameter patterns
     let customFilters = null;
     let isComparison = false;
     
-    // Check parameter types
-    if (typeof customFilterOrCompare === 'boolean') {
-      // Old usage: passing boolean directly
-      isComparison = customFilterOrCompare;
-    } else if (customFilterOrCompare && typeof customFilterOrCompare === 'object') {
-      // New usage: passing filters object
-      customFilters = customFilterOrCompare;
+    // Check if arg1 is a boolean (old usage)
+    if (typeof arg1 === 'boolean') {
+      isComparison = arg1;
+    } 
+    // Check if arg1 is custom filters
+    else if (arg1 && typeof arg1 === 'object') {
+      customFilters = arg1;
+      if (arg1.isComparison) {
+        isComparison = true;
+      }
     }
     
-    // Second parameter takes precedence if provided
-    if (typeof isComparisonArg === 'boolean') {
-      isComparison = isComparisonArg;
+    // If arg2 is provided and is a boolean, it's isComparison
+    if (typeof arg2 === 'boolean') {
+      isComparison = arg2;
     }
     
-    // Check if customFilters has an isComparison property
-    if (customFilters && typeof customFilters.isComparison === 'boolean') {
-      isComparison = customFilters.isComparison;
-    }
-  
-    // Safety check for data
     if (!salesData || !Array.isArray(salesData) || salesData.length === 0) {
       console.log("getFilteredData: No data to filter");
       return [];
@@ -269,7 +264,7 @@ export const DataProvider = ({ children }) => {
       return salesData.filter(item => {
         if (!item) return false;
         
-        // Use provided filters or fallback to context state
+        // Get the filters to use (either custom or from context state)
         const filterProducts = customFilters?.selectedProducts || selectedProducts;
         const filterRetailers = customFilters?.selectedRetailers || selectedRetailers;
         const filterDateRange = customFilters?.dateRange || dateRange;
@@ -536,8 +531,14 @@ export const DataProvider = ({ children }) => {
     setBrandNames,
     setClientName,
     darkMode, 
-    setDarkMode
+    setDarkMode,
+    excludedDates,
+    setExcludedDates,
   };
+
+  useEffect(() => {
+    localStorage.setItem('excludedDates', JSON.stringify(excludedDates));
+  }, [excludedDates]);
 
   return (
     <DataContext.Provider value={value}>

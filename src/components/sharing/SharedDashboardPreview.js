@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState }from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { ClientDataProvider } from '../../context/ClientDataContext';
 import SummaryTab from '../dashboard/tabs/SummaryTab';
@@ -26,6 +26,16 @@ const SharedDashboardPreview = ({ config, onClose }) => {
 
   // Check if we have precomputed data
   const hasData = precomputedData?.filteredData?.length > 0 || precomputedData?.salesData?.length > 0;
+
+  const [excludedDates, setExcludedDates] = useState([]);
+
+  const handleAddExcludedDate = (date) => {
+    setExcludedDates(prev => [...prev, date]);
+  };
+  
+  const handleRemoveExcludedDate = (date) => {
+    setExcludedDates(prev => prev.filter(d => d !== date));
+  };
   
   // If expiry date is set, calculate days remaining
   const daysRemaining = expiryDate ?
@@ -113,17 +123,6 @@ const SharedDashboardPreview = ({ config, onClose }) => {
             </div>
           )}
 
-          {/* Debug info in development mode */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className={`mb-6 p-3 rounded-lg text-xs ${
-              darkMode ? 'bg-gray-800 text-gray-300 border border-gray-700' : 
-                        'bg-gray-100 text-gray-700 border border-gray-200'
-            }`}>
-              <strong>Debug:</strong> Active Tab: {activeTab} | 
-              Allowed Tabs: {allowedTabs.join(', ')}
-            </div>
-          )}
-
           {/* Tab navigation */}
           {allowedTabs && allowedTabs.length > 1 && (
             <div className={`mb-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -159,7 +158,11 @@ const SharedDashboardPreview = ({ config, onClose }) => {
               <ClientDataProvider clientData={precomputedData}>
                 {/* Show the correct tab content based on activeTab */}
                 {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
-                {activeTab === 'sales' && <SalesTab isSharedView={true} />}
+                {activeTab === 'sales' && <SalesTab 
+                  excludedDates={excludedDates}
+                  onAddDate={handleAddExcludedDate}
+                  onRemoveExcludedDate={handleRemoveExcludedDate} 
+                  />}
                 {activeTab === 'demographics' && <DemographicsTab isSharedView={true} />}
                 {activeTab === 'offers' && <OffersTab isSharedView={true} />}
               </ClientDataProvider>

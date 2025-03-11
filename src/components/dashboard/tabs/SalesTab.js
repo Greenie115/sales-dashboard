@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { useChartColors } from '../../../utils/chartColors';
@@ -8,10 +8,13 @@ import {
   ComposedChart, Line, Area
 } from 'recharts';
 import { useClientData } from '../../../context/ClientDataContext';
+import DateExclusionPanel from '../../filters/DateExclusionPanel';
 import _ from 'lodash';
 
 // Custom tooltip component
 const CustomTooltip = ({ active, payload, label }) => {
+  const { darkMode } = useTheme();
+  
   if (active && payload && payload.length) {
     return (
       <div className="bg-white dark:bg-gray-800 p-3 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
@@ -28,7 +31,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-const SalesTab = ({ isSharedView }) => {
+const SalesTab = ({ isSharedView = false }) => {
   const { darkMode } = useTheme();
   
   // Add state for interactive elements
@@ -37,53 +40,91 @@ const SalesTab = ({ isSharedView }) => {
   const [redemptionTimeframe, setRedemptionTimeframe] = useState('daily');
   const [showTrendLine, setShowTrendLine] = useState(true);
   
+  // Initialize excludedDates with empty array
+  const [excludedDates, setExcludedDates] = useState([]);
+  
   // Use the appropriate data context based on view mode
   const clientData = useClientData();
   const dataContext = useData();
-  const { 
-    getFilteredData, 
-    calculateMetrics, 
-    getRetailerDistribution,
-    getProductDistribution,
-    brandMapping,
-    dateRange,
-    comparisonMode,
-    filteredData: directFilteredData,
-    metrics: directMetrics,
-    productDistribution: directProductDistribution,
-    retailerDistribution: directRetailerDistribution,
-    startDate,
-    endDate
-  } = isSharedView ? clientData : dataContext;
+  const contextData = isSharedView ? clientData : dataContext;
   
   // Get chart colors
   const colors = useChartColors();
   
-  // Use direct data if in shared view, otherwise calculate it
-  const filteredData = isSharedView && directFilteredData 
+  // Safe destructuring with defaults for ALL required variables
+  const { 
+    getFilteredData = () => [], 
+    calculateMetrics = () => ({}), 
+    getRetailerDistribution = () => [],
+    getProductDistribution = () => [],
+    brandMapping = {},
+    dateRange = 'all',
+    comparisonMode = false,
+    filteredData: directFilteredData = [],
+    metrics: directMetrics = {},
+    productDistribution: directProductDistribution = [],
+    retailerDistribution: directRetailerDistribution = [],
+    startDate = '',
+    endDate = ''
+  } = contextData || {};
+  
+  // Safely get retailer data from context or calculate it
+  const retailerDataFromContext = isSharedView && directRetailerDistribution.length > 0
+    ? directRetailerDistribution 
+    : (getRetailerDistribution ? getRetailerDistribution() : []);
+  
+  // Safely get filtered data
+  const filteredData = isSharedView && directFilteredData.length > 0
     ? directFilteredData 
     : (getFilteredData ? getFilteredData() : []);
   
   const metrics = isSharedView && directMetrics 
     ? directMetrics 
-    : (calculateMetrics ? calculateMetrics() : null);
-  
-  // Get retailer data either from props or calculate it
-  // RENAMED variable from retailerData to retailerDataFromContext to avoid duplication
-  const retailerDataFromContext = isSharedView && directRetailerDistribution 
-    ? directRetailerDistribution 
-    : (getRetailerDistribution ? getRetailerDistribution() : []);
-  
-  const productDist = isSharedView && directProductDistribution 
-    ? directProductDistribution 
-    : (getProductDistribution ? getProductDistribution() : []);
-  
-  console.log("SalesTab data check:", {
-    hasFilteredData: filteredData?.length > 0,
-    hasMetrics: !!metrics,
-    hasRetailerData: retailerDataFromContext?.length > 0,
-    hasProductDist: productDist?.length > 0
-  });
+    : (calculateMetrics ? calculateMetrics() : {});
+
+  // Safely add handlers for date exclusion
+  const handleAddExcludedDate = (date) => {
+    if (!excludedDates.includes(date)) {
+      setExcludedDates([...excludedDates, date]);
+    }
+  };
+
+  const handleRemoveExcludedDate = (date) => {
+    setExcludedDates(excludedDates.filter(d => d !== date));
+  };
+
+  // This function safely applies date exclusions to the chart data
+  const applyDateExclusions = (data) => {
+    // Safety checks - ensure both data and excludedDates are arrays
+    if (!data || !Array.isArray(data)) return [];
+    if (!excludedDates || !Array.isArray(excludedDates) || excludedDates.length === 0) return data;
+    
+    try {
+      // Create a Set for efficient lookups
+      const excludeDatesSet = new Set(excludedDates);
+      
+      // Filter out excluded dates safely
+      return data.filter(item => {
+        // Skip any non-object items
+        if (!item || typeof item !== 'object') return true;
+        
+        // If no name property, keep the item
+        if (!item.name) return true;
+        
+        // For daily timeframe
+        if (redemptionTimeframe === 'daily' && typeof item.name === 'string') {
+          return !excludeDatesSet.has(item.name);
+        }
+        
+        // Return true for any other case
+        return true;
+      });
+    } catch (error) {
+      console.error("Error in applyDateExclusions:", error);
+      // Return original data on error
+      return data;
+    }
+  };
   
   const exportSalesData = () => {
     try {
@@ -391,6 +432,8 @@ const SalesTab = ({ isSharedView }) => {
       return dateString;
     }
   };
+
+  const filteredRedemptionsData = applyDateExclusions(redemptionsOverTime);
   
   // Handle empty data
   if (!filteredData || filteredData.length === 0 || !metrics) {
@@ -729,8 +772,8 @@ const SalesTab = ({ isSharedView }) => {
         </div>
       </div>
       
-      {/* Redemptions Over Time */}
-      {redemptionsOverTime && redemptionsOverTime.length > 0 ? (
+   {/* Redemptions Over Time */}
+   {redemptionsOverTime && redemptionsOverTime.length > 0 ? (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white flex items-center mb-4 sm:mb-0">
@@ -770,7 +813,7 @@ const SalesTab = ({ isSharedView }) => {
           <div className="h-96">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
-                data={redemptionsOverTime}
+                data={Array.isArray(redemptionsOverTime) ? applyDateExclusions(redemptionsOverTime) : []}
                 margin={{ top: 10, right: 30, left: 0, bottom: 30 }}
               >
                 <defs>
@@ -811,7 +854,7 @@ const SalesTab = ({ isSharedView }) => {
                   dot={{ stroke: colors.primary, strokeWidth: 2, r: 4, fill: colors.tooltipBg }}
                   activeDot={{ stroke: colors.primary, strokeWidth: 2, r: 6, fill: colors.tooltipBg }}
                 />
-                {showTrendLine && trendLineData && trendLineData.some(item => item.trend !== null) && (
+                {showTrendLine && trendLineData && Array.isArray(trendLineData) && trendLineData.some(item => item && item.trend !== null) && (
                   <Line
                     type="monotone"
                     dataKey="trend"
@@ -826,6 +869,14 @@ const SalesTab = ({ isSharedView }) => {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          
+          {/* Excluded dates notice */}
+          {Array.isArray(excludedDates) && excludedDates.length > 0 && (
+            <div className={`mt-2 text-xs italic ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}>
+              {excludedDates.length} date{excludedDates.length !== 1 ? 's' : ''} excluded from chart data.
+            </div>
+          )}
+
           <div className="mt-6">
             <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
               <div>Total points: {redemptionsOverTime.length}</div>
@@ -834,6 +885,13 @@ const SalesTab = ({ isSharedView }) => {
               </div>
             </div>
           </div>
+          
+          {/* Date Exclusion Panel */}
+          <DateExclusionPanel
+            excludedDates={excludedDates || []}
+            onAddDate={handleAddExcludedDate}
+            onRemoveExcludedDate={handleRemoveExcludedDate}
+          />
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-8 flex justify-center items-center h-64">
@@ -843,5 +901,6 @@ const SalesTab = ({ isSharedView }) => {
     </div>
   );
 };
+
 
 export default SalesTab;

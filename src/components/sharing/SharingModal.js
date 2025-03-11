@@ -101,6 +101,7 @@ const SharingModal = () => {
     }
   };
 
+
   // Toggle fallback mode
   const toggleFallbackMode = () => {
     setFallbackMode(!fallbackMode);
@@ -207,6 +208,24 @@ const SharingModal = () => {
     
     updateShareConfig(updatedConfig);
     setDatePickerValue('');
+  };
+
+  const handleToggleHiddenChart = (chartId) => {
+    const updatedConfig = { ...shareConfig };
+    
+    if (!updatedConfig.hiddenCharts) {
+      updatedConfig.hiddenCharts = [];
+    }
+    
+    if (updatedConfig.hiddenCharts.includes(chartId)) {
+      // Remove from hidden charts
+      updatedConfig.hiddenCharts = updatedConfig.hiddenCharts.filter(id => id !== chartId);
+    } else {
+      // Add to hidden charts
+      updatedConfig.hiddenCharts = [...updatedConfig.hiddenCharts, chartId];
+    }
+    
+    updateShareConfig(updatedConfig);
   };
 
   // Handle removing a custom excluded date
@@ -403,6 +422,137 @@ const SharingModal = () => {
                     </div>
                   </div>
 
+                  {/* Chart Visibility Options */}
+                  <div>
+                    <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Chart Visibility</h3>
+                    <div className="flex flex-col space-y-2">
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.hiddenCharts.includes('retailer-distribution')}
+                          onChange={(e) => {
+                            const chart = 'retailer-distribution';
+                            const updatedCharts = e.target.checked 
+                              ? [...shareConfig.hiddenCharts, chart] 
+                              : shareConfig.hiddenCharts.filter(c => c !== chart);
+                            updateShareConfig({ hiddenCharts: updatedCharts });
+                          }}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Hide retailer distribution chart</span>
+                      </label>
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.hiddenCharts.includes('product-distribution')}
+                          onChange={(e) => {
+                            const chart = 'product-distribution';
+                            const updatedCharts = e.target.checked 
+                              ? [...shareConfig.hiddenCharts, chart] 
+                              : shareConfig.hiddenCharts.filter(c => c !== chart);
+                            updateShareConfig({ hiddenCharts: updatedCharts });
+                          }}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Hide product distribution chart</span>
+                      </label>
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.hiddenCharts.includes('time-trend')}
+                          onChange={(e) => {
+                            const chart = 'time-trend';
+                            const updatedCharts = e.target.checked 
+                              ? [...shareConfig.hiddenCharts, chart] 
+                              : shareConfig.hiddenCharts.filter(c => c !== chart);
+                            updateShareConfig({ hiddenCharts: updatedCharts });
+                          }}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Hide time trend chart</span>
+                      </label>
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.hiddenCharts.includes('demographics-charts')}
+                          onChange={(e) => {
+                            const chart = 'demographics-charts';
+                            const updatedCharts = e.target.checked 
+                              ? [...shareConfig.hiddenCharts, chart] 
+                              : shareConfig.hiddenCharts.filter(c => c !== chart);
+                            updateShareConfig({ hiddenCharts: updatedCharts });
+                          }}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Hide demographic breakdown charts</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Date Exclusion */}
+                  <div>
+                    <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Exclude Dates from Time Charts</h3>
+                    <div className="flex items-end space-x-2 mb-2">
+                      <div className="flex-grow">
+                        <input
+                          type="date"
+                          value={datePickerValue}
+                          onChange={(e) => setDatePickerValue(e.target.value)}
+                          className={`w-full px-3 py-2 border ${
+                            darkMode 
+                              ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                              : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+                          } rounded-md text-sm focus:outline-none`}
+                        />
+                      </div>
+                      <button
+                        onClick={handleAddExcludedDate}
+                        disabled={!datePickerValue}
+                        className={`px-3 py-2 rounded ${
+                          !datePickerValue
+                            ? `${darkMode ? 'bg-gray-600 text-gray-400' : 'bg-gray-100 text-gray-400'} cursor-not-allowed`
+                            : `${darkMode ? 'bg-pink-600 text-white hover:bg-pink-700' : 'bg-pink-600 text-white hover:bg-pink-700'}`
+                        }`}
+                      >
+                        Add
+                      </button>
+                    </div>
+                    
+                    {/* Display excluded dates */}
+                    <div className={`mt-2 ${
+                      shareConfig.customExcludedDates.length > 0 
+                        ? `${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'} p-3 rounded-lg border`
+                        : ''
+                    }`}>
+                      {shareConfig.customExcludedDates.length > 0 ? (
+                        <div>
+                          <h4 className={`text-xs font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Excluded Dates:</h4>
+                          <div className="max-h-32 overflow-y-auto">
+                            {shareConfig.customExcludedDates.map(date => (
+                              <div key={date} className="flex justify-between items-center py-1">
+                                <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  {new Date(date).toLocaleDateString()}
+                                </span>
+                                <button
+                                  onClick={() => handleRemoveExcludedDate(date)}
+                                  className={`text-xs p-1 rounded ${darkMode ? 'text-red-400 hover:bg-red-900/30' : 'text-red-600 hover:bg-red-100'}`}
+                                >
+                                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          No dates excluded. Add specific dates to exclude them from time-based charts.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Date Exclusion */}
                     <div>
                       <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
@@ -572,18 +722,6 @@ const SharingModal = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
                   Preview Client View
-                </button>
-                <button
-                  onClick={() => setInlinePreview(!inlinePreview)}
-                  className={`
-                    px-4 py-2 rounded-md flex items-center text-sm font-medium
-                    ${inlinePreview ? 
-                      (darkMode ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-900') :
-                      (darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900')
-                    }
-                  `}
-                >
-                  {inlinePreview ? 'Hide Preview' : 'Show Preview'}
                 </button>
               </>
             )}

@@ -1,4 +1,3 @@
-// src/components/charts/RechartsThemeWrapper.js
 import React from 'react';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -39,13 +38,38 @@ const RechartsThemeWrapper = ({ children, ...props }) => {
       
       if (displayName === 'Tooltip') {
         return React.cloneElement(newElement, {
-          contentStyle: darkMode ? { backgroundColor: '#1f2937', border: '1px solid #374151', color: '#e5e7eb' } : {}
+          contentStyle: darkMode ? { 
+            backgroundColor: '#1f2937', 
+            border: '1px solid #374151', 
+            color: '#e5e7eb',
+            borderRadius: '4px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+          } : {}
         });
       }
       
       if (displayName === 'Legend') {
         return React.cloneElement(newElement, {
           wrapperStyle: darkMode ? { color: '#e5e7eb' } : {}
+        });
+      }
+      
+      if (displayName === 'Bar') {
+        // We don't modify the Bar component's props directly
+        // since Cell components are used for individual bar colors
+        return newElement;
+      }
+      
+      if (displayName === 'Line') {
+        return React.cloneElement(newElement, {
+          stroke: newElement.props.stroke || (darkMode ? '#ff4d94' : '#ff0066')
+        });
+      }
+      
+      if (displayName === 'Area') {
+        return React.cloneElement(newElement, {
+          stroke: newElement.props.stroke || (darkMode ? '#4d94ff' : '#0066cc'),
+          fill: newElement.props.fill || (darkMode ? 'url(#colorUv)' : 'url(#colorUv)')
         });
       }
     }
@@ -56,4 +80,4 @@ const RechartsThemeWrapper = ({ children, ...props }) => {
   return addDarkModeStyles(children);
 };
 
-export default RechartsThemeWrapper;    
+export default RechartsThemeWrapper;

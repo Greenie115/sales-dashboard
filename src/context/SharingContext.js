@@ -247,61 +247,6 @@ export const SharingProvider = ({ children }) => {
       return false;
     }
   }, []);
-  
-  // Transform data for sharing (apply hideRetailers, hideTotals, etc.)
-  const transformDataForSharing = useCallback((data) => {
-    if (!data) return data;
-    
-    try {
-      // Create deep copy to avoid modifying original data
-      const clientData = JSON.parse(JSON.stringify(data));
-      const config = clientData.shareConfig || shareConfig;
-      
-      // Apply transformations based on share config
-      if (config.hideRetailers && Array.isArray(clientData.retailerData)) {
-        clientData.retailerData = clientData.retailerData.map((item, index) => ({
-          ...item,
-          name: `Retailer ${index + 1}`
-        }));
-      }
-      
-      if (config.hideTotals) {
-        // Remove total values from metrics
-        if (clientData.metrics) {
-          if (clientData.metrics.totalUnits) {
-            clientData.metrics.totalUnits = '—';
-          }
-          if (clientData.metrics.totalValue) {
-            clientData.metrics.totalValue = '—';
-          }
-        }
-        
-        // Remove count values if showOnlyPercent is true
-        if (config.showOnlyPercent) {
-          if (Array.isArray(clientData.retailerData)) {
-            clientData.retailerData = clientData.retailerData.map(item => ({
-              ...item,
-              value: '—'
-            }));
-          }
-          
-          if (Array.isArray(clientData.productDistribution)) {
-            clientData.productDistribution = clientData.productDistribution.map(item => ({
-              ...item,
-              count: '—'
-            }));
-          }
-        }
-      }
-      
-      return clientData;
-    } catch (err) {
-      console.error('Error in transformDataForSharing:', err);
-      return data;
-    }
-  }, [shareConfig]);
-  
-  // Replace with this updated version:
   const transformDataForSharing = useCallback((data) => {
     if (!data) return data;
     

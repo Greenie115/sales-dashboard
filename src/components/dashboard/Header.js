@@ -4,7 +4,7 @@ import { useData } from '../../context/DataContext';
 import ThemeToggle from '../ThemeToggle';
 import ShareButton from '../sharing/ShareButton';
 import Papa from 'papaparse';
-import getPlaceholderSrc from '../../utils/placeholderImage';
+import logo from '../../assets/Shopmium-logo.jpg'
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -173,13 +173,9 @@ const Header = () => {
           <div className="flex items-center">
             <div className="flex-shrink-0 flex items-center">
               <img 
-                src={process.env.PUBLIC_URL + '/logo.png'} 
+                src={logo} 
                 className="w-12 h-12 rounded-lg"
                 alt="Logo"
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src = getPlaceholderSrc(150, 150, 'FF0066', 'FFFFFF', 'SD');
-                }}
               />
               <span className="ml-2 text-xl font-semibold text-gray-900 dark:text-white">Insights Dashboard</span>
             </div>

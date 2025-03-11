@@ -242,6 +242,91 @@ const handleTabChange = (tab) => {
     setActiveTab(tab);
   }
 };
+
+const processShareId = async (shareId) => {
+  try {
+    if (!shareId) {
+      throw new Error("No share ID provided");
+    }
+    
+    setLoading(true);
+    
+    // Determine if we should use Supabase or fallback method based on share ID format
+    const useSupabase = !isBase64ShareId(shareId);
+    setIsSupabaseMode(useSupabase);
+    
+    let config;
+    let expired = false;
+    
+    console.log("Loading shared dashboard with ID:", shareId);
+    console.log("Using Supabase mode:", useSupabase);
+    
+    if (useSupabase) {
+      try {
+        // Try Supabase first
+        console.log("Using Supabase to fetch dashboard");
+        const result = await sharingService.getSharedDashboard(shareId);
+        expired = result.expired;
+        config = result.config;
+        console.log("Supabase result:", result);
+      } catch (err) {
+        console.error("Supabase fetch failed, trying fallback:", err);
+        // If Supabase fails, try fallback method
+        const fallbackResult = await processFallbackShareId(shareId);
+        config = fallbackResult.config;
+        expired = fallbackResult.expired;
+        setIsSupabaseMode(false);
+      }
+    } else {
+      // Directly use fallback method (Base64 encoded)
+      console.log("Using fallback mode to fetch dashboard");
+      const fallbackResult = await processFallbackShareId(shareId);
+      config = fallbackResult.config;
+      expired = fallbackResult.expired;
+    }
+    
+    // Check if share link is expired
+    if (expired) {
+      setIsExpired(true);
+      setShareConfig(config); // Still set the config for branding display
+      setLoading(false);
+      return null;
+    }
+    
+    return config;
+  } catch (error) {
+    console.error("Error processing share ID:", error);
+    setError("Invalid or expired share link");
+    setLoading(false);
+    return null;
+  }
+};
+
+// Helper function to handle fallback share ID processing
+const processFallbackShareId = async (shareId) => {
+  try {
+    // We need to add padding to ensure valid base64
+    let paddedShareId = shareId;
+    while (paddedShareId.length % 4 !== 0) {
+      paddedShareId += '=';
+    }
+    
+    const decodedConfig = JSON.parse(atob(paddedShareId));
+    
+    // Check if share link is expired (fallback mode)
+    let expired = false;
+    if (decodedConfig.expiryDate) {
+      const expiryDate = new Date(decodedConfig.expiryDate);
+      const now = new Date();
+      expired = expiryDate < now;
+    }
+    
+    return { config: decodedConfig, expired };
+  } catch (err) {
+    console.error("Error decoding fallback share:", err);
+    throw new Error("Invalid or corrupted share link");
+  }
+}
   
   // If still loading
   if (loading) {
