@@ -481,62 +481,93 @@ const SharingModal = () => {
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
-                          checked={shareConfig.hiddenCharts.includes('retailer-distribution')}
+                          checked={shareConfig.hiddenCharts?.includes('retailer-distribution') || false}
                           onChange={(e) => {
                             const chart = 'retailer-distribution';
+                            // Create a new hiddenCharts array if it doesn't exist
+                            const currentHiddenCharts = shareConfig.hiddenCharts || [];
                             const updatedCharts = e.target.checked 
-                              ? [...shareConfig.hiddenCharts, chart] 
-                              : shareConfig.hiddenCharts.filter(c => c !== chart);
+                              ? [...currentHiddenCharts, chart] 
+                              : currentHiddenCharts.filter(c => c !== chart);
+                            
                             updateShareConfig({ hiddenCharts: updatedCharts });
+                            console.log("Updated hidden charts:", updatedCharts);
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide retailer distribution chart</span>
                       </label>
+                      
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
-                          checked={shareConfig.hiddenCharts.includes('product-distribution')}
+                          checked={shareConfig.hiddenCharts?.includes('product-distribution') || false}
                           onChange={(e) => {
                             const chart = 'product-distribution';
+                            const currentHiddenCharts = shareConfig.hiddenCharts || [];
                             const updatedCharts = e.target.checked 
-                              ? [...shareConfig.hiddenCharts, chart] 
-                              : shareConfig.hiddenCharts.filter(c => c !== chart);
+                              ? [...currentHiddenCharts, chart] 
+                              : currentHiddenCharts.filter(c => c !== chart);
+                            
                             updateShareConfig({ hiddenCharts: updatedCharts });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide product distribution chart</span>
                       </label>
+                      
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
-                          checked={shareConfig.hiddenCharts.includes('time-trend')}
+                          checked={shareConfig.hiddenCharts?.includes('time-trend') || false}
                           onChange={(e) => {
                             const chart = 'time-trend';
+                            const currentHiddenCharts = shareConfig.hiddenCharts || [];
                             const updatedCharts = e.target.checked 
-                              ? [...shareConfig.hiddenCharts, chart] 
-                              : shareConfig.hiddenCharts.filter(c => c !== chart);
+                              ? [...currentHiddenCharts, chart] 
+                              : currentHiddenCharts.filter(c => c !== chart);
+                            
                             updateShareConfig({ hiddenCharts: updatedCharts });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide time trend chart</span>
                       </label>
+                      
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
-                          checked={shareConfig.hiddenCharts.includes('demographics-charts')}
+                          checked={shareConfig.hiddenCharts?.includes('demographics-charts') || false}
                           onChange={(e) => {
                             const chart = 'demographics-charts';
+                            const currentHiddenCharts = shareConfig.hiddenCharts || [];
                             const updatedCharts = e.target.checked 
-                              ? [...shareConfig.hiddenCharts, chart] 
-                              : shareConfig.hiddenCharts.filter(c => c !== chart);
+                              ? [...currentHiddenCharts, chart] 
+                              : currentHiddenCharts.filter(c => c !== chart);
+                            
                             updateShareConfig({ hiddenCharts: updatedCharts });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide demographic breakdown charts</span>
+                      </label>
+                      
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={shareConfig.hiddenCharts?.includes('day-distribution') || false}
+                          onChange={(e) => {
+                            const chart = 'day-distribution';
+                            const currentHiddenCharts = shareConfig.hiddenCharts || [];
+                            const updatedCharts = e.target.checked 
+                              ? [...currentHiddenCharts, chart] 
+                              : currentHiddenCharts.filter(c => c !== chart);
+                            
+                            updateShareConfig({ hiddenCharts: updatedCharts });
+                          }}
+                          className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <span className="ml-2">Hide day distribution chart</span>
                       </label>
                     </div>
                   </div>

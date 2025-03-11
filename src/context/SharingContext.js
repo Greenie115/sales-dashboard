@@ -290,9 +290,15 @@ export const SharingProvider = ({ children }) => {
         }
       }
       
-      // Hide specified charts by marking them in the clientData
-      if (config.hiddenCharts && config.hiddenCharts.length > 0) {
-        clientData.hiddenCharts = config.hiddenCharts;
+      // IMPORTANT: Ensure hiddenCharts array exists and is properly passed to the client data
+      if (config.hiddenCharts && Array.isArray(config.hiddenCharts)) {
+        // Make sure we're using a new array to avoid reference issues
+        clientData.hiddenCharts = [...config.hiddenCharts];
+        
+        console.log("Setting hidden charts in client data:", clientData.hiddenCharts);
+      } else {
+        // Initialize with empty array if missing
+        clientData.hiddenCharts = [];
       }
       
       // Apply date exclusions to time trend data

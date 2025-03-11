@@ -1,4 +1,3 @@
-// src/components/dashboard/tabs/SummaryTab.js
 import React, { useMemo } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext';
@@ -39,11 +38,14 @@ const SummaryTab = ({ isSharedView }) => {
   const filteredData = isSharedView && contextFilteredData 
     ? contextFilteredData 
     : (getFilteredData ? getFilteredData() : []);
+  
+  // Check if a chart should be shown based on hiddenCharts array
+  const shouldShowChart = (chartId) => {
+    if (!isSharedView) return true; // Always show charts in main dashboard
     
-    const shouldShowChart = (chartId) => {
-      if (!clientData || !clientData.hiddenCharts) return true;
-      return !clientData.hiddenCharts.includes(chartId);
-    };
+    if (!clientData || !clientData.hiddenCharts) return true;
+    return !clientData.hiddenCharts.includes(chartId);
+  };
   
   // Use pre-calculated metrics if available, otherwise calculate them
   const metrics = isSharedView && contextMetrics 
@@ -385,117 +387,121 @@ const SummaryTab = ({ isSharedView }) => {
       {stats && stats.topRetailers && stats.dayDistribution && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Top Retailers Mini Chart */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-            <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4 flex items-center">
-              <svg className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              Top Retailers
-            </h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={stats.topRetailers}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={30}
-                    outerRadius={70}
-                    paddingAngle={2}
-                    dataKey="value"
-                    labelLine={false}
-                    label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
-                      const RADIAN = Math.PI / 180;
-                      const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                      const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                      const y = cy + radius * Math.sin(-midAngle * RADIAN);
+          {shouldShowChart('retailer-distribution') && (
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+                <svg className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                Top Retailers
+              </h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={stats.topRetailers}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={30}
+                      outerRadius={70}
+                      paddingAngle={2}
+                      dataKey="value"
+                      labelLine={false}
+                      label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+                        const RADIAN = Math.PI / 180;
+                        const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                        const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                        const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
-                      return percent > 0.1 ? (
-                        <text 
-                          x={x} 
-                          y={y} 
-                          fill="#fff" 
-                          textAnchor="middle" 
-                          dominantBaseline="central"
-                          fontSize={12}
-                          fontWeight="bold"
-                        >
-                          {`${(percent * 100).toFixed(0)}%`}
-                        </text>
-                      ) : null;
-                    }}
-                  >
-                    {stats.topRetailers.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={colors.colorPalette[index % colors.colorPalette.length]} 
-                        stroke="#fff"
-                        strokeWidth={1}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend 
-                    layout="vertical" 
-                    align="right" 
-                    verticalAlign="middle"
-                    iconType="circle"
-                    formatter={(value) => (
-                      <span className="text-xs text-gray-700 dark:text-gray-300">{value}</span>
-                    )}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+                        return percent > 0.1 ? (
+                          <text 
+                            x={x} 
+                            y={y} 
+                            fill="#fff" 
+                            textAnchor="middle" 
+                            dominantBaseline="central"
+                            fontSize={12}
+                            fontWeight="bold"
+                          >
+                            {`${(percent * 100).toFixed(0)}%`}
+                          </text>
+                        ) : null;
+                      }}
+                    >
+                      {stats.topRetailers.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={colors.colorPalette[index % colors.colorPalette.length]} 
+                          stroke="#fff"
+                          strokeWidth={1}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend 
+                      layout="vertical" 
+                      align="right" 
+                      verticalAlign="middle"
+                      iconType="circle"
+                      formatter={(value) => (
+                        <span className="text-xs text-gray-700 dark:text-gray-300">{value}</span>
+                      )}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
+          )}
           
           {/* Day of Week Mini Chart */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-            <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4 flex items-center">
-              <svg className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Day of Week Distribution
-            </h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={stats.dayDistribution}
-                  layout="vertical"
-                  margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={colors.gridColor} />
-                  <XAxis type="number" tick={{ fill: colors.textSecondary }} />
-                  <YAxis 
-                    dataKey="name" 
-                    type="category" 
-                    scale="band" 
-                    tick={{ fontSize: 12, fill: colors.textSecondary }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip 
-                    content={<CustomTooltip />}
-                    cursor={{ fill: 'rgba(0, 0, 0, 0.05)' }}
-                  />
-                  <Bar 
-                    dataKey="value" 
-                    fill={colors.secondary}
-                    radius={[0, 4, 4, 0]}
-                    barSize={20}
+          {shouldShowChart('day-distribution') && (
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+                <svg className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Day of Week Distribution
+              </h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={stats.dayDistribution}
+                    layout="vertical"
+                    margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
                   >
-                    {stats.dayDistribution.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={`rgba(59, 130, 246, ${0.5 + (entry.percentage / 100) * 0.5})`}
-                        opacity={darkMode ? 0.8 : 1}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={colors.gridColor} />
+                    <XAxis type="number" tick={{ fill: colors.textSecondary }} />
+                    <YAxis 
+                      dataKey="name" 
+                      type="category" 
+                      scale="band" 
+                      tick={{ fontSize: 12, fill: colors.textSecondary }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip 
+                      content={<CustomTooltip />}
+                      cursor={{ fill: 'rgba(0, 0, 0, 0.05)' }}
+                    />
+                    <Bar 
+                      dataKey="value" 
+                      fill={colors.secondary}
+                      radius={[0, 4, 4, 0]}
+                      barSize={20}
+                    >
+                      {stats.dayDistribution.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={`rgba(59, 130, 246, ${0.5 + (entry.percentage / 100) * 0.5})`}
+                          opacity={darkMode ? 0.8 : 1}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

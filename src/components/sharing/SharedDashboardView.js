@@ -10,10 +10,37 @@ import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
 import ErrorBoundary from '../ErrorBoundary';
 import sharingService from '../../services/sharingService';
-import clientDisplayName from '../dashboard/ClientNameEditor';
+
+// Create a more reliable function for getting client name with proper fallbacks
+const getClientDisplayName = (config) => {
+  // First try metadata.clientName as it's the most authoritative
+  if (config.metadata?.clientName) {
+    return config.metadata.clientName;
+  }
+  
+  // Then try brandNames from various sources
+  if (config.metadata?.brandNames && config.metadata.brandNames.length > 0) {
+    return config.metadata.brandNames.join(', ');
+  }
+  
+  if (config.brandNames && config.brandNames.length > 0) {
+    return config.brandNames.join(', ');
+  }
+  
+  // Try the precomputed data
+  if (config.precomputedData?.clientName) {
+    return config.precomputedData.clientName;
+  }
+  
+  if (config.precomputedData?.brandNames && config.precomputedData.brandNames.length > 0) {
+    return config.precomputedData.brandNames.join(', ');
+  }
+  
+  // Default fallback
+  return 'Client';
+};
 
 // This component acts as a bridge between the ClientDataContext and the tab components
-// It provides all the methods and properties expected by the tab components
 const createSharedDataContext = (clientData) => {
   return {
     // Pass through all data from clientData
@@ -69,6 +96,7 @@ const SharedDashboardView = () => {
   const [isExpired, setIsExpired] = useState(false);
   const [isSupabaseMode, setIsSupabaseMode] = useState(true);
   const [clientData, setClientData] = useState(null);
+  const [clientDisplayName, setClientDisplayName] = useState('Client Dashboard');
   
   // Check if the share ID looks like Base64 (fallback mode) or UUID (Supabase mode)
   const isBase64ShareId = (id) => {
@@ -186,22 +214,20 @@ const SharedDashboardView = () => {
           setActiveTabTo: activeTab
         });
 
-        let clientDisplayName = 'Client Dashboard';
-      if (config.metadata?.clientName) {
-        clientDisplayName = config.metadata.clientName + ' Dashboard';
-      } else if (config.brandNames && config.brandNames.length > 0) {
-        clientDisplayName = config.brandNames.join(', ') + ' Dashboard';
-      } else if (config.precomputedData?.clientName) {
-        clientDisplayName = config.precomputedData.clientName + ' Dashboard';
-      } else if (config.precomputedData?.brandNames && config.precomputedData.brandNames.length > 0) {
-        clientDisplayName = config.precomputedData.brandNames.join(', ') + ' Dashboard';
-      }
-        
+        // Set client display name
+        const displayName = getClientDisplayName(config);
+        setClientDisplayName(displayName + ' Dashboard');
+        console.log("Set client display name to:", displayName + ' Dashboard');
         
         // Important: Store the client data directly from the precomputed data
         if (config.precomputedData) {
           // Create a deep copy to prevent reference issues
           const precomputedData = JSON.parse(JSON.stringify(config.precomputedData));
+          
+          // Ensure clientName is properly set in the data
+          if (!precomputedData.clientName || precomputedData.clientName === 'Client') {
+            precomputedData.clientName = displayName;
+          }
           
           // Create a complete clientData object with all necessary methods
           const newClientData = createSharedDataContext({
@@ -209,7 +235,7 @@ const SharedDashboardView = () => {
             filters: config.filters || {},
             brandMapping: precomputedData.brandMapping || {},
             brandNames: precomputedData.brandNames || [], 
-            clientName: config.metadata?.clientName || 'Client',
+            clientName: displayName,
             shareConfig: config,
             isSharedView: true
           });
@@ -248,97 +274,12 @@ const SharedDashboardView = () => {
   }, [shareId, setSalesData, setSelectedProducts, setSelectedRetailers, setDateRange, setStartDate, setEndDate, setSelectedMonth]);
 
   // Handle tab selection
-const handleTabChange = (tab) => {
-  console.log("Changing active tab to:", tab);
-  if (tab && shareConfig.allowedTabs.includes(tab)) {
-    setActiveTab(tab);
-  }
-};
-
-const processShareId = async (shareId) => {
-  try {
-    if (!shareId) {
-      throw new Error("No share ID provided");
+  const handleTabChange = (tab) => {
+    console.log("Changing active tab to:", tab);
+    if (tab && shareConfig.allowedTabs.includes(tab)) {
+      setActiveTab(tab);
     }
-    
-    setLoading(true);
-    
-    // Determine if we should use Supabase or fallback method based on share ID format
-    const useSupabase = !isBase64ShareId(shareId);
-    setIsSupabaseMode(useSupabase);
-    
-    let config;
-    let expired = false;
-    
-    console.log("Loading shared dashboard with ID:", shareId);
-    console.log("Using Supabase mode:", useSupabase);
-    
-    if (useSupabase) {
-      try {
-        // Try Supabase first
-        console.log("Using Supabase to fetch dashboard");
-        const result = await sharingService.getSharedDashboard(shareId);
-        expired = result.expired;
-        config = result.config;
-        console.log("Supabase result:", result);
-      } catch (err) {
-        console.error("Supabase fetch failed, trying fallback:", err);
-        // If Supabase fails, try fallback method
-        const fallbackResult = await processFallbackShareId(shareId);
-        config = fallbackResult.config;
-        expired = fallbackResult.expired;
-        setIsSupabaseMode(false);
-      }
-    } else {
-      // Directly use fallback method (Base64 encoded)
-      console.log("Using fallback mode to fetch dashboard");
-      const fallbackResult = await processFallbackShareId(shareId);
-      config = fallbackResult.config;
-      expired = fallbackResult.expired;
-    }
-    
-    // Check if share link is expired
-    if (expired) {
-      setIsExpired(true);
-      setShareConfig(config); // Still set the config for branding display
-      setLoading(false);
-      return null;
-    }
-    
-    return config;
-  } catch (error) {
-    console.error("Error processing share ID:", error);
-    setError("Invalid or expired share link");
-    setLoading(false);
-    return null;
-  }
-};
-
-// Helper function to handle fallback share ID processing
-const processFallbackShareId = async (shareId) => {
-  try {
-    // We need to add padding to ensure valid base64
-    let paddedShareId = shareId;
-    while (paddedShareId.length % 4 !== 0) {
-      paddedShareId += '=';
-    }
-    
-    const decodedConfig = JSON.parse(atob(paddedShareId));
-    
-    // Check if share link is expired (fallback mode)
-    let expired = false;
-    if (decodedConfig.expiryDate) {
-      const expiryDate = new Date(decodedConfig.expiryDate);
-      const now = new Date();
-      expired = expiryDate < now;
-    }
-    
-    return { config: decodedConfig, expired };
-  } catch (err) {
-    console.error("Error decoding fallback share:", err);
-    throw new Error("Invalid or corrupted share link");
-  }
-}
+  };
   
   // If still loading
   if (loading) {
@@ -450,12 +391,12 @@ const processFallbackShareId = async (shareId) => {
               </div>
             )}
             <div>
-            <h1 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-              {clientDisplayName}
-            </h1>
-            <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              Shared by {shareConfig.branding?.companyName || 'Shopmium Insights'}
-            </p>
+              <h1 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                {clientDisplayName}
+              </h1>
+              <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                Shared by {shareConfig.branding?.companyName || 'Shopmium Insights'}
+              </p>
             </div>
           </div>
         </div>
