@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useData } from './DataContext';
+import getSurveyResponseData from '../utils/getSurveyResponseData';
 import sharingService from '../services/sharingService';
+import _ from 'lodash';
 
 // Create context
 const SharingContext = createContext();
@@ -67,6 +69,67 @@ export const SharingProvider = ({ children }) => {
   // Shared dashboards list
   const [sharedDashboards, setSharedDashboards] = useState([]);
   const [loadingSharedDashboards, setLoadingSharedDashboards] = useState(false);
+
+  const demographicData = {};
+
+// Check if we have sales data with demographic information
+if (Array.isArray(salesData) && salesData.length > 0) {
+  // Extract gender distribution if gender field exists
+  const genderGroups = _.groupBy(
+    salesData.filter(item => item.gender),
+    'gender'
+  );
+  
+  if (Object.keys(genderGroups).length > 0) {
+    demographicData.genderDistribution = Object.entries(genderGroups)
+      .map(([gender, items]) => ({
+        name: gender,
+        value: items.length,
+        percentage: (items.length / salesData.length) * 100
+      }))
+      .sort((a, b) => b.value - a.value);
+  }
+  
+  // Extract age distribution if age_group field exists
+  const ageGroups = _.groupBy(
+    salesData.filter(item => item.age_group),
+    'age_group'
+  );
+  
+  if (Object.keys(ageGroups).length > 0) {
+    demographicData.ageDistribution = Object.entries(ageGroups)
+      .map(([ageGroup, items]) => ({
+        ageGroup,
+        count: items.length,
+        percentage: (items.length / salesData.length) * 100
+      }))
+      .sort((a, b) => b.count - a.count);
+  }
+  
+  // Check for question fields
+  const questionFields = [];
+  const sampleRow = salesData[0];
+  
+  if (sampleRow) {
+    for (let i = 1; i <= 10; i++) {
+      const paddedNum = i.toString().padStart(2, '0');
+      const questionKey = `question_${paddedNum}`;
+      const propKey = `proposition_${paddedNum}`;
+      
+      if (sampleRow[questionKey] !== undefined || sampleRow[propKey] !== undefined) {
+        questionFields.push({
+          number: paddedNum,
+          questionKey,
+          propKey
+        });
+      }
+    }
+    
+    if (questionFields.length > 0) {
+      demographicData.availableQuestions = questionFields.map(q => q.number);
+    }
+  }
+}
 
   // Initialize share config when modal opens
   useEffect(() => {
@@ -189,6 +252,9 @@ export const SharingProvider = ({ children }) => {
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
       
+      // Process survey data if needed
+      const surveyData = getSurveyResponseData(salesData, configToShare.filters, getFilteredData);
+      
       // Precompute data for the client view - safely call these functions
       configToShare.precomputedData = {
         filteredData: typeof getFilteredData === 'function' ? 
@@ -202,8 +268,12 @@ export const SharingProvider = ({ children }) => {
         brandMapping: brandMapping || {},
         brandNames: brandNames || [],
         clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-        salesData: salesData ? 
-          salesData.slice(0, 1000) : []
+        
+        // IMPORTANT: Include the full sales data instead of a slice
+        salesData: salesData,
+        
+        // Add the survey data for demographics
+        surveyData: surveyData
       };
       
       // Create the shared dashboard in database
@@ -232,6 +302,7 @@ export const SharingProvider = ({ children }) => {
     getProductDistribution,
     brandMapping
   ]);
+  
   
   // Delete a shared dashboard
   const deleteSharedDashboard = useCallback(async (shareId) => {
@@ -298,8 +369,6 @@ export const SharingProvider = ({ children }) => {
       if (config.hiddenCharts && Array.isArray(config.hiddenCharts)) {
         // Make sure we're using a new array to avoid reference issues
         clientData.hiddenCharts = [...config.hiddenCharts];
-        
-        console.log("Setting hidden charts in client data:", clientData.hiddenCharts);
       } else {
         // Initialize with empty array if missing
         clientData.hiddenCharts = [];

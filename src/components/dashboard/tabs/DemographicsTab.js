@@ -52,6 +52,7 @@ const DemographicsTab = ({ isSharedView }) => {
   const [responseData, setResponseData] = useState([]);
   const [selectedResponses, setSelectedResponses] = useState([]);
   const [questions, setQuestions] = useState([]);
+
   
   // Extract questions from data
   useEffect(() => {
@@ -59,55 +60,71 @@ const DemographicsTab = ({ isSharedView }) => {
       // Check what fields are in the data
       const sampleRow = salesData[0];
       
-      // Look for question fields
-      const questionFields = [];
-      for (let i = 1; i <= 10; i++) {
-        const paddedNum = i.toString().padStart(2, '0');
-        const questionKey = `question_${paddedNum}`;
-        const propKey = `proposition_${paddedNum}`;
+      // For shared view, check if we have precomputed survey data
+      if (isSharedView && contextData.surveyData) {
+        const surveyData = contextData.surveyData;
         
-        if (sampleRow[questionKey] !== undefined || sampleRow[propKey] !== undefined) {
-          questionFields.push({
-            number: paddedNum,
-            questionKey,
-            propKey
-          });
+        // Get available questions from the survey data
+        const questionNumbers = Object.keys(surveyData.questions);
+        setAvailableQuestions(questionNumbers);
+        
+        // Set default selected question if none is set
+        if (!selectedQuestionNumber && questionNumbers.length > 0) {
+          setSelectedQuestionNumber(questionNumbers[0]);
         }
-      }
-      
-      // Create question objects
-      const extractedQuestions = [];
-      questionFields.forEach(field => {
-        // Try to get the question text from the data
-        let questionText = `Question ${parseInt(field.number)}`;
+      } else {
+        // Original code for analyzing the data in the main dashboard
         
-        // Find the first row with a non-empty question text
-        for (const row of salesData) {
-          if (row[field.questionKey] && typeof row[field.questionKey] === 'string' && row[field.questionKey].trim() !== '') {
-            questionText = row[field.questionKey];
-            break;
+        // Look for question fields
+        const questionFields = [];
+        for (let i = 1; i <= 10; i++) {
+          const paddedNum = i.toString().padStart(2, '0');
+          const questionKey = `question_${paddedNum}`;
+          const propKey = `proposition_${paddedNum}`;
+          
+          if (sampleRow[questionKey] !== undefined || sampleRow[propKey] !== undefined) {
+            questionFields.push({
+              number: paddedNum,
+              questionKey,
+              propKey
+            });
           }
         }
         
-        // Only add if there are propositions for this question
-        const hasPropositions = salesData.some(row => 
-          row[field.propKey] && 
-          typeof row[field.propKey] === 'string' && 
-          row[field.propKey].trim() !== ''
-        );
+        // Create question objects
+        const extractedQuestions = [];
+        questionFields.forEach(field => {
+          // Try to get the question text from the data
+          let questionText = `Question ${parseInt(field.number)}`;
+          
+          // Find the first row with a non-empty question text
+          for (const row of salesData) {
+            if (row[field.questionKey] && typeof row[field.questionKey] === 'string' && row[field.questionKey].trim() !== '') {
+              questionText = row[field.questionKey];
+              break;
+            }
+          }
+          
+          // Only add if there are propositions for this question
+          const hasPropositions = salesData.some(row => 
+            row[field.propKey] && 
+            typeof row[field.propKey] === 'string' && 
+            row[field.propKey].trim() !== ''
+          );
+          
+          if (hasPropositions) {
+            extractedQuestions.push({ 
+              number: field.number, 
+              text: questionText
+            });
+          }
+        });
         
-        if (hasPropositions) {
-          extractedQuestions.push({ 
-            number: field.number, 
-            text: questionText
-          });
-        }
-      });
-      
-      setQuestions(extractedQuestions);
-      setAvailableQuestions(extractedQuestions.map(q => q.number));
+        setQuestions(extractedQuestions);
+        setAvailableQuestions(extractedQuestions.map(q => q.number));
+      }
     }
-  }, [salesData]);
+  }, [salesData, isSharedView, contextData]);
 
   // Set up mounted ref for cleanup
   useEffect(() => {
@@ -120,11 +137,16 @@ const DemographicsTab = ({ isSharedView }) => {
   
  // Process demographic data when responses are selected
  useEffect(() => {
-    // Skip if unmounted
-    if (!isMounted.current) return;
-    
-    // Only process if we have selected responses and survey data
-    if (selectedResponses.length > 0 && salesData && salesData.length > 0) {
+  // Skip if unmounted
+  if (!isMounted.current) return;
+  
+  // Only process if we have selected responses and survey data
+  if (selectedResponses.length > 0) {
+    // Check if we're in shared view with precomputed data
+    if (isSharedView && contextData.surveyData && contextData.surveyData.questions[selectedQuestionNumber]) {
+      const questionData = contextData.surveyData.questions[selectedQuestionNumber];
+      processSharedResponseDemographics(questionData, selectedResponses);
+    } else if (salesData && salesData.length > 0) {
       // Set processing flag to true
       setIsProcessingDemographics(true);
       
@@ -134,6 +156,7 @@ const DemographicsTab = ({ isSharedView }) => {
         if (!isMounted.current) return;
         
         try {
+          // Original demographic processing code
           // Get selected response text values
           const selectedResponseValues = selectedResponses.map(r => r.fullResponse);
           const propKey = `proposition_${selectedQuestionNumber}`;
@@ -235,7 +258,115 @@ const DemographicsTab = ({ isSharedView }) => {
       setResponseByAge([]);
       setIsProcessingDemographics(false);
     }
-  }, [selectedResponses, salesData, selectedQuestionNumber]);
+  }
+}, [selectedResponses, salesData, selectedQuestionNumber, isSharedView, contextData]);
+
+const processSharedResponseDemographics = (questionData, selectedResps) => {
+  if (!questionData || !selectedResps || selectedResps.length === 0) return;
+  
+  setIsProcessingDemographics(true);
+  
+  try {
+    // Get gender breakdown for the selected responses
+    const genderData = [];
+    const genderBreakdown = questionData.demographics.gender;
+    
+    if (genderBreakdown) {
+      // Calculate totals for the selected responses by gender
+      const selectedResponsesByGender = {};
+      
+      // Initialize counts for each gender
+      Object.keys(genderBreakdown).forEach(gender => {
+        selectedResponsesByGender[gender] = 0;
+        
+        // Count occurrences of selected responses for this gender
+        selectedResps.forEach(selectedResp => {
+          const respBreakdown = genderBreakdown[gender].responseBreakdown;
+          if (respBreakdown[selectedResp.fullResponse]) {
+            selectedResponsesByGender[gender] += respBreakdown[selectedResp.fullResponse];
+          }
+        });
+      });
+      
+      // Calculate total across all selected responses
+      const totalSelected = Object.values(selectedResponsesByGender).reduce((sum, count) => sum + count, 0);
+      
+      // Format for UI
+      Object.entries(selectedResponsesByGender).forEach(([gender, count]) => {
+        if (count > 0) {
+          genderData.push({
+            name: gender,
+            value: count,
+            total: totalSelected,
+            percentage: ((count / totalSelected) * 100).toFixed(1)
+          });
+        }
+      });
+      
+      // Sort by count
+      genderData.sort((a, b) => b.value - a.value);
+      setResponseByGender(genderData);
+    }
+    
+    // Get age breakdown for the selected responses
+    const ageData = [];
+    const ageBreakdown = questionData.demographics.age;
+    
+    if (ageBreakdown) {
+      // Calculate totals for the selected responses by age group
+      const selectedResponsesByAge = {};
+      
+      // Initialize counts for each age group
+      Object.keys(ageBreakdown).forEach(ageGroup => {
+        selectedResponsesByAge[ageGroup] = 0;
+        
+        // Count occurrences of selected responses for this age group
+        selectedResps.forEach(selectedResp => {
+          const respBreakdown = ageBreakdown[ageGroup].responseBreakdown;
+          if (respBreakdown[selectedResp.fullResponse]) {
+            selectedResponsesByAge[ageGroup] += respBreakdown[selectedResp.fullResponse];
+          }
+        });
+      });
+      
+      // Calculate total across all selected responses
+      const totalSelected = Object.values(selectedResponsesByAge).reduce((sum, count) => sum + count, 0);
+      
+      // Format for UI
+      Object.entries(selectedResponsesByAge).forEach(([ageGroup, count]) => {
+        if (count > 0) {
+          ageData.push({
+            name: ageGroup,
+            value: count,
+            total: totalSelected,
+            percentage: ((count / totalSelected) * 100).toFixed(1)
+          });
+        }
+      });
+      
+      // Sort by age group in a logical order if possible
+      ageData.sort((a, b) => {
+        const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
+        const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
+        
+        if (aIndex !== -1 && bIndex !== -1) {
+          return aIndex - bIndex;
+        }
+        
+        if (aIndex !== -1) return -1;
+        if (bIndex !== -1) return 1;
+        
+        return a.name.localeCompare(b.name);
+      });
+      
+      setResponseByAge(ageData);
+    }
+  } catch (error) {
+    console.error("Error processing shared demographic data:", error);
+  } finally {
+    setIsProcessingDemographics(false);
+  }
+};
 
   // Handle user changing the selected question
   const handleQuestionChange = (e) => {
@@ -244,12 +375,30 @@ const DemographicsTab = ({ isSharedView }) => {
     setSelectedResponses([]);
     
     if (questionNum) {
-      // Find the question text
-      const question = questions.find(q => q.number === questionNum);
-      setQuestionText(question ? question.text : `Question ${parseInt(questionNum)}`);
-      
-      // Analyze responses for this question
-      analyzeResponses(questionNum);
+      if (isSharedView && contextData.surveyData && contextData.surveyData.questions[questionNum]) {
+        // Get data from precomputed survey data
+        const questionData = contextData.surveyData.questions[questionNum];
+        setQuestionText(questionData.questionText || `Question ${parseInt(questionNum)}`);
+        
+        // Format response data for the UI
+        const formattedResponses = Object.entries(questionData.counts).map(([response, count]) => {
+          const percentage = ((count / questionData.totalResponses) * 100).toFixed(1);
+          return {
+            fullResponse: response,
+            count,
+            percentage
+          };
+        }).sort((a, b) => b.count - a.count);
+        
+        setResponseData(formattedResponses);
+      } else {
+        // Find the question text
+        const question = questions.find(q => q.number === questionNum);
+        setQuestionText(question ? question.text : `Question ${parseInt(questionNum)}`);
+        
+        // Analyze responses for this question
+        analyzeResponses(questionNum);
+      }
     } else {
       setQuestionText('');
       setResponseData([]);

@@ -1,6 +1,9 @@
 import React, { useState }from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { ClientDataProvider } from '../../context/ClientDataContext';
+import { useFormattedData } from '../../hooks/useFormattedData';
+import { useDateHandling } from '../../hooks/useDateHandling';
+import { useThemeColors } from '../../hooks/useThemeColors';
 import SummaryTab from '../dashboard/tabs/SummaryTab';
 import SalesTab from '../dashboard/tabs/SalesTab';
 import DemographicsTab from '../dashboard/tabs/DemographicsTab';
@@ -13,6 +16,9 @@ import OffersTab from '../dashboard/tabs/OffersTab';
 const SharedDashboardPreview = ({ config, onClose }) => {
   // Get dark mode status
   const { darkMode } = useTheme();
+  const { formatDate, formatMonth } = useDateHandling();
+  const { formatNumber, formatPercentage } = useFormattedData();
+  const { colors } = useThemeColors();
   
   // Everything comes from the config prop
   const {

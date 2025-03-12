@@ -446,7 +446,7 @@ const SharedDashboardView = () => {
             </div>
           ) : (
             <ErrorBoundary>
-              <ClientDataProvider clientData={transformedData}>
+              <ClientDataProvider clientData={{...transformedData, hiddenCharts: transformedData.hiddenCharts || []}}>
                 {/* Render the appropriate tab content */}
                 {activeTab === 'summary' && (
                   <ErrorBoundary>
