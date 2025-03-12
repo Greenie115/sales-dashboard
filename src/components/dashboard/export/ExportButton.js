@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
 import { exportToCSV, exportToPDF } from '../../../utils/exportUtils';
+import { useExport } from '../../../hooks/useExport';
+
 
 const ExportButton = ({ activeTab, tabData }) => {
   const { 
@@ -12,6 +14,7 @@ const ExportButton = ({ activeTab, tabData }) => {
   const [showOptions, setShowOptions] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const dropdownRef = useRef(null);
+  const { exportToCSV, exportToPDF, generateFilename } = useExport();
   
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -33,16 +36,7 @@ const ExportButton = ({ activeTab, tabData }) => {
       ? brandNames.join('-')  
       : clientName || 'Sales-Dashboard';
     
-    // Format today's date as YYYY-MM-DD
-    const today = new Date().toISOString().split('T')[0];
-    
-    // Create the filename
-    let fileName = `${brandText}-${activeTab}-${today}`;
-    
-    // Sanitize the filename
-    fileName = fileName.replace(/[\\/:*?"<>|]/g, '-');
-    
-    return fileName;
+    return generateFilename(brandText + '-' + activeTab, '');
   };
   
   // Handle export action
@@ -52,11 +46,10 @@ const ExportButton = ({ activeTab, tabData }) => {
     try {
       const fileName = createFileName();
       
-      // Export data based on the selected format
       if (type === 'csv') {
-        exportToCSV(tabData, activeTab, fileName);
+        exportToCSV(tabData, fileName);
       } else if (type === 'pdf') {
-        exportToPDF(tabData, activeTab, fileName);
+        exportToPDF(tabData, fileName);
       }
       
       setIsExporting(false);

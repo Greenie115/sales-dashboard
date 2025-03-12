@@ -2,6 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { useChartColors } from '../../../utils/chartColors';
+import { useChartData } from '../../../hooks/useChartData';
+import { useDashboardMetrics } from '../../../hooks/useDashboardMetrics';
+import { useExport } from '../../../hooks/useExport';
+import { useDateHandling } from '../../../hooks/useDateHandling';
+import { usePagination } from '../../../hooks/usePagination';
+import { useFormattedData } from '../../../hooks/useFormattedData';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
@@ -10,26 +16,6 @@ import {
 import { useClientData } from '../../../context/ClientDataContext';
 import DateExclusionPanel from '../../filters/DateExclusionPanel';
 import _ from 'lodash';
-
-// Custom tooltip component - FIXED with Array.isArray check
-const CustomTooltip = ({ active, payload, label }) => {
-  const { darkMode } = useTheme();
-  
-  if (active && payload && Array.isArray(payload) && payload.length) {
-    return (
-      <div className="bg-white dark:bg-gray-800 p-3 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
-        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</p>
-        {payload.map((entry, index) => (
-          <p key={index} className="text-sm text-gray-600 dark:text-gray-400">
-            <span className="inline-block w-3 h-3 mr-1 rounded-full" style={{ backgroundColor: entry.color }}></span>
-            {entry.name}: {entry.value.toLocaleString()}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-};
 
 const SalesTab = ({ isSharedView = false }) => {
   const { darkMode } = useTheme();
@@ -48,7 +34,10 @@ const SalesTab = ({ isSharedView = false }) => {
   const dataContext = useData();
   const contextData = isSharedView ? clientData : dataContext;
   
-  // Get chart colors
+  // Get utility hooks
+  const { formatDate, formatMonth, getDaysRemaining } = useDateHandling();
+  const { formatNumber, formatPercentage } = useFormattedData();
+  const { exportToCSV } = useExport();
   const colors = useChartColors();
   
   // Safe destructuring with defaults for ALL required variables
@@ -81,138 +70,8 @@ const SalesTab = ({ isSharedView = false }) => {
   const metrics = isSharedView && directMetrics 
     ? directMetrics 
     : (calculateMetrics ? calculateMetrics() : {});
-
-  // Safely add handlers for date exclusion
-  const handleAddExcludedDate = (date) => {
-    if (!excludedDates.includes(date)) {
-      setExcludedDates([...excludedDates, date]);
-    }
-  };
-
-  const handleRemoveExcludedDate = (date) => {
-    setExcludedDates(excludedDates.filter(d => d !== date));
-  };
-
-  // This function safely applies date exclusions to the chart data
-  const applyDateExclusions = (data) => {
-    // Safety checks - ensure both data and excludedDates are arrays
-    if (!data || !Array.isArray(data)) return [];
-    if (!excludedDates || !Array.isArray(excludedDates) || excludedDates.length === 0) return data;
     
-    try {
-      // Create a Set for efficient lookups
-      const excludeDatesSet = new Set(excludedDates);
-      
-      // Filter out excluded dates safely
-      return data.filter(item => {
-        // Skip any non-object items
-        if (!item || typeof item !== 'object') return true;
-        
-        // If no name property, keep the item
-        if (!item.name) return true;
-        
-        // For daily timeframe
-        if (redemptionTimeframe === 'daily' && typeof item.name === 'string') {
-          return !excludeDatesSet.has(item.name);
-        }
-        
-        // Return true for any other case
-        return true;
-      });
-    } catch (error) {
-      console.error("Error in applyDateExclusions:", error);
-      // Return original data on error
-      return data;
-    }
-  };
-  
-  const exportSalesData = () => {
-    try {
-      // Create CSV content
-      let csvContent = 'Sales Analysis Report\n\n';
-      
-      // Add date range
-      if (metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0) {
-        csvContent += `Date Range: ${metrics.uniqueDates[0]} to ${metrics.uniqueDates[metrics.uniqueDates.length - 1]}\n`;
-        csvContent += `Total Days: ${metrics.daysInRange}\n`;
-      }
-      
-      // Add key metrics
-      if (metrics) {
-        csvContent += `Total Redemptions: ${metrics.totalUnits}\n`;
-        csvContent += `Average Per Day: ${metrics.avgRedemptionsPerDay}\n\n`;
-      }
-      
-      // FIXED: Use retailerData from useMemo that will be defined below
-      if (Array.isArray(retailerData) && retailerData.length > 0) {
-        csvContent += 'Retailer Distribution\n';
-        csvContent += 'Retailer,Units,Percentage\n';
-        
-        retailerData.forEach(item => {
-          csvContent += `"${item.name}",${item.value},${item.percentage.toFixed(1)}%\n`;
-        });
-        
-        csvContent += '\n';
-      }
-      
-      // Add product distribution
-      if (Array.isArray(productDistribution) && productDistribution.length > 0) {
-        csvContent += 'Product Distribution\n';
-        csvContent += 'Product,Units,Percentage\n';
-        
-        productDistribution.forEach(item => {
-          csvContent += `"${item.displayName || item.name}",${item.count},${item.percentage.toFixed(1)}%\n`;
-        });
-        
-        csvContent += '\n';
-      }
-      
-      // Add product distribution by retailer
-      if (Array.isArray(filteredData) && filteredData.length > 0 && Array.isArray(productDistribution) && productDistribution.length > 0) {
-        csvContent += 'Product Distribution by Retailer\n';
-        
-        // Process each product
-        productDistribution.forEach(product => {
-          csvContent += `\n"${product.displayName || product.name}" (Total: ${product.count})\n`;
-          csvContent += 'Retailer,Units,Percentage of Product Sales\n';
-          
-          // Get all records for this product
-          const productItems = filteredData.filter(item => item.product_name === product.name);
-          
-          // Group by retailer
-          const retailerGroups = _.groupBy(productItems, 'chain');
-          
-          // Calculate and sort by count
-          const retailerBreakdown = Object.entries(retailerGroups)
-            .map(([retailer, items]) => ({
-              retailer: retailer || 'Unknown',
-              count: items.length,
-              percentage: (items.length / productItems.length) * 100
-            }))
-            .sort((a, b) => b.count - a.count);
-          
-          // Add to CSV
-          retailerBreakdown.forEach(item => {
-            csvContent += `"${item.retailer}",${item.count},${item.percentage.toFixed(1)}%\n`;
-          });
-        });
-      }
-      
-      // Create download link
-      const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', 'Sales_Analysis_Report.csv');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error('Error exporting sales data:', error);
-      alert('An error occurred while exporting data. Please try again.');
-    }
-  };
-  
-  // Get retailer distribution - THIS IS THE DEFINITION OF retailerData
+  // Get retailer distribution
   const retailerData = useMemo(() => {
     // If we already have retailer data from context, use it
     if (retailerDataFromContext && retailerDataFromContext.length > 0) {
@@ -234,7 +93,7 @@ const SalesTab = ({ isSharedView = false }) => {
       .sort((a, b) => b.value - a.value);
   }, [filteredData, retailerDataFromContext]);
   
-  // Get product distribution - FIXED with Array.isArray checks
+  // Get product distribution - with Array.isArray checks
   const productDistribution = useMemo(() => {
     if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) return [];
     
@@ -272,117 +131,54 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   }, [filteredData, brandMapping]);
   
-  // Get redemptions over time with improved time handling
-  const redemptionsOverTime = useMemo(() => {
-    if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) return [];
+  // Function to safely apply date exclusions to the chart data
+  const applyDateExclusions = (data) => {
+    // Safety checks - ensure both data and excludedDates are arrays
+    if (!data || !Array.isArray(data)) return [];
+    if (!excludedDates || !Array.isArray(excludedDates) || excludedDates.length === 0) return data;
     
     try {
-      // Prepare date formatter
-      const formatDate = (date) => {
-        switch(redemptionTimeframe) {
-          case 'hourly':
-            return `${date.getHours()}:00`;
-          case 'daily':
-            return date.toISOString().split('T')[0];
-          case 'weekly':
-            // Get week start (Sunday)
-            const weekStart = new Date(date);
-            weekStart.setDate(date.getDate() - date.getDay());
-            const weekEnd = new Date(weekStart);
-            weekEnd.setDate(weekStart.getDate() + 6);
-            return `${weekStart.toISOString().split('T')[0]} - ${weekEnd.toISOString().split('T')[0]}`;
-          case 'monthly':
-            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          default:
-            return date.toISOString().split('T')[0];
-        }
-      };
+      // Create a Set for efficient lookups
+      const excludeDatesSet = new Set(excludedDates);
       
-      // Generate all dates in range for the selected timeframe
-      const dateMap = {};
-      
-      // Ensure we have valid start and end dates
-      let minDate, maxDate;
-      
-      if (dateRange === 'custom' && startDate && endDate) {
-        minDate = new Date(startDate);
-        maxDate = new Date(endDate);
-      } else {
-        // Use the full range from the data
-        const dates = filteredData
-          .filter(item => item.receipt_date)
-          .map(item => new Date(item.receipt_date))
-          .filter(date => !isNaN(date.getTime()));
+      // Filter out excluded dates safely
+      return data.filter(item => {
+        // Skip any non-object items
+        if (!item || typeof item !== 'object') return true;
         
-        if (dates.length === 0) return [];
+        // If no name property, keep the item
+        if (!item.name) return true;
         
-        minDate = new Date(Math.min(...dates));
-        maxDate = new Date(Math.max(...dates));
-      }
-      
-      // Create date range
-      if (!isNaN(minDate.getTime()) && !isNaN(maxDate.getTime())) {
-        const currentDate = new Date(minDate);
-        while (currentDate <= maxDate) {
-          const key = formatDate(currentDate);
-          dateMap[key] = 0;
-          
-          // Increment based on timeframe
-          switch(redemptionTimeframe) {
-            case 'hourly':
-              currentDate.setHours(currentDate.getHours() + 1);
-              break;
-            case 'daily':
-              currentDate.setDate(currentDate.getDate() + 1);
-              break;
-            case 'weekly':
-              currentDate.setDate(currentDate.getDate() + 7);
-              break;
-            case 'monthly':
-              currentDate.setMonth(currentDate.getMonth() + 1);
-              break;
-            default:
-              currentDate.setDate(currentDate.getDate() + 1);
-          }
+        // For daily timeframe
+        if (redemptionTimeframe === 'daily' && typeof item.name === 'string') {
+          return !excludeDatesSet.has(item.name);
         }
-      }
-      
-      // Count redemptions for each time period
-      filteredData.forEach(item => {
-        if (!item.receipt_date) return;
         
-        try {
-          const date = new Date(item.receipt_date);
-          if (isNaN(date.getTime())) return;
-          
-          const key = formatDate(date);
-          if (dateMap[key] !== undefined) {
-            dateMap[key] += 1;
-          }
-        } catch (error) {
-          console.error("Error processing date:", error);
-        }
-      });
-      
-      // Convert to array format for charts
-      const result = Object.entries(dateMap).map(([name, count]) => ({ name, count }));
-      
-      // Sort by date
-      return result.sort((a, b) => {
-        // For hourly data, sort by hour number
-        if (redemptionTimeframe === 'hourly') {
-          return parseInt(a.name) - parseInt(b.name);
-        }
-        // For other formats, sort by string comparison
-        return a.name.localeCompare(b.name);
+        // Return true for any other case
+        return true;
       });
     } catch (error) {
-      console.error("Error generating redemptions over time:", error);
-      return [];
+      console.error("Error in applyDateExclusions:", error);
+      // Return original data on error
+      return data;
     }
-  }, [filteredData, redemptionTimeframe, dateRange, startDate, endDate]);
+  };
   
-  // Calculate trend line - FIXED with more defensive checks
+  // Get chart data hooks AFTER we have defined filteredData
+  const { 
+    getTimeSeriesData,
+    calculateTrendLine
+  } = useChartData(filteredData, brandMapping);
+  
+  // Use metrics hook with filteredData
+  const { metrics: dashboardMetrics } = useDashboardMetrics(filteredData);
+  
+  // Get redemptions over time with improved time handling
+  const redemptionsOverTime = useMemo(() => {
+    return getTimeSeriesData(redemptionTimeframe);
+  }, [getTimeSeriesData, redemptionTimeframe]);
+  
+  // Calculate trend line - with defensive checks
   const trendLineData = useMemo(() => {
     if (!redemptionsOverTime || !Array.isArray(redemptionsOverTime) || redemptionsOverTime.length < 7) return [];
     
@@ -417,40 +213,66 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   }, [redemptionsOverTime]);
   
-  // Helper function to format date
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return dateString;
-      
-      const day = date.getDate().toString().padStart(2, '0');
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const year = date.getFullYear();
-      
-      return `${day}/${month}/${year}`;
-    } catch (error) {
-      return dateString;
+  // For product table pagination
+  const {
+    currentPage,
+    paginatedItems: paginatedProducts,
+    totalPages,
+    nextPage,
+    prevPage
+  } = usePagination(
+    Array.isArray(productDistribution) ? productDistribution.slice(0, 20) : [], 
+    5
+  );
+  
+  // Safely add handlers for date exclusion
+  const handleAddExcludedDate = (date) => {
+    if (!excludedDates.includes(date)) {
+      setExcludedDates([...excludedDates, date]);
     }
   };
 
+  const handleRemoveExcludedDate = (date) => {
+    setExcludedDates(excludedDates.filter(d => d !== date));
+  };
+  
+  const exportSalesData = () => {
+    const exportData = {
+      title: "Sales Analysis Report",
+      sections: [
+        {
+          title: "Retailer Distribution",
+          data: retailerData
+        },
+        {
+          title: "Product Distribution",
+          data: productDistribution
+        }
+      ]
+    };
+    exportToCSV(exportData, 'Sales_Analysis_Report');
+  };
+
+  // Apply date exclusions to the redemption data
   const filteredRedemptionsData = applyDateExclusions(redemptionsOverTime);
   
-  // Handle empty data
-  if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0 || !metrics) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-center">
-          <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No sales data available</h3>
-          <p className="mt-1 text-gray-500 dark:text-gray-400">Please upload an items_purchased.CSV file for sales data.</p>
+  // Custom tooltip component - with Array.isArray check
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && Array.isArray(payload) && payload.length) {
+      return (
+        <div className="bg-white dark:bg-gray-800 p-3 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</p>
+          {payload.map((entry, index) => (
+            <p key={index} className="text-sm text-gray-600 dark:text-gray-400">
+              <span className="inline-block w-3 h-3 mr-1 rounded-full" style={{ backgroundColor: entry.color }}></span>
+              {entry.name}: {entry.value.toLocaleString()}
+            </p>
+          ))}
         </div>
-      </div>
-    );
-  }
+      );
+    }
+    return null;
+  };
   
   // Format X-axis ticks for better display
   const formatXAxisTick = (value) => {
@@ -512,6 +334,21 @@ const SalesTab = ({ isSharedView = false }) => {
     if (dataLength <= 180) return 9; // Show every 10th tick
     return 14; // Show every 15th tick for large datasets
   };
+  
+  // Handle empty data
+  if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0 || !metrics) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-center">
+          <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No sales data available</h3>
+          <p className="mt-1 text-gray-500 dark:text-gray-400">Please upload an items_purchased.CSV file for sales data.</p>
+        </div>
+      </div>
+    );
+  }
       
   return (
     <div>

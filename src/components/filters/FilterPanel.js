@@ -1,17 +1,19 @@
-// src/components/filters/FilterPanel.js
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
 import ClientNameEditor from '../dashboard/ClientNameEditor';
-
+import { useDateHandling } from '../../hooks/useDateHandling';
+import { useBrandDetection } from '../../hooks/useBrandDetection';
 /**
  * FilterPanel component for filtering data across all tabs
  */
 const FilterPanel = ({ activeTab }) => {
   const { darkMode } = useTheme();
+  const { formatMonth } = useDateHandling();
+  const { getProductDisplayName } = useBrandDetection();
   
   // Use DataContext directly instead of custom hooks for now
-  const { 
+  const {
     salesData,
     offerData,
     hasData,
@@ -32,8 +34,7 @@ const FilterPanel = ({ activeTab }) => {
     brandMapping = {}, // Import the brandMapping
     handleProductSelection,
     handleRetailerSelection,
-    getAvailableMonths,
-    formatMonth
+    getAvailableMonths
   } = useData();
   
   // Since we're having issues with the collapsing functionality from the context,
@@ -56,24 +57,6 @@ const FilterPanel = ({ activeTab }) => {
     }
   };
   
-  // Helper function to get display name without brand prefix
-  const getProductDisplayName = (product) => {
-    // Use the brand mapping if available
-    if (brandMapping && brandMapping[product]) {
-      return brandMapping[product].displayName || product;
-    }
-    
-    // Fallback: Remove the brand prefix (first word or two)
-    const words = product.split(' ');
-    if (words.length >= 3) {
-      // Remove first word or two words for longer product names
-      const wordsToRemove = words.length >= 5 ? 2 : 1;
-      return words.slice(wordsToRemove).join(' ');
-    }
-    
-    return product;
-  };
-  
   // Available retailers from data
   const availableRetailers = [...new Set(
     (salesData || [])
@@ -88,6 +71,12 @@ const FilterPanel = ({ activeTab }) => {
       .filter(Boolean)
   )].sort();
 
+  // Map product names to their display names
+  const displayProducts = availableProducts.map(product => ({
+    id: product,
+    displayName: getProductDisplayName(product)
+  }));
+  
   // If no data is available, don't show the filter panel
   if (!hasData) {
     return null;

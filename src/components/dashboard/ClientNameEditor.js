@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useBrandDetection } from '../../hooks/useBrandDetection';
 
 /**
  * Component for editing the client name
@@ -12,6 +13,7 @@ const ClientNameEditor = () => {
   
   const [isEditing, setIsEditing] = useState(false);
   const [tempClientName, setTempClientName] = useState(clientName);
+  const { getProductsByBrand } = useBrandDetection();
   
   // Handle edit button click
   const handleEditClick = () => {

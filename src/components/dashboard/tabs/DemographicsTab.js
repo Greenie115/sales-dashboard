@@ -3,7 +3,10 @@ import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { useClientData } from '../../../context/ClientDataContext';
-import { useThemeColors, useExport } from '../../../hooks';
+import { useExport } from '../../../hooks/useExport';
+import { useDateHandling } from '../../../hooks/useDateHandling';
+import { useFormattedData } from '../../../hooks/useFormattedData';
+import { useThemeColors } from '../../../hooks';
 import _ from 'lodash';
 
 // Define the preferred sorting order for age groups
@@ -22,6 +25,8 @@ const DemographicsTab = ({ isSharedView }) => {
   const { darkMode } = useTheme();
   const { colors } = useThemeColors();
   const { exportToCSV } = useExport();
+  const { formatDate } = useDateHandling();
+  const { formatPercentage, formatNumber } = useFormattedData();
   
   // Use client data or main data context based on isSharedView
   const clientData = useClientData();
@@ -331,7 +336,6 @@ const DemographicsTab = ({ isSharedView }) => {
   // Export data to CSV using the useExport hook
   const exportDemographicsData = () => {
     if (selectedQuestionNumber && responseData.length > 0) {
-      // Create data structure for export
       const exportData = {
         title: `Question ${parseInt(selectedQuestionNumber)} Responses Analysis`,
         sections: [
@@ -370,7 +374,6 @@ const DemographicsTab = ({ isSharedView }) => {
         });
       }
       
-      // Export to CSV
       exportToCSV(exportData, `Question_${selectedQuestionNumber}_Analysis`);
     }
   };
