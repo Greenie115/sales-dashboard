@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
-import { useTheme } from '../../../context/ThemeContext'; // ← Add this import
+import { useTheme } from '../../../context/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { useClientData } from '../../../context/ClientDataContext';
+import { useThemeColors, useExport } from '../../../hooks';
 import _ from 'lodash';
-
-// Custom colors for light and dark mode
-const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
-const DARK_COLORS = ['#FF4D94', '#4D94FF', '#FFD54F', '#4DD0E1', '#CE93D8', '#81C784', '#FFB74D'];
 
 // Define the preferred sorting order for age groups
 const AGE_GROUP_ORDER = [
@@ -20,39 +17,22 @@ const AGE_GROUP_ORDER = [
   'Under 18'
 ];
 
-// Custom tooltip for bar charts with dark mode support
-const CustomTooltip = ({ active, payload, label }) => {
-  // Get darkMode from ThemeContext, not DataContext
-  const { darkMode } = useTheme();
-  
-  if (active && payload && payload.length) {
-    return (
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} p-3 border shadow-md rounded`}>
-        <p className={`text-sm font-medium ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{`${label}`}</p>
-        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{`Count: ${payload[0].value}`}</p>
-        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{`Percentage: ${((payload[0].value / payload[0].payload.total) * 100).toFixed(1)}%`}</p>
-      </div>
-    );
-  }
-  return null;
-};
-
 const DemographicsTab = ({ isSharedView }) => {
-  // Get data from either ClientDataContext or DataContext
+  // Use hooks for theme and colors
+  const { darkMode } = useTheme();
+  const { colors } = useThemeColors();
+  const { exportToCSV } = useExport();
+  
+  // Use client data or main data context based on isSharedView
   const clientData = useClientData();
   const dataContext = useData();
   const contextData = isSharedView ? clientData : dataContext;
+  
+  // Get data from context
   const { 
     salesData,
     filteredData: directFilteredData
   } = contextData;
-  
-  const { darkMode } = useTheme();
-  
-  // Use direct data in shared view
-  // const dataToUse = isSharedView && directFilteredData ? directFilteredData : salesData;
-
-  // const hiddenCharts = isSharedView && clientData?.hiddenCharts ? clientData.hiddenCharts : [];
   
   // Use refs to track component mounting state
   const isMounted = useRef(true);
@@ -67,7 +47,6 @@ const DemographicsTab = ({ isSharedView }) => {
   const [responseData, setResponseData] = useState([]);
   const [selectedResponses, setSelectedResponses] = useState([]);
   const [questions, setQuestions] = useState([]);
-  
   
   // Extract questions from data
   useEffect(() => {
@@ -136,127 +115,122 @@ const DemographicsTab = ({ isSharedView }) => {
   
  // Process demographic data when responses are selected
  useEffect(() => {
-  // Skip if unmounted
-  if (!isMounted.current) return;
-  
-  // Only process if we have selected responses and survey data
-  if (selectedResponses.length > 0 && salesData && salesData.length > 0) {
-    // Set processing flag to true
-    setIsProcessingDemographics(true);
+    // Skip if unmounted
+    if (!isMounted.current) return;
     
-    // Use setTimeout to ensure React has time to render the loading state
-    setTimeout(() => {
-      // Skip if component unmounted during timeout
-      if (!isMounted.current) return;
+    // Only process if we have selected responses and survey data
+    if (selectedResponses.length > 0 && salesData && salesData.length > 0) {
+      // Set processing flag to true
+      setIsProcessingDemographics(true);
       
-      try {
-        // Get selected response text values
-        const selectedResponseValues = selectedResponses.map(r => r.fullResponse);
-        const propKey = `proposition_${selectedQuestionNumber}`;
-        
-        // Filter survey data for rows containing ANY of the selected responses
-        // Modified to check if any of the selected responses are present in each comma-separated response
-        const filteredData = salesData.filter(row => {
-          const responseStr = row[propKey];
-          if (!responseStr) return false;
-          
-          // Split by semicolon if it's a multiple-choice response 
-          const responses = responseStr.split(';').map(r => r.trim());
-          
-          // Check if any of the selected responses are in this row's responses
-          return responses.some(resp => selectedResponseValues.includes(resp));
-        });
-        
-        // Gender breakdown
-        const genderCounts = {};
-        filteredData.forEach(row => {
-          const gender = row.gender || 'Not Specified';
-          genderCounts[gender] = (genderCounts[gender] || 0) + 1;
-        });
-        
-        const totalGender = Object.values(genderCounts).reduce((sum, count) => sum + count, 0);
-        
-        const genderData = Object.entries(genderCounts).map(([name, value]) => ({
-          name,
-          value,
-          total: totalGender,
-          percentage: ((value / totalGender) * 100).toFixed(1)
-        }));
-      
-        // Age breakdown
-        const ageCounts = {};
-        filteredData.forEach(row => {
-          // Log a sample row to debug data structure
-          if (!window.loggedSampleRow) {
-            window.loggedSampleRow = true;
-          }
-          
-          const age = row.age_group || 'Not Specified';
-          let ageGroup = age;
-          
-          // If the age is a number, convert it to a group
-          if (age && !isNaN(age)) {
-            const ageNum = parseInt(age, 10);
-            if (ageNum < 18) ageGroup = 'Under 18';
-            else if (ageNum < 25) ageGroup = '18-24';
-            else if (ageNum < 35) ageGroup = '25-34';
-            else if (ageNum < 45) ageGroup = '35-44';
-            else if (ageNum < 55) ageGroup = '45-54';
-            else if (ageNum < 65) ageGroup = '55-64';
-            else ageGroup = '65+';
-          }
-          
-          ageCounts[ageGroup] = (ageCounts[ageGroup] || 0) + 1;
-        });
-        
-        const totalAge = Object.values(ageCounts).reduce((sum, count) => sum + count, 0);
-        
-        const ageData = Object.entries(ageCounts).map(([name, value]) => ({
-          name,
-          value,
-          total: totalAge,
-          percentage: ((value / totalAge) * 100).toFixed(1)
-        }));
-        
-        // Sort age groups in a logical order if possible
-        ageData.sort((a, b) => {
-          const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
-          const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
-          
-          if (aIndex !== -1 && bIndex !== -1) {
-            return aIndex - bIndex;
-          }
-          
-          if (aIndex !== -1) return -1;
-          if (bIndex !== -1) return 1;
-          
-          return a.name.localeCompare(b.name);
-        });
-              
-        // Skip update if component unmounted
+      // Use setTimeout to ensure React has time to render the loading state
+      setTimeout(() => {
+        // Skip if component unmounted during timeout
         if (!isMounted.current) return;
         
-        // First update the data
-        setResponseByGender(genderData);
-        setResponseByAge(ageData);
+        try {
+          // Get selected response text values
+          const selectedResponseValues = selectedResponses.map(r => r.fullResponse);
+          const propKey = `proposition_${selectedQuestionNumber}`;
+          
+          // Filter survey data for rows containing ANY of the selected responses
+          // Modified to check if any of the selected responses are present in each comma-separated response
+          const filteredData = salesData.filter(row => {
+            const responseStr = row[propKey];
+            if (!responseStr) return false;
+            
+            // Split by semicolon if it's a multiple-choice response 
+            const responses = responseStr.split(';').map(r => r.trim());
+            
+            // Check if any of the selected responses are in this row's responses
+            return responses.some(resp => selectedResponseValues.includes(resp));
+          });
+          
+          // Gender breakdown
+          const genderCounts = {};
+          filteredData.forEach(row => {
+            const gender = row.gender || 'Not Specified';
+            genderCounts[gender] = (genderCounts[gender] || 0) + 1;
+          });
+          
+          const totalGender = Object.values(genderCounts).reduce((sum, count) => sum + count, 0);
+          
+          const genderData = Object.entries(genderCounts).map(([name, value]) => ({
+            name,
+            value,
+            total: totalGender,
+            percentage: ((value / totalGender) * 100).toFixed(1)
+          }));
         
-        // Then remove processing flag to show the data
-        setIsProcessingDemographics(false);
-      } catch (error) {
-        console.error("Error processing demographic data:", error);
-        // Reset processing flag even on error
-        if (isMounted.current) {
+          // Age breakdown
+          const ageCounts = {};
+          filteredData.forEach(row => {
+            const age = row.age_group || 'Not Specified';
+            let ageGroup = age;
+            
+            // If the age is a number, convert it to a group
+            if (age && !isNaN(age)) {
+              const ageNum = parseInt(age, 10);
+              if (ageNum < 18) ageGroup = 'Under 18';
+              else if (ageNum < 25) ageGroup = '18-24';
+              else if (ageNum < 35) ageGroup = '25-34';
+              else if (ageNum < 45) ageGroup = '35-44';
+              else if (ageNum < 55) ageGroup = '45-54';
+              else if (ageNum < 65) ageGroup = '55-64';
+              else ageGroup = '65+';
+            }
+            
+            ageCounts[ageGroup] = (ageCounts[ageGroup] || 0) + 1;
+          });
+          
+          const totalAge = Object.values(ageCounts).reduce((sum, count) => sum + count, 0);
+          
+          const ageData = Object.entries(ageCounts).map(([name, value]) => ({
+            name,
+            value,
+            total: totalAge,
+            percentage: ((value / totalAge) * 100).toFixed(1)
+          }));
+          
+          // Sort age groups in a logical order if possible
+          ageData.sort((a, b) => {
+            const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
+            const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
+            
+            if (aIndex !== -1 && bIndex !== -1) {
+              return aIndex - bIndex;
+            }
+            
+            if (aIndex !== -1) return -1;
+            if (bIndex !== -1) return 1;
+            
+            return a.name.localeCompare(b.name);
+          });
+                
+          // Skip update if component unmounted
+          if (!isMounted.current) return;
+          
+          // First update the data
+          setResponseByGender(genderData);
+          setResponseByAge(ageData);
+          
+          // Then remove processing flag to show the data
           setIsProcessingDemographics(false);
+        } catch (error) {
+          console.error("Error processing demographic data:", error);
+          // Reset processing flag even on error
+          if (isMounted.current) {
+            setIsProcessingDemographics(false);
+          }
         }
-      }
-    }, 100); // Short delay to ensure state updates properly
-  } else if (selectedResponses.length === 0) {
-    // Only clear if no responses are selected
-    setResponseByGender([]);
-    setResponseByAge([]);
-    setIsProcessingDemographics(false);
-  }
-}, [selectedResponses, salesData, selectedQuestionNumber]);
+      }, 100); // Short delay to ensure state updates properly
+    } else if (selectedResponses.length === 0) {
+      // Only clear if no responses are selected
+      setResponseByGender([]);
+      setResponseByAge([]);
+      setIsProcessingDemographics(false);
+    }
+  }, [selectedResponses, salesData, selectedQuestionNumber]);
 
   // Handle user changing the selected question
   const handleQuestionChange = (e) => {
@@ -354,51 +328,74 @@ const DemographicsTab = ({ isSharedView }) => {
     }
   };
 
-  // Export data to CSV
-  const exportToCSV = () => {
+  // Export data to CSV using the useExport hook
+  const exportDemographicsData = () => {
     if (selectedQuestionNumber && responseData.length > 0) {
-      // Create CSV content
-      let csvContent = 'Response,Count,Percentage\n';
-      
-      responseData.forEach(item => {
-        csvContent += `"${item.fullResponse}",${item.count},${item.percentage}%\n`;
-      });
+      // Create data structure for export
+      const exportData = {
+        title: `Question ${parseInt(selectedQuestionNumber)} Responses Analysis`,
+        sections: [
+          {
+            title: 'Response Distribution',
+            data: responseData.map(item => ({
+              Response: item.fullResponse,
+              Count: item.count,
+              Percentage: `${item.percentage}%`
+            }))
+          }
+        ]
+      };
       
       // Add gender breakdown if available
       if (selectedResponses.length > 0 && responseByGender.length > 0) {
-        csvContent += '\nGender Breakdown\n';
-        csvContent += 'Gender,Count,Percentage\n';
-        
-        const total = responseByGender.reduce((sum, item) => sum + item.value, 0);
-        responseByGender.forEach(item => {
-          const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
-          csvContent += `"${item.name}",${item.value},${percentage}%\n`;
+        exportData.sections.push({
+          title: 'Gender Distribution',
+          data: responseByGender.map(item => ({
+            Gender: item.name,
+            Count: item.value,
+            Percentage: `${item.percentage}%`
+          }))
         });
       }
       
       // Add age breakdown if available
       if (selectedResponses.length > 0 && responseByAge.length > 0) {
-        csvContent += '\nAge Breakdown\n';
-        csvContent += 'Age Group,Count,Percentage\n';
-        
-        const total = responseByAge.reduce((sum, item) => sum + item.value, 0);
-        responseByAge.forEach(item => {
-          const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
-          csvContent += `"${item.name}",${item.value},${percentage}%\n`;
+        exportData.sections.push({
+          title: 'Age Distribution',
+          data: responseByAge.map(item => ({
+            'Age Group': item.name,
+            Count: item.value,
+            Percentage: `${item.percentage}%`
+          }))
         });
       }
       
-      // Create download link
-      const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `Question_${selectedQuestionNumber}_Responses.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Export to CSV
+      exportToCSV(exportData, `Question_${selectedQuestionNumber}_Analysis`);
     }
   };
-  
+
+  // Custom tooltip for charts with dark mode support
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className={`bg-white dark:bg-gray-800 p-3 shadow-md rounded-md border border-gray-200 dark:border-gray-700`}>
+          <p className="text-sm font-medium text-gray-900 dark:text-white">{`${label}`}</p>
+          {payload.map((entry, index) => (
+            <p key={index} className="text-sm text-gray-600 dark:text-gray-300">
+              <span className="inline-block w-3 h-3 mr-1 rounded-full" style={{ backgroundColor: entry.color }}></span>
+              {entry.name}: {entry.value.toLocaleString()}
+            </p>
+          ))}
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {`Percentage: ${((payload[0].value / payload[0].payload.total) * 100).toFixed(1)}%`}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   // If no data or no questions, show empty state
   if (!salesData || salesData.length === 0 || availableQuestions.length === 0) {
     return (
@@ -417,9 +414,9 @@ const DemographicsTab = ({ isSharedView }) => {
   return (
     <div className={`demographics-tab p-4 ${darkMode ? 'bg-gray-900 text-white' : ''}`}>
       <div className="flex justify-between items-center mb-6">
-        <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : ''}`}>Demographics Insights</h2>
+        <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Demographics Insights</h2>
         <button
-          onClick={exportToCSV}
+          onClick={exportDemographicsData}
           className="flex items-center px-4 py-2 text-sm font-medium text-white bg-pink-600 hover:bg-pink-700 rounded-md shadow-sm"
         >
           <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -447,7 +444,6 @@ const DemographicsTab = ({ isSharedView }) => {
               boxShadow: darkMode ? 'none' : undefined
             }}
           >
-            {/* Add dark mode styling to option elements */}
             <option value="" className={darkMode ? 'bg-gray-700 text-white' : ''}>Select a question</option>
             {questions.map(q => (
               <option 
@@ -500,9 +496,7 @@ const DemographicsTab = ({ isSharedView }) => {
                             <div 
                               className="w-4 h-4 rounded-full mr-3" 
                               style={{ 
-                                backgroundColor: darkMode 
-                                  ? DARK_COLORS[index % DARK_COLORS.length] 
-                                  : LIGHT_COLORS[index % LIGHT_COLORS.length] 
+                                backgroundColor: colors.colorPalette[index % colors.colorPalette.length] 
                               }}
                             ></div>
                             <span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -548,26 +542,28 @@ const DemographicsTab = ({ isSharedView }) => {
                             >
                               <CartesianGrid 
                                 strokeDasharray="3 3" 
-                                stroke={darkMode ? '#444444' : '#e5e5e5'} 
+                                stroke={darkMode ? colors.gridColor : colors.gridColor} 
                               />
                               <XAxis 
                                 dataKey="name" 
-                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
-                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                                tick={{ fill: darkMode ? colors.textSecondary : colors.textSecondary }}
+                                axisLine={{ stroke: darkMode ? colors.axisColor : colors.axisColor }}
                               />
                               <YAxis 
-                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
-                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                                tick={{ fill: darkMode ? colors.textSecondary : colors.textSecondary }}
+                                axisLine={{ stroke: darkMode ? colors.axisColor : colors.axisColor }}
                               />
                               <Tooltip content={<CustomTooltip />} />
                               <Legend 
-                                wrapperStyle={{ color: darkMode ? '#e5e5e5' : '#333333' }} 
+                                wrapperStyle={{ color: darkMode ? colors.textSecondary : colors.textSecondary }} 
                               />
                               <Bar dataKey="value" name="Count">
                                 {responseByGender.map((entry, index) => (
                                   <Cell 
                                     key={`cell-${index}`} 
-                                    fill={darkMode ? DARK_COLORS[index % DARK_COLORS.length] : LIGHT_COLORS[index % LIGHT_COLORS.length]} 
+                                    fill={colors.colorPalette[index % colors.colorPalette.length]} 
+                                    stroke={darkMode ? "#374151" : "#fff"}
+                                    strokeWidth={1}
                                   />
                                 ))}
                               </Bar>
@@ -598,9 +594,7 @@ const DemographicsTab = ({ isSharedView }) => {
                                           <div 
                                             className="h-3 w-3 rounded-full mr-2" 
                                             style={{ 
-                                              backgroundColor: darkMode 
-                                                ? DARK_COLORS[index % DARK_COLORS.length] 
-                                                : LIGHT_COLORS[index % LIGHT_COLORS.length] 
+                                              backgroundColor: colors.colorPalette[index % colors.colorPalette.length] 
                                             }}
                                           ></div>
                                           {item.name}
@@ -633,26 +627,28 @@ const DemographicsTab = ({ isSharedView }) => {
                             >
                               <CartesianGrid 
                                 strokeDasharray="3 3" 
-                                stroke={darkMode ? '#444444' : '#e5e5e5'} 
+                                stroke={darkMode ? colors.gridColor : colors.gridColor} 
                               />
                               <XAxis 
                                 dataKey="name" 
-                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
-                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                                tick={{ fill: darkMode ? colors.textSecondary : colors.textSecondary }}
+                                axisLine={{ stroke: darkMode ? colors.axisColor : colors.axisColor }}
                               />
                               <YAxis 
-                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
-                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                                tick={{ fill: darkMode ? colors.textSecondary : colors.textSecondary }}
+                                axisLine={{ stroke: darkMode ? colors.axisColor : colors.axisColor }}
                               />
                               <Tooltip content={<CustomTooltip />} />
                               <Legend 
-                                wrapperStyle={{ color: darkMode ? '#e5e5e5' : '#333333' }} 
+                                wrapperStyle={{ color: darkMode ? colors.textSecondary : colors.textSecondary }} 
                               />
                               <Bar dataKey="value" name="Count">
                                 {responseByAge.map((entry, index) => (
                                   <Cell 
                                     key={`cell-${index}`} 
-                                    fill={darkMode ? DARK_COLORS[(index + 4) % DARK_COLORS.length] : LIGHT_COLORS[(index + 4) % LIGHT_COLORS.length]} 
+                                    fill={colors.colorPalette[(index + 4) % colors.colorPalette.length]} 
+                                    stroke={darkMode ? "#374151" : "#fff"}
+                                    strokeWidth={1}
                                   />
                                 ))}
                               </Bar>
@@ -683,9 +679,7 @@ const DemographicsTab = ({ isSharedView }) => {
                                           <div 
                                             className="h-3 w-3 rounded-full mr-2" 
                                             style={{ 
-                                              backgroundColor: darkMode 
-                                                ? DARK_COLORS[(index + 4) % DARK_COLORS.length] 
-                                                : LIGHT_COLORS[(index + 4) % LIGHT_COLORS.length] 
+                                              backgroundColor: colors.colorPalette[(index + 4) % colors.colorPalette.length] 
                                             }}
                                           ></div>
                                           {item.name}
