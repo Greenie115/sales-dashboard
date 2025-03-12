@@ -11,11 +11,11 @@ import { useClientData } from '../../../context/ClientDataContext';
 import DateExclusionPanel from '../../filters/DateExclusionPanel';
 import _ from 'lodash';
 
-// Custom tooltip component
+// Custom tooltip component - FIXED with Array.isArray check
 const CustomTooltip = ({ active, payload, label }) => {
   const { darkMode } = useTheme();
   
-  if (active && payload && payload.length) {
+  if (active && payload && Array.isArray(payload) && payload.length) {
     return (
       <div className="bg-white dark:bg-gray-800 p-3 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
         <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</p>
@@ -143,8 +143,8 @@ const SalesTab = ({ isSharedView = false }) => {
         csvContent += `Average Per Day: ${metrics.avgRedemptionsPerDay}\n\n`;
       }
       
-      // Fixed: Use retailerData from useMemo below instead of retailerDataFromContext
-      if (retailerData && retailerData.length > 0) {
+      // FIXED: Use retailerData from useMemo that will be defined below
+      if (Array.isArray(retailerData) && retailerData.length > 0) {
         csvContent += 'Retailer Distribution\n';
         csvContent += 'Retailer,Units,Percentage\n';
         
@@ -156,7 +156,7 @@ const SalesTab = ({ isSharedView = false }) => {
       }
       
       // Add product distribution
-      if (productDistribution && productDistribution.length > 0) {
+      if (Array.isArray(productDistribution) && productDistribution.length > 0) {
         csvContent += 'Product Distribution\n';
         csvContent += 'Product,Units,Percentage\n';
         
@@ -168,7 +168,7 @@ const SalesTab = ({ isSharedView = false }) => {
       }
       
       // Add product distribution by retailer
-      if (filteredData && filteredData.length > 0 && productDistribution && productDistribution.length > 0) {
+      if (Array.isArray(filteredData) && filteredData.length > 0 && Array.isArray(productDistribution) && productDistribution.length > 0) {
         csvContent += 'Product Distribution by Retailer\n';
         
         // Process each product
@@ -212,7 +212,7 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   };
   
-  // Get retailer distribution - NOW THIS IS THE ONLY DECLARATION OF retailerData
+  // Get retailer distribution - THIS IS THE DEFINITION OF retailerData
   const retailerData = useMemo(() => {
     // If we already have retailer data from context, use it
     if (retailerDataFromContext && retailerDataFromContext.length > 0) {
@@ -220,7 +220,7 @@ const SalesTab = ({ isSharedView = false }) => {
     }
     
     // Otherwise calculate it
-    if (!filteredData || filteredData.length === 0) return [];
+    if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) return [];
     
     const groupedByRetailer = _.groupBy(filteredData, 'chain');
     const totalUnits = filteredData.length;
@@ -234,9 +234,9 @@ const SalesTab = ({ isSharedView = false }) => {
       .sort((a, b) => b.value - a.value);
   }, [filteredData, retailerDataFromContext]);
   
-  // Get product distribution
+  // Get product distribution - FIXED with Array.isArray checks
   const productDistribution = useMemo(() => {
-    if (!filteredData || filteredData.length === 0) return [];
+    if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) return [];
     
     try {
       const groupedByProduct = _.groupBy(filteredData, 'product_name');
@@ -245,7 +245,7 @@ const SalesTab = ({ isSharedView = false }) => {
       return Object.entries(groupedByProduct)
         .map(([product, items]) => {
           // Use the mapping to get display name if available
-          const productInfo = brandMapping[product] || { displayName: product };
+          const productInfo = brandMapping && typeof brandMapping === 'object' ? brandMapping[product] || { displayName: product } : { displayName: product };
           let displayName = productInfo.displayName || product;
           
           // Fallback: If display name is still the full product name, trim it
@@ -274,7 +274,7 @@ const SalesTab = ({ isSharedView = false }) => {
   
   // Get redemptions over time with improved time handling
   const redemptionsOverTime = useMemo(() => {
-    if (!filteredData || filteredData.length === 0) return [];
+    if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) return [];
     
     try {
       // Prepare date formatter
@@ -313,6 +313,8 @@ const SalesTab = ({ isSharedView = false }) => {
           .filter(item => item.receipt_date)
           .map(item => new Date(item.receipt_date))
           .filter(date => !isNaN(date.getTime()));
+        
+        if (dates.length === 0) return [];
         
         minDate = new Date(Math.min(...dates));
         maxDate = new Date(Math.max(...dates));
@@ -380,9 +382,9 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   }, [filteredData, redemptionTimeframe, dateRange, startDate, endDate]);
   
-  // Calculate trend line
+  // Calculate trend line - FIXED with more defensive checks
   const trendLineData = useMemo(() => {
-    if (!redemptionsOverTime || redemptionsOverTime.length < 7) return [];
+    if (!redemptionsOverTime || !Array.isArray(redemptionsOverTime) || redemptionsOverTime.length < 7) return [];
     
     try {
       const result = [];
@@ -436,7 +438,7 @@ const SalesTab = ({ isSharedView = false }) => {
   const filteredRedemptionsData = applyDateExclusions(redemptionsOverTime);
   
   // Handle empty data
-  if (!filteredData || filteredData.length === 0 || !metrics) {
+  if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0 || !metrics) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-center">
@@ -567,7 +569,7 @@ const SalesTab = ({ isSharedView = false }) => {
             <div>
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Date Range</h3>
               <p className="text-md font-medium text-green-600 dark:text-green-400">
-                {metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0 ? 
+                {metrics && metrics.uniqueDates && Array.isArray(metrics.uniqueDates) && metrics.uniqueDates.length > 0 ? 
                   `${formatDate(metrics.uniqueDates[0])} to ${formatDate(metrics.uniqueDates[metrics.uniqueDates.length - 1])}` :
                   "No date range"
                 }
@@ -595,7 +597,7 @@ const SalesTab = ({ isSharedView = false }) => {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={retailerData}
+                  data={Array.isArray(retailerData) ? retailerData : []}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
@@ -610,7 +612,7 @@ const SalesTab = ({ isSharedView = false }) => {
                   }
                   labelLine={false}
                 >
-                  {retailerData.map((entry, index) => (
+                  {Array.isArray(retailerData) && retailerData.map((entry, index) => (
                     <Cell 
                       key={`cell-${index}`} 
                       fill={colors.colorPalette[index % colors.colorPalette.length]}
@@ -653,7 +655,7 @@ const SalesTab = ({ isSharedView = false }) => {
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {retailerData.map((retailer, index) => (
+                {Array.isArray(retailerData) && retailerData.map((retailer, index) => (
                   <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -681,16 +683,16 @@ const SalesTab = ({ isSharedView = false }) => {
             </h3>
           </div>
           
-          {productDistribution && productDistribution.length > 0 ? (
+          {Array.isArray(productDistribution) && productDistribution.length > 0 ? (
             <>
               <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={productDistribution.slice(0, 10).map(item => ({
+                      data={Array.isArray(productDistribution) ? productDistribution.slice(0, 10).map(item => ({
                         ...item,
-                        name: item.displayName
-                      }))}
+                        name: item.displayName || item.name
+                      })) : []}
                       dataKey="count"
                       nameKey="name"
                       cx="50%"
@@ -701,11 +703,11 @@ const SalesTab = ({ isSharedView = false }) => {
                       onMouseEnter={(data, index) => setActiveProduct(index)}
                       onMouseLeave={() => setActiveProduct(null)}
                       label={({ name, percent }) => 
-                        percent > 0.05 ? `${name.length > 15 ? name.substring(0, 15) + '...' : name}: ${(percent * 100).toFixed(1)}%` : ''
+                        percent > 0.05 ? `${(name && name.length > 15) ? name.substring(0, 15) + '...' : name}: ${(percent * 100).toFixed(1)}%` : ''
                       }
                       labelLine={false}
                     >
-                      {productDistribution.slice(0, 10).map((entry, index) => (
+                      {Array.isArray(productDistribution) && productDistribution.slice(0, 10).map((entry, index) => (
                         <Cell 
                           key={`cell-${index}`} 
                           fill={colors.colorPalette[index % colors.colorPalette.length]}
@@ -730,7 +732,7 @@ const SalesTab = ({ isSharedView = false }) => {
                       onMouseLeave={() => setActiveProduct(null)}
                       formatter={(value, entry, index) => (
                         <span className={`text-sm ${activeProduct === index ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
-                          {value.length > 20 ? value.substring(0, 20) + '...' : value}
+                          {value && value.length > 20 ? value.substring(0, 20) + '...' : value}
                         </span>
                       )}
                     />
@@ -748,7 +750,7 @@ const SalesTab = ({ isSharedView = false }) => {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {productDistribution.slice(0, 10).map((product, index) => (
+                    {Array.isArray(productDistribution) && productDistribution.slice(0, 10).map((product, index) => (
                       <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
@@ -773,7 +775,7 @@ const SalesTab = ({ isSharedView = false }) => {
       </div>
       
    {/* Redemptions Over Time */}
-   {redemptionsOverTime && redemptionsOverTime.length > 0 ? (
+   {Array.isArray(redemptionsOverTime) && redemptionsOverTime.length > 0 ? (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white flex items-center mb-4 sm:mb-0">
@@ -854,7 +856,7 @@ const SalesTab = ({ isSharedView = false }) => {
                   dot={{ stroke: colors.primary, strokeWidth: 2, r: 4, fill: colors.tooltipBg }}
                   activeDot={{ stroke: colors.primary, strokeWidth: 2, r: 6, fill: colors.tooltipBg }}
                 />
-                {showTrendLine && trendLineData && Array.isArray(trendLineData) && trendLineData.some(item => item && item.trend !== null) && (
+                {showTrendLine && Array.isArray(trendLineData) && trendLineData.some(item => item && item.trend !== null) && (
                   <Line
                     type="monotone"
                     dataKey="trend"
@@ -901,6 +903,5 @@ const SalesTab = ({ isSharedView = false }) => {
     </div>
   );
 };
-
 
 export default SalesTab;

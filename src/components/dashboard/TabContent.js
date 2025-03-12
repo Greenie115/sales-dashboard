@@ -1,6 +1,6 @@
 // src/components/dashboard/TabContent.js
 import React from 'react';
-import { useDashboard } from '../../context/DashboardContext';
+import { useData } from '../../context/DataContext';
 
 // Import tab components
 import SummaryTab from './tabs/SummaryTab';
@@ -9,7 +9,8 @@ import DemographicsTab from './tabs/DemographicsTab';
 import OffersTab from './tabs/OffersTab';
 
 const TabContent = ({ activeTab, data, filteredData }) => {
-  const { state } = useDashboard();
+  // Use DataContext directly instead of DashboardContext
+  const dataContext = useData();
   
   // Render content based on active tab
   const renderTabContent = () => {

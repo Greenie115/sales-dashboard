@@ -39,6 +39,9 @@ export const DataProvider = ({ children }) => {
   // Active tab state
   const [activeTab, setActiveTab] = useState('summary');
 
+  // Added from FilterContext: Filter UI state
+  const [isFilterPanelCollapsed, setIsFilterPanelCollapsed] = useState(false);
+
   const [excludedDates, setExcludedDates] = useState(() => {
     const saved = localStorage.getItem('excludedDates');
     return saved ? JSON.parse(saved) : [];
@@ -482,6 +485,44 @@ export const DataProvider = ({ children }) => {
   // Check if we have data
   const hasData = salesData.length > 0 || hasOfferData;
 
+  // ============ Functions migrated from FilterContext =============
+  
+  // Toggle filter panel (from FilterContext)
+  const toggleFilterPanel = useCallback(() => {
+    setIsFilterPanelCollapsed(prev => !prev);
+  }, []);
+
+  // Format month for display (from FilterContext)
+  const formatMonth = useCallback((monthStr) => {
+    try {
+      if (!monthStr) return '';
+      const [year, month] = monthStr.split('-');
+      const date = new Date(parseInt(year), parseInt(month) - 1);
+      return date.toLocaleString('default', { month: 'long', year: 'numeric' });
+    } catch (e) {
+      return monthStr || '';
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('excludedDates', JSON.stringify(excludedDates));
+  }, [excludedDates]);
+
+  // Create the filter state object to expose to consumers (like FilterContext did)
+  const filters = {
+    selectedProducts,
+    selectedRetailers,
+    dateRange,
+    startDate,
+    endDate,
+    selectedMonth,
+    comparisonMode,
+    comparisonDateRange,
+    comparisonStartDate,
+    comparisonEndDate,
+    comparisonMonth
+  };
+
   // Context value - IMPORTANT: Include all functions and state!
   const value = {
     salesData,
@@ -539,11 +580,13 @@ export const DataProvider = ({ children }) => {
     setDarkMode,
     excludedDates,
     setExcludedDates,
+    
+    // FilterContext functionality
+    isFilterPanelCollapsed,
+    toggleFilterPanel,
+    formatMonth,
+    filters, // Expose filters object for backward compatibility
   };
-
-  useEffect(() => {
-    localStorage.setItem('excludedDates', JSON.stringify(excludedDates));
-  }, [excludedDates]);
 
   return (
     <DataContext.Provider value={value}>
