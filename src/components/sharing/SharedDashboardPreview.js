@@ -1,13 +1,18 @@
-import React, { useState }from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { ClientDataProvider } from '../../context/ClientDataContext';
+import { DataProvider } from '../../context/DataContext'; 
 import { useFormattedData } from '../../hooks/useFormattedData';
 import { useDateHandling } from '../../hooks/useDateHandling';
 import { useThemeColors } from '../../hooks/useThemeColors';
+import { useBrandDetection } from '../../hooks/useBrandDetection';
+import { useChartData } from '../../hooks/useChartData';
+import { useDashboardMetrics } from '../../hooks/useDashboardMetrics';
 import SummaryTab from '../dashboard/tabs/SummaryTab';
 import SalesTab from '../dashboard/tabs/SalesTab';
 import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
+import _ from 'lodash';
 
 /**
  * SharedDashboardPreview component displays a preview of how the shared dashboard will look
@@ -29,13 +34,16 @@ const SharedDashboardPreview = ({ config, onClose }) => {
     branding,
     precomputedData,
     metadata = {},
-    // Add this line to extract brand names
     brandNames = []
   } = config;
 
-  // Check if we have precomputed data
-  const hasData = precomputedData?.filteredData?.length > 0 || precomputedData?.salesData?.length > 0;
+  // Add debug logging to see what's coming in
+  useEffect(() => {
+    console.log('SharedDashboardPreview config:', config);
+    console.log('precomputedData received:', precomputedData);
+  }, [config, precomputedData]);
 
+  // Define excluded dates state
   const [excludedDates, setExcludedDates] = useState([]);
 
   const handleAddExcludedDate = (date) => {
@@ -50,11 +58,110 @@ const SharedDashboardPreview = ({ config, onClose }) => {
   const daysRemaining = expiryDate ?
     Math.ceil((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
 
-    const clientDisplayName = config.metadata?.clientName || 
-                         (config.precomputedData?.clientName) || 
-                         (config.precomputedData?.brandNames?.length > 0 ? 
-                           config.precomputedData.brandNames.join(', ') : 
-                           (config.brandNames?.length > 0 ? config.brandNames.join(', ') : 'Client'));
+  // Process data through hooks - ensure we have data to work with
+  // Add null checks and fallbacks everywhere
+  const salesData = useMemo(() => {
+    // Try to get salesData from different possible locations
+    return precomputedData?.salesData || 
+           precomputedData?.filteredData || 
+           precomputedData?.data || 
+           [];
+  }, [precomputedData]);
+
+  const productNames = useMemo(() => {
+    // Extract product names from salesData if not explicitly provided
+    if (precomputedData?.productNames) {
+      return precomputedData.productNames;
+    }
+    
+    if (salesData.length > 0) {
+      return _.uniq(salesData
+        .map(item => item.product_name)
+        .filter(Boolean));
+    }
+    
+    return [];
+  }, [precomputedData, salesData]);
+
+  // Apply hooks with proper validation
+  const { brandMapping, brandNames: detectedBrandNames } = useBrandDetection(productNames);
+  
+  const { retailerDistribution, productDistribution, getTimeSeriesData } = 
+    useChartData(salesData, brandMapping);
+    
+  const { metrics, getKeyInsights, getDemographicMetrics } = 
+    useDashboardMetrics(salesData);
+
+  // Log processed data for debugging
+  useEffect(() => {
+    console.log('Processed data from hooks:', {
+      salesData,
+      productNames,
+      brandMapping,
+      detectedBrandNames,
+      retailerDistribution,
+      productDistribution,
+      metrics
+    });
+  }, [salesData, productNames, brandMapping, detectedBrandNames, 
+      retailerDistribution, productDistribution, metrics]);
+
+  // Determine client display name
+  const clientDisplayName = useMemo(() => {
+    return config.metadata?.clientName || 
+      (precomputedData?.clientName) || 
+      (precomputedData?.brandNames?.length > 0 ? 
+        precomputedData.brandNames.join(', ') : 
+        (detectedBrandNames?.length > 0 ? 
+          detectedBrandNames.join(', ') : 
+          (brandNames?.length > 0 ? 
+            brandNames.join(', ') : 'Client')));
+  }, [config.metadata, precomputedData, detectedBrandNames, brandNames]);
+
+  // Enhance precomputed data with processed results from hooks
+  const enhancedData = useMemo(() => {
+    if (!precomputedData) {
+      console.warn('No precomputedData available to enhance');
+      return null;
+    }
+    
+    // Create enhanced data object with all the processed data
+    const enhanced = {
+      ...precomputedData,
+      // Ensure we have salesData
+      salesData: salesData.length > 0 ? salesData : precomputedData.salesData || [],
+      // Add all the processed data
+      metrics: metrics,
+      retailerDistribution: retailerDistribution,
+      productDistribution: productDistribution,
+      timeSeriesData: getTimeSeriesData('daily'),
+      weeklyData: getTimeSeriesData('weekly'),
+      monthlyData: getTimeSeriesData('monthly'),
+      keyInsights: getKeyInsights(),
+      demographicData: getDemographicMetrics(),
+      brandMapping: brandMapping,
+      brandNames: detectedBrandNames.length > 0 ? detectedBrandNames : brandNames
+    };
+    
+    console.log('Enhanced data created:', enhanced);
+    return enhanced;
+  }, [precomputedData, salesData, metrics, retailerDistribution, productDistribution, 
+      getTimeSeriesData, getKeyInsights, getDemographicMetrics, 
+      brandMapping, detectedBrandNames, brandNames]);
+
+  // Check if we have data - more thorough check
+  const hasData = useMemo(() => {
+    if (!enhancedData) return false;
+    
+    const hasValidData = 
+      (enhancedData.salesData && enhancedData.salesData.length > 0) ||
+      (enhancedData.filteredData && enhancedData.filteredData.length > 0) ||
+      (enhancedData.retailerDistribution && enhancedData.retailerDistribution.length > 0) ||
+      (enhancedData.productDistribution && enhancedData.productDistribution.length > 0);
+    
+    console.log('Data available:', hasValidData);
+    return hasValidData;
+  }, [enhancedData]);
 
   // Add watermark in preview mode
   const Watermark = () => (
@@ -65,19 +172,26 @@ const SharedDashboardPreview = ({ config, onClose }) => {
     </div>
   );
 
+  // Use this to ensure ClientDataProvider gets clientData
+  useEffect(() => {
+    if (enhancedData) {
+      console.log('ClientDataProvider will receive:', enhancedData);
+    }
+  }, [enhancedData]);
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
       <div className={`relative w-full h-full max-w-7xl max-h-[90vh] rounded-lg shadow-xl overflow-hidden flex flex-col ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
         {/* Client View Header */}
         <div className={`px-6 py-4 border-b flex justify-between items-center ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
           <div className="flex items-center">
-            {branding.showLogo && (
+            {branding?.showLogo && (
               <div
                 className="h-8 w-8 rounded-full mr-3 flex items-center justify-center"
                 style={{ backgroundColor: branding.primaryColor }}
               >
                 <span className="text-white font-bold">
-                  {branding.companyName.slice(0, 1)}
+                  {branding.companyName?.slice(0, 1) || 'C'}
                 </span>
               </div>
             )}
@@ -86,7 +200,7 @@ const SharedDashboardPreview = ({ config, onClose }) => {
                 {clientDisplayName} Dashboard
               </h1>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Shared by {branding.companyName}
+                Shared by {branding?.companyName || 'Company'}
               </p>
             </div>
           </div>
@@ -170,19 +284,23 @@ const SharedDashboardPreview = ({ config, onClose }) => {
                 </p>
               </div>
             ) : (
-              <ClientDataProvider clientData={precomputedData}>
-                {/* Show the correct tab content based on activeTab */}
-                {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
-                {activeTab === 'sales' && (
-                  <SalesTab 
-                    excludedDates={excludedDates}
-                    onAddDate={handleAddExcludedDate}
-                    onRemoveExcludedDate={handleRemoveExcludedDate} 
-                  />
-                )}
-                {activeTab === 'demographics' && <DemographicsTab isSharedView={true} />}
-                {activeTab === 'offers' && <OffersTab isSharedView={true} />}
-              </ClientDataProvider>
+              // Make sure we pass the enhanced data to the provider
+              <DataProvider data={enhancedData}>
+                <ClientDataProvider clientData={enhancedData}>
+                  {/* Show the correct tab content based on activeTab */}
+                  {activeTab === 'summary' && <SummaryTab isSharedView={true} directData={enhancedData} />}
+                  {activeTab === 'sales' && (
+                    <SalesTab 
+                      excludedDates={excludedDates}
+                      onAddDate={handleAddExcludedDate}
+                      onRemoveExcludedDate={handleRemoveExcludedDate}
+                      directData={enhancedData}
+                    />
+                  )}
+                  {activeTab === 'demographics' && <DemographicsTab isSharedView={true} directData={enhancedData} />}
+                  {activeTab === 'offers' && <OffersTab isSharedView={true} directData={enhancedData} />}
+                </ClientDataProvider>
+              </DataProvider>
             )}
           </div>
         </div>
@@ -191,7 +309,7 @@ const SharedDashboardPreview = ({ config, onClose }) => {
         <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-between items-center`}>
           <div className="flex items-center">
             <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              Shared with you by {branding.companyName}
+              Shared with you by {branding?.companyName || 'Company'}
             </span>
           </div>
         </div>

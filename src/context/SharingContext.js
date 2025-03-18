@@ -70,66 +70,88 @@ export const SharingProvider = ({ children }) => {
   const [sharedDashboards, setSharedDashboards] = useState([]);
   const [loadingSharedDashboards, setLoadingSharedDashboards] = useState(false);
 
-  const demographicData = {};
-
-// Check if we have sales data with demographic information
-if (Array.isArray(salesData) && salesData.length > 0) {
-  // Extract gender distribution if gender field exists
-  const genderGroups = _.groupBy(
-    salesData.filter(item => item.gender),
-    'gender'
-  );
-  
-  if (Object.keys(genderGroups).length > 0) {
-    demographicData.genderDistribution = Object.entries(genderGroups)
-      .map(([gender, items]) => ({
-        name: gender,
-        value: items.length,
-        percentage: (items.length / salesData.length) * 100
-      }))
-      .sort((a, b) => b.value - a.value);
-  }
-  
-  // Extract age distribution if age_group field exists
-  const ageGroups = _.groupBy(
-    salesData.filter(item => item.age_group),
-    'age_group'
-  );
-  
-  if (Object.keys(ageGroups).length > 0) {
-    demographicData.ageDistribution = Object.entries(ageGroups)
-      .map(([ageGroup, items]) => ({
-        ageGroup,
-        count: items.length,
-        percentage: (items.length / salesData.length) * 100
-      }))
-      .sort((a, b) => b.count - a.count);
-  }
-  
-  // Check for question fields
-  const questionFields = [];
-  const sampleRow = salesData[0];
-  
-  if (sampleRow) {
-    for (let i = 1; i <= 10; i++) {
-      const paddedNum = i.toString().padStart(2, '0');
-      const questionKey = `question_${paddedNum}`;
-      const propKey = `proposition_${paddedNum}`;
-      
-      if (sampleRow[questionKey] !== undefined || sampleRow[propKey] !== undefined) {
-        questionFields.push({
-          number: paddedNum,
-          questionKey,
-          propKey
-        });
+  // Generate demographic data
+  const generateDemographicData = useCallback(() => {
+    if (!Array.isArray(salesData) || salesData.length === 0) {
+      return {};
+    }
+    
+    // Extract gender distribution if gender field exists
+    const genderGroups = _.groupBy(
+      salesData.filter(item => item.gender),
+      'gender'
+    );
+    
+    const genderDistribution = Object.keys(genderGroups).length > 0 
+      ? Object.entries(genderGroups)
+          .map(([gender, items]) => ({
+            name: gender,
+            value: items.length,
+            percentage: (items.length / salesData.length) * 100
+          }))
+          .sort((a, b) => b.value - a.value)
+      : [];
+    
+    // Extract age distribution if age_group field exists
+    const ageGroups = _.groupBy(
+      salesData.filter(item => item.age_group),
+      'age_group'
+    );
+    
+    const ageDistribution = Object.keys(ageGroups).length > 0
+      ? Object.entries(ageGroups)
+          .map(([ageGroup, items]) => ({
+            ageGroup,
+            count: items.length,
+            percentage: (items.length / salesData.length) * 100
+          }))
+          .sort((a, b) => b.count - a.count)
+      : [];
+    
+    // Check for question fields
+    const questionFields = [];
+    const sampleRow = salesData[0];
+    
+    if (sampleRow) {
+      for (let i = 1; i <= 10; i++) {
+        const paddedNum = i.toString().padStart(2, '0');
+        const questionKey = `question_${paddedNum}`;
+        const propKey = `proposition_${paddedNum}`;
+        
+        if (sampleRow[questionKey] !== undefined || sampleRow[propKey] !== undefined) {
+          questionFields.push({
+            number: paddedNum,
+            questionKey,
+            propKey
+          });
+        }
       }
     }
     
-    if (questionFields.length > 0) {
-      demographicData.availableQuestions = questionFields.map(q => q.number);
-    }
-  }
-}
+    // Process survey questions to get available questions and question texts
+    const availableQuestions = questionFields.map(q => q.number);
+    const questionTexts = {};
+    
+    questionFields.forEach(field => {
+      const questionEntry = salesData.find(
+        row => row[field.questionKey] && row[field.questionKey].trim() !== ''
+      );
+      
+      if (questionEntry) {
+        questionTexts[field.number] = questionEntry[field.questionKey];
+      } else {
+        questionTexts[field.number] = `Question ${parseInt(field.number)}`;
+      }
+    });
+    
+    return {
+      genderDistribution,
+      ageDistribution,
+      availableQuestions,
+      questionTexts,
+      questionFields
+    };
+  }, [salesData]);
 
   // Initialize share config when modal opens
   useEffect(() => {
@@ -252,7 +274,7 @@ if (Array.isArray(salesData) && salesData.length > 0) {
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
       
-      // Process survey data if needed
+      // Process survey data with complete dataset
       const surveyData = getSurveyResponseData(salesData, configToShare.filters, getFilteredData);
       
       // Precompute data for the client view - safely call these functions
@@ -269,10 +291,11 @@ if (Array.isArray(salesData) && salesData.length > 0) {
         brandNames: brandNames || [],
         clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
         
-        // IMPORTANT: Include the full sales data instead of a slice
+        // CRITICAL FIX: Include complete salesData, not just a subset
+        // The problem was likely that we were only including a slice of the first 1000 records
         salesData: salesData,
         
-        // Add the survey data for demographics
+        // Add the survey data for demographics with complete dataset
         surveyData: surveyData
       };
       
@@ -387,6 +410,13 @@ if (Array.isArray(salesData) && salesData.length > 0) {
         });
       }
       
+      // Ensure demographic data is properly transferred
+      if (!clientData.demographicData && data.demographicData) {
+        clientData.demographicData = {...data.demographicData};
+      } else if (!clientData.demographicData && clientData.precomputedData?.demographicData) {
+        clientData.demographicData = {...clientData.precomputedData.demographicData};
+      }
+      
       return clientData;
     } catch (err) {
       console.error('Error in transformDataForSharing:', err);
@@ -420,6 +450,145 @@ if (Array.isArray(salesData) && salesData.length > 0) {
     // Create a copy of the current shareConfig
     const previewConfig = { ...shareConfig };
     
+    // Process survey/demographic data
+    const processSurveyData = () => {
+      // Helper to check if we have survey data in the sales data
+      const hasSurveyData = salesData && salesData.some(row => {
+        // Check for any question_ fields
+        return Object.keys(row).some(key => key.startsWith('question_') || key.startsWith('proposition_'));
+      });
+      
+      if (!hasSurveyData) return null;
+      
+      try {
+        // Create survey data structure
+        const surveyData = {
+          questions: {}
+        };
+        
+        // Find all available questions
+        const availableQuestions = [];
+        
+        // Check what fields are in the data
+        if (salesData && salesData.length > 0) {
+          const sampleRow = salesData[0];
+          
+          // Look for question fields
+          for (let i = 1; i <= 10; i++) {
+            const paddedNum = i.toString().padStart(2, '0');
+            const questionKey = `question_${paddedNum}`;
+            const propKey = `proposition_${paddedNum}`;
+            
+            if (sampleRow[questionKey] !== undefined || sampleRow[propKey] !== undefined) {
+              availableQuestions.push(paddedNum);
+            }
+          }
+        }
+        
+        // Process each available question
+        availableQuestions.forEach(questionNum => {
+          const questionKey = `question_${questionNum}`;
+          const propKey = `proposition_${questionNum}`;
+          
+          // Get question text
+          let questionText = `Question ${parseInt(questionNum)}`;
+          const questionRow = salesData.find(row => row[questionKey] && row[questionKey].trim() !== '');
+          if (questionRow) {
+            questionText = questionRow[questionKey];
+          }
+          
+          // Count responses
+          const validResponses = salesData.filter(row => 
+            row[propKey] && row[propKey].trim() !== ''
+          );
+          
+          const responseCounts = {};
+          let totalResponses = 0;
+          
+          validResponses.forEach(row => {
+            const responseStr = row[propKey];
+            if (!responseStr) return;
+            
+            // Split by semicolon if it's a multiple-choice response
+            const responses = responseStr.split(';').map(r => r.trim());
+            
+            responses.forEach(response => {
+              if (response) {
+                responseCounts[response] = (responseCounts[response] || 0) + 1;
+                totalResponses++;
+              }
+            });
+          });
+          
+          // Get demographics for each response
+          const demographics = {
+            gender: {},
+            age: {}
+          };
+          
+          // Process gender breakdown
+          const genders = _.uniq(salesData.filter(row => row.gender).map(row => row.gender));
+          genders.forEach(gender => {
+            const genderRows = salesData.filter(row => row.gender === gender);
+            
+            demographics.gender[gender] = {
+              total: genderRows.length,
+              responseBreakdown: {}
+            };
+            
+            // Count responses by gender
+            Object.keys(responseCounts).forEach(response => {
+              demographics.gender[gender].responseBreakdown[response] = genderRows.filter(row => {
+                const responseStr = row[propKey];
+                if (!responseStr) return false;
+                
+                const responses = responseStr.split(';').map(r => r.trim());
+                return responses.includes(response);
+              }).length;
+            });
+          });
+          
+          // Process age breakdown
+          const ageGroups = _.uniq(salesData.filter(row => row.age_group).map(row => row.age_group));
+          ageGroups.forEach(ageGroup => {
+            const ageRows = salesData.filter(row => row.age_group === ageGroup);
+            
+            demographics.age[ageGroup] = {
+              total: ageRows.length,
+              responseBreakdown: {}
+            };
+            
+            // Count responses by age
+            Object.keys(responseCounts).forEach(response => {
+              demographics.age[ageGroup].responseBreakdown[response] = ageRows.filter(row => {
+                const responseStr = row[propKey];
+                if (!responseStr) return false;
+                
+                const responses = responseStr.split(';').map(r => r.trim());
+                return responses.includes(response);
+              }).length;
+            });
+          });
+          
+          // Add to survey data
+          surveyData.questions[questionNum] = {
+            questionText,
+            totalResponses,
+            counts: responseCounts,
+            demographics
+          };
+        });
+        
+        return surveyData;
+      } catch (error) {
+        console.error("Error processing survey data:", error);
+        return null;
+      }
+    };
+    
+    // Generate survey data
+    const surveyData = processSurveyData();
+    
     // Add precomputed data for the preview if it doesn't exist
     if (!previewConfig.precomputedData) {
       previewConfig.precomputedData = {
@@ -431,11 +600,16 @@ if (Array.isArray(salesData) && salesData.length > 0) {
           getRetailerDistribution() : [],
         productDistribution: typeof getProductDistribution === 'function' ? 
           getProductDistribution() : [],
-        salesData: salesData ? 
-          salesData.slice(0, 1000) : [],
+        salesData: salesData,
         brandNames: brandNames || [],
-        brandMapping: brandMapping || {}
+        brandMapping: brandMapping || {},
+        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
+        // Add the survey data
+        surveyData
       };
+    } else if (!previewConfig.precomputedData.surveyData && surveyData) {
+      // Add survey data if it doesn't exist
+      previewConfig.precomputedData.surveyData = surveyData;
     }
     
     return previewConfig;
@@ -447,7 +621,8 @@ if (Array.isArray(salesData) && salesData.length > 0) {
     getProductDistribution,
     salesData,
     brandNames,
-    brandMapping
+    brandMapping,
+    clientName
   ]);
 
   // Provide value to consumers
@@ -477,7 +652,10 @@ if (Array.isArray(salesData) && salesData.length > 0) {
     
     // Helper methods
     transformDataForSharing,
-    getPreviewData
+    getPreviewData,
+    
+    // Data generators
+    generateDemographicData
   };
 
   return (

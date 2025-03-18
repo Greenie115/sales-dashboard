@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import _ from 'lodash';
 import { useTheme } from '../../context/ThemeContext';
 import { useSharing } from '../../context/SharingContext';
 import { useData } from '../../context/DataContext';
@@ -40,6 +41,131 @@ const getClientDisplayName = (config) => {
   return 'Client';
 };
 
+// This function ensures demographic data is available in the client data context
+const enhanceDemographicData = (clientData) => {
+  if (!clientData) return clientData;
+  
+  // Create a deep copy to avoid reference issues
+  const enhancedData = JSON.parse(JSON.stringify(clientData));
+  
+  // Check if demographicData exists, if not, try to create it from available data
+  if (!enhancedData.demographicData && enhancedData.salesData && enhancedData.salesData.length > 0) {
+    try {
+      // Extract gender distribution
+      const genderGroups = _.groupBy(
+        enhancedData.salesData.filter(item => item.gender),
+        'gender'
+      );
+      
+      const genderDistribution = Object.keys(genderGroups).length > 0 
+        ? Object.entries(genderGroups)
+            .map(([gender, items]) => ({
+              name: gender,
+              value: items.length,
+              percentage: (items.length / enhancedData.salesData.length) * 100
+            }))
+            .sort((a, b) => b.value - a.value)
+        : [];
+      
+      // Extract age distribution
+      const ageGroups = _.groupBy(
+        enhancedData.salesData.filter(item => item.age_group),
+        'age_group'
+      );
+      
+      const ageDistribution = Object.keys(ageGroups).length > 0
+        ? Object.entries(ageGroups)
+            .map(([ageGroup, items]) => ({
+              ageGroup,
+              count: items.length,
+              percentage: (items.length / enhancedData.salesData.length) * 100
+            }))
+            .sort((a, b) => b.count - a.count)
+        : [];
+        
+      enhancedData.demographicData = {
+        genderDistribution,
+        ageDistribution
+      };
+      
+      console.log("Generated demographic data:", enhancedData.demographicData);
+    } catch (err) {
+      console.error("Error generating demographic data:", err);
+    }
+  }
+  
+  // Make sure survey data is available for demographics tab
+  if (!enhancedData.surveyData && enhancedData.salesData && enhancedData.salesData.length > 0) {
+    try {
+      const surveyData = {
+        questions: {},
+        meta: { totalResponses: 0, questionCount: 0 }
+      };
+      
+      // Check for question fields in the data
+      const sampleRow = enhancedData.salesData[0];
+      const questionColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('question_'));
+      const propColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('proposition_'));
+      
+      if (questionColumns.length > 0 && propColumns.length > 0) {
+        // Process each proposition column
+        propColumns.forEach(propCol => {
+          const questionNumber = propCol.replace('proposition_', '');
+          const questionCol = `question_${questionNumber}`;
+          
+          // Find a row with this question text
+          const sampleQuestion = enhancedData.salesData.find(
+            row => row[questionCol] && typeof row[questionCol] === 'string' && row[questionCol].trim() !== ''
+          );
+          
+          if (sampleQuestion) {
+            // Extract unique responses for this question
+            const responses = enhancedData.salesData
+              .filter(row => row[propCol] && typeof row[propCol] === 'string' && row[propCol].trim() !== '')
+              .map(row => row[propCol]);
+            
+            const uniqueResponses = [...new Set(responses)];
+            
+            // Count response frequencies
+            const counts = {};
+            responses.forEach(response => {
+              counts[response] = (counts[response] || 0) + 1;
+            });
+            
+            // Create basic demographics structure
+            const responsesByGender = {};
+            const responsesByAge = {};
+            
+            // Add question to survey data
+            surveyData.questions[questionNumber] = {
+              questionText: sampleQuestion[questionCol],
+              propColumn: propCol,
+              questionColumn: questionCol,
+              uniqueResponses,
+              counts,
+              totalResponses: responses.length,
+              demographics: {
+                gender: responsesByGender,
+                age: responsesByAge
+              }
+            };
+            
+            surveyData.meta.questionCount++;
+            surveyData.meta.totalResponses += responses.length;
+          }
+        });
+      }
+      
+      enhancedData.surveyData = surveyData;
+      console.log("Generated survey data:", enhancedData.surveyData);
+    } catch (err) {
+      console.error("Error generating survey data:", err);
+    }
+  }
+  
+  return enhancedData;
+};
+
 // This component acts as a bridge between the ClientDataContext and the tab components
 const createSharedDataContext = (clientData) => {
   return {
@@ -51,6 +177,22 @@ const createSharedDataContext = (clientData) => {
     calculateMetrics: () => clientData.metrics || null,
     getRetailerDistribution: () => clientData.retailerData || [],
     getProductDistribution: () => clientData.productDistribution || [],
+    
+    // Add this method specifically for demographic data
+    getSurveyResponses: (questionNumber) => {
+      // First try to get from precomputed survey data
+      if (clientData.surveyData && clientData.surveyData.questions && 
+          clientData.surveyData.questions[questionNumber]) {
+        return clientData.surveyData.questions[questionNumber];
+      }
+      
+      // If not available in precomputed data, process from salesData
+      if (clientData.salesData && Array.isArray(clientData.salesData)) {
+        return processSurveyResponses(clientData.salesData, questionNumber);
+      }
+      
+      return { responseData: [] };
+    },
     
     // Flags and metadata
     isSharedView: true,
@@ -71,6 +213,134 @@ const createSharedDataContext = (clientData) => {
     setActiveTab: () => {},
   };
 };
+
+const getEnhancedPreviewData = () => {
+  // Get the base preview data from the context
+  const previewData = getPreviewData();
+  
+  // Add metadata if it doesn't exist
+  if (!previewData.metadata) {
+    previewData.metadata = {
+      clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
+    };
+  } else if (!previewData.metadata.clientName) {
+    // Ensure client name is set in metadata
+    previewData.metadata.clientName = clientName || 
+      (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
+  }
+  
+  // Add precomputed data if it doesn't exist
+  if (!previewData.precomputedData) {
+    // Process survey data for demographics
+    const surveyData = getSurveyResponseData(salesData, previewData.filters, getFilteredData);
+    
+    previewData.precomputedData = {
+      filteredData: getFilteredData ? 
+        getFilteredData(previewData.filters) : [],
+      metrics: calculateMetrics ? 
+        calculateMetrics() : null,
+      retailerData: getRetailerDistribution ? 
+        getRetailerDistribution() : [],
+      productDistribution: getProductDistribution ? 
+        getProductDistribution() : [],
+      // Include ALL sales data, not just a slice
+      salesData: salesData, 
+      brandNames: brandNames || [],
+      clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
+      brandMapping: brandMapping || {},
+      // Include survey data
+      surveyData: surveyData
+    };
+  } else if (!previewData.precomputedData.clientName) {
+    // Ensure client name is set in precomputed data
+    previewData.precomputedData.clientName = clientName || 
+      (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
+  }
+  
+  return previewData;
+};
+
+const enhanceClientData = (data) => {
+  // Don't modify if no data is available
+  if (!data || !data.precomputedData) return data;
+  
+  // Make a deep copy to avoid reference issues
+  const enhancedData = JSON.parse(JSON.stringify(data));
+  
+  try {
+    // If the shared dashboard view is loading demographic data,
+    // we need to make sure the full demographic data is available
+    
+    // If we're currently on the demographics tab, ensure we have the full survey data
+    if (activeTab === 'demographics' && 
+        enhancedData.precomputedData.salesData && 
+        enhancedData.precomputedData.salesData.length > 0) {
+        
+      console.log("Enhancing demographics data for shared view");
+      
+      // If possible, analyze the data to extract all questions
+      const sampleRow = enhancedData.precomputedData.salesData[0] || {};
+      const questionKeys = Object.keys(sampleRow)
+        .filter(key => key.startsWith('question_'))
+        .map(key => key.replace('question_', ''));
+      
+      // Store available questions for reference
+      enhancedData.availableQuestions = questionKeys;
+      
+      // Log what we found
+      console.log(`Found ${questionKeys.length} questions in shared data`);
+    }
+  } catch (err) {
+    console.error("Error enhancing client data:", err);
+  }
+  
+  return enhancedData;
+};
+
+
+const processSurveyResponses = (salesData, questionNumber) => {
+  if (!salesData || !Array.isArray(salesData) || salesData.length === 0 || !questionNumber) {
+    return { responseData: [], ageDistribution: [], genderDistribution: [] };
+  }
+  
+  try {
+    const propKey = `proposition_${questionNumber}`;
+    const questionKey = `question_${questionNumber}`;
+    
+    // Extract responses that have valid data for this question
+    const validResponses = salesData.filter(row => 
+      row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
+    );
+    
+    if (validResponses.length === 0) return { responseData: [] };
+    
+    // Get response distribution
+    const responseCount = {};
+    validResponses.forEach(row => {
+      const response = row[propKey];
+      responseCount[response] = (responseCount[response] || 0) + 1;
+    });
+    
+    // Format response data
+    const responseData = Object.entries(responseCount).map(([fullResponse, count]) => {
+      return {
+        fullResponse,
+        count,
+        percentage: ((count / validResponses.length) * 100).toFixed(1)
+      };
+    }).sort((a, b) => b.count - a.count);
+    
+    return {
+      responseData,
+      questionText: validResponses[0][questionKey] || `Question ${questionNumber}`,
+      validResponses
+    };
+  } catch (error) {
+    console.error("Error processing survey responses:", error);
+    return { responseData: [] };
+  }
+};
+
 
 const SharedDashboardView = () => {
   const { shareId } = useParams();
@@ -97,6 +367,7 @@ const SharedDashboardView = () => {
   const [isSupabaseMode, setIsSupabaseMode] = useState(true);
   const [clientData, setClientData] = useState(null);
   const [clientDisplayName, setClientDisplayName] = useState('Client Dashboard');
+  const [excludedDates, setExcludedDates] = useState([]);
   
   // Check if the share ID looks like Base64 (fallback mode) or UUID (Supabase mode)
   const isBase64ShareId = (id) => {
@@ -241,8 +512,7 @@ const SharedDashboardView = () => {
           });
           
           console.log("Setting client data from precomputedData:", newClientData);
-          setClientData(newClientData);
-          
+          setClientData(enhanceClientData(newClientData));          
           // If we have salesData in precomputedData, set it in the DataContext
           if (precomputedData.salesData && Array.isArray(precomputedData.salesData)) {
             console.log("Setting salesData in DataContext from precomputedData");
@@ -262,6 +532,11 @@ const SharedDashboardView = () => {
           if (config.filters.selectedMonth) setSelectedMonth(config.filters.selectedMonth);
         }
         
+        // Set excluded dates from config
+        if (config.customExcludedDates && Array.isArray(config.customExcludedDates)) {
+          setExcludedDates(config.customExcludedDates);
+        }
+        
         setLoading(false);
       } catch (err) {
         console.error("Error loading shared dashboard:", err);
@@ -279,6 +554,16 @@ const SharedDashboardView = () => {
     if (tab && shareConfig.allowedTabs.includes(tab)) {
       setActiveTab(tab);
     }
+  };
+  
+  // Handle adding an excluded date
+  const handleAddExcludedDate = (date) => {
+    setExcludedDates(prev => [...prev, date]);
+  };
+  
+  // Handle removing an excluded date
+  const handleRemoveExcludedDate = (date) => {
+    setExcludedDates(prev => prev.filter(d => d !== date));
   };
   
   // If still loading
@@ -446,7 +731,28 @@ const SharedDashboardView = () => {
             </div>
           ) : (
             <ErrorBoundary>
-              <ClientDataProvider clientData={{...transformedData, hiddenCharts: transformedData.hiddenCharts || []}}>
+              <ClientDataProvider clientData={{
+                ...transformedData,
+                hiddenCharts: transformedData.hiddenCharts || [],
+                // Explicitly pass through all data needed for demographics
+                salesData: transformedData.salesData || [], 
+                surveyData: transformedData.surveyData,
+                // Add any filter context that might be needed
+                filters: transformedData.filters || {},
+                // Make sure we're passing the right functions
+                getFilteredData: (filters) => transformedData.filteredData || [],
+                calculateMetrics: () => transformedData.metrics || {},
+                // Set flag to ensure we're using client data
+                isSharedView: true
+              }}>
+                {/* Add console log to debug data passed to provider */}
+                {console.log("Data passed to ClientDataProvider:", {
+                  dataSize: transformedData.salesData?.length,
+                  filteredSize: transformedData.filteredData?.length,
+                  hasSurveyData: !!transformedData.surveyData,
+                  activeTab
+                })}
+                
                 {/* Render the appropriate tab content */}
                 {activeTab === 'summary' && (
                   <ErrorBoundary>

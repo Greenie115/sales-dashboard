@@ -7,12 +7,9 @@ const ClientDataContext = createContext();
 // Custom hook to use the client data context
 export const useClientData = () => {
   const context = useContext(ClientDataContext);
-  const dataContext = useData();
-  
-  // If no client data is found, fall back to the regular DataContext
-  if (!context) {
-    console.warn("No ClientDataContext found, falling back to DataContext");
-    return dataContext;
+  if (context === undefined || context === null) {
+    console.warn('No ClientDataContext found, returning empty object');
+    return {}; 
   }
   return context;
 };
@@ -25,7 +22,23 @@ export const ClientDataProvider = ({ children, clientData }) => {
     // Add fallbacks for clientName
     clientName: clientData?.clientName || 
                 clientData?.metadata?.clientName || 
-                (clientData?.brandNames?.length > 0 ? clientData.brandNames.join(', ') : 'Client')
+                (clientData?.brandNames?.length > 0 ? clientData.brandNames.join(', ') : 'Client'),
+    // Make sure these fields are properly passed through
+    salesData: clientData?.salesData || [],
+    surveyData: clientData?.surveyData || null,
+    isSharedView: true,
+    
+    // Add utility method for accessing survey data
+    getSurveyData: (questionNumber) => {
+      // First check if we have precomputed survey data
+      if (clientData?.surveyData?.questions && 
+          clientData.surveyData.questions[questionNumber]) {
+        return clientData.surveyData.questions[questionNumber];
+      }
+      
+      // Otherwise return null
+      return null;
+    }
   };
   
   // Add debugging if in development mode
@@ -39,6 +52,16 @@ export const ClientDataProvider = ({ children, clientData }) => {
     console.log("Has filteredData:", Boolean(clientData?.filteredData));
     if (clientData?.filteredData) {
       console.log("filteredData length:", clientData.filteredData.length);
+    }
+    
+    console.log("Has salesData:", Boolean(clientData?.salesData));
+    if (clientData?.salesData) {
+      console.log("salesData length:", clientData.salesData.length);
+    }
+    
+    console.log("Has surveyData:", Boolean(clientData?.surveyData));
+    if (clientData?.surveyData) {
+      console.log("surveyData questions:", Object.keys(clientData.surveyData.questions || {}));
     }
     
     console.log("Has metrics:", Boolean(clientData?.metrics));

@@ -21,6 +21,8 @@ const AGE_GROUP_ORDER = [
 ];
 
 const DemographicsTab = ({ isSharedView }) => {
+  console.log("DemographicsTab rendering, isSharedView:", isSharedView);
+  
   // Use hooks for theme and colors
   const { darkMode } = useTheme();
   const { colors } = useThemeColors();
@@ -29,15 +31,46 @@ const DemographicsTab = ({ isSharedView }) => {
   const { formatPercentage, formatNumber } = useFormattedData();
   
   // Use client data or main data context based on isSharedView
-  const clientData = useClientData();
   const dataContext = useData();
-  const contextData = isSharedView ? clientData : dataContext;
+  const clientContext = useClientData();
+  
+  // Log available context data to help debug
+  console.log("Data context available:", {
+    salesDataLength: dataContext?.salesData?.length,
+    hasClientContext: !!clientContext
+  });
+  
+  if (isSharedView && clientContext) {
+    console.log("Client context details:", {
+      hasSalesData: !!clientContext.salesData?.length,
+      hasSurveyData: !!clientContext.surveyData,
+      hasFilteredData: !!clientContext.filteredData?.length
+    });
+    
+    if (clientContext.surveyData) {
+      console.log("Survey data available questions:", Object.keys(clientContext.surveyData.questions || {}));
+    }
+  }
+  
+  const contextData = isSharedView ? clientContext : dataContext;
+  
+  // More debug logging
+  if (!contextData) {
+    console.error("No context data available!");
+  }
   
   // Get data from context
   const { 
     salesData,
-    filteredData: directFilteredData
-  } = contextData;
+    filteredData: directFilteredData,
+    surveyData
+  } = contextData || {};
+  
+  console.log("Demographics Tab data received:", {
+    hasSalesData: !!salesData?.length,
+    hasFilteredData: !!directFilteredData?.length,
+    hasSurveyData: !!surveyData
+  });
   
   // Use refs to track component mounting state
   const isMounted = useRef(true);
@@ -53,30 +86,81 @@ const DemographicsTab = ({ isSharedView }) => {
   const [selectedResponses, setSelectedResponses] = useState([]);
   const [questions, setQuestions] = useState([]);
 
+  useEffect(() => {
+    if (isSharedView && contextData?.surveyData?.questions) {
+      console.log("Setting up questions from surveyData");
+      
+      const questionData = contextData.surveyData.questions;
+      const questionNumbers = Object.keys(questionData);
+      
+      // Set available questions
+      setAvailableQuestions(questionNumbers);
+      
+      // Create formatted question objects for rendering
+      const extractedQuestions = questionNumbers.map(num => {
+        const qData = questionData[num];
+        return {
+          number: num,
+          text: qData.questionText || `Question ${parseInt(num)}`
+        };
+      });
+      
+      console.log("Formatted questions for dropdown:", extractedQuestions);
+      setQuestions(extractedQuestions);
+      
+      // Auto-select the first question if none is selected
+      if ((!selectedQuestionNumber || selectedQuestionNumber === '') && questionNumbers.length > 0) {
+        console.log("Auto-selecting first question:", questionNumbers[0]);
+        setSelectedQuestionNumber(questionNumbers[0]);
+        
+        // Also pre-load the question data
+        if (questionData[questionNumbers[0]]) {
+          const firstQuestionData = questionData[questionNumbers[0]];
+          setQuestionText(firstQuestionData.questionText || `Question ${parseInt(questionNumbers[0])}`);
+          
+          // Format response data
+          const formattedResponses = Object.entries(firstQuestionData.counts || {}).map(([response, count]) => {
+            const percentage = ((count / firstQuestionData.totalResponses) * 100).toFixed(1);
+            return {
+              fullResponse: response,
+              count,
+              percentage
+            };
+          }).sort((a, b) => b.count - a.count);
+          
+          setResponseData(formattedResponses);
+        }
+      }
+    }
+  }, [isSharedView, contextData?.surveyData]);
+
   
   // Extract questions from data
   useEffect(() => {
     if (salesData && salesData.length > 0) {
-      // Check what fields are in the data
-      const sampleRow = salesData[0];
-      
       // For shared view, check if we have precomputed survey data
       if (isSharedView && contextData.surveyData) {
+        console.log("Using precomputed survey data in shared view", contextData.surveyData);
         const surveyData = contextData.surveyData;
         
         // Get available questions from the survey data
         const questionNumbers = Object.keys(surveyData.questions);
+        console.log("Found question numbers:", questionNumbers);
         setAvailableQuestions(questionNumbers);
         
         // Set default selected question if none is set
-        if (!selectedQuestionNumber && questionNumbers.length > 0) {
+        if ((!selectedQuestionNumber || selectedQuestionNumber === '') && questionNumbers.length > 0) {
+          console.log("Setting default question to:", questionNumbers[0]);
           setSelectedQuestionNumber(questionNumbers[0]);
         }
       } else {
         // Original code for analyzing the data in the main dashboard
+        console.log("Extracting questions from raw data");
         
         // Look for question fields
         const questionFields = [];
+        const sampleRow = salesData[0];
+        
         for (let i = 1; i <= 10; i++) {
           const paddedNum = i.toString().padStart(2, '0');
           const questionKey = `question_${paddedNum}`;
@@ -120,11 +204,12 @@ const DemographicsTab = ({ isSharedView }) => {
           }
         });
         
+        console.log("Extracted questions:", extractedQuestions);
         setQuestions(extractedQuestions);
         setAvailableQuestions(extractedQuestions.map(q => q.number));
       }
     }
-  }, [salesData, isSharedView, contextData]);
+  }, [salesData, isSharedView, contextData, selectedQuestionNumber]);
 
   // Set up mounted ref for cleanup
   useEffect(() => {
@@ -137,129 +222,47 @@ const DemographicsTab = ({ isSharedView }) => {
   
  // Process demographic data when responses are selected
  useEffect(() => {
-  // Skip if unmounted
-  if (!isMounted.current) return;
-  
-  // Only process if we have selected responses and survey data
-  if (selectedResponses.length > 0) {
-    // Check if we're in shared view with precomputed data
-    if (isSharedView && contextData.surveyData && contextData.surveyData.questions[selectedQuestionNumber]) {
+  if (selectedQuestionNumber) {
+    // Find the question text
+    let questionText = '';
+    
+    // Handle both shared view and regular context
+    if (isSharedView && contextData.surveyData && 
+        contextData.surveyData.questions && 
+        contextData.surveyData.questions[selectedQuestionNumber]) {
+        
+      // Get data from precomputed survey data
       const questionData = contextData.surveyData.questions[selectedQuestionNumber];
-      processSharedResponseDemographics(questionData, selectedResponses);
-    } else if (salesData && salesData.length > 0) {
-      // Set processing flag to true
-      setIsProcessingDemographics(true);
+      questionText = questionData.questionText || `Question ${parseInt(selectedQuestionNumber)}`;
       
-      // Use setTimeout to ensure React has time to render the loading state
-      setTimeout(() => {
-        // Skip if component unmounted during timeout
-        if (!isMounted.current) return;
-        
-        try {
-          // Original demographic processing code
-          // Get selected response text values
-          const selectedResponseValues = selectedResponses.map(r => r.fullResponse);
-          const propKey = `proposition_${selectedQuestionNumber}`;
-          
-          // Filter survey data for rows containing ANY of the selected responses
-          // Modified to check if any of the selected responses are present in each comma-separated response
-          const filteredData = salesData.filter(row => {
-            const responseStr = row[propKey];
-            if (!responseStr) return false;
-            
-            // Split by semicolon if it's a multiple-choice response 
-            const responses = responseStr.split(';').map(r => r.trim());
-            
-            // Check if any of the selected responses are in this row's responses
-            return responses.some(resp => selectedResponseValues.includes(resp));
-          });
-          
-          // Gender breakdown
-          const genderCounts = {};
-          filteredData.forEach(row => {
-            const gender = row.gender || 'Not Specified';
-            genderCounts[gender] = (genderCounts[gender] || 0) + 1;
-          });
-          
-          const totalGender = Object.values(genderCounts).reduce((sum, count) => sum + count, 0);
-          
-          const genderData = Object.entries(genderCounts).map(([name, value]) => ({
-            name,
-            value,
-            total: totalGender,
-            percentage: ((value / totalGender) * 100).toFixed(1)
-          }));
-        
-          // Age breakdown
-          const ageCounts = {};
-          filteredData.forEach(row => {
-            const age = row.age_group || 'Not Specified';
-            let ageGroup = age;
-            
-            // If the age is a number, convert it to a group
-            if (age && !isNaN(age)) {
-              const ageNum = parseInt(age, 10);
-              if (ageNum < 18) ageGroup = 'Under 18';
-              else if (ageNum < 25) ageGroup = '18-24';
-              else if (ageNum < 35) ageGroup = '25-34';
-              else if (ageNum < 45) ageGroup = '35-44';
-              else if (ageNum < 55) ageGroup = '45-54';
-              else if (ageNum < 65) ageGroup = '55-64';
-              else ageGroup = '65+';
-            }
-            
-            ageCounts[ageGroup] = (ageCounts[ageGroup] || 0) + 1;
-          });
-          
-          const totalAge = Object.values(ageCounts).reduce((sum, count) => sum + count, 0);
-          
-          const ageData = Object.entries(ageCounts).map(([name, value]) => ({
-            name,
-            value,
-            total: totalAge,
-            percentage: ((value / totalAge) * 100).toFixed(1)
-          }));
-          
-          // Sort age groups in a logical order if possible
-          ageData.sort((a, b) => {
-            const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
-            const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
-            
-            if (aIndex !== -1 && bIndex !== -1) {
-              return aIndex - bIndex;
-            }
-            
-            if (aIndex !== -1) return -1;
-            if (bIndex !== -1) return 1;
-            
-            return a.name.localeCompare(b.name);
-          });
-                
-          // Skip update if component unmounted
-          if (!isMounted.current) return;
-          
-          // First update the data
-          setResponseByGender(genderData);
-          setResponseByAge(ageData);
-          
-          // Then remove processing flag to show the data
-          setIsProcessingDemographics(false);
-        } catch (error) {
-          console.error("Error processing demographic data:", error);
-          // Reset processing flag even on error
-          if (isMounted.current) {
-            setIsProcessingDemographics(false);
-          }
-        }
-      }, 100); // Short delay to ensure state updates properly
-    } else if (selectedResponses.length === 0) {
-      // Only clear if no responses are selected
-      setResponseByGender([]);
-      setResponseByAge([]);
-      setIsProcessingDemographics(false);
+      // Format response data for the UI
+      const formattedResponses = Object.entries(questionData.counts || {}).map(([response, count]) => {
+        const percentage = ((count / (questionData.totalResponses || 1)) * 100).toFixed(1);
+        return {
+          fullResponse: response,
+          count,
+          percentage
+        };
+      }).sort((a, b) => b.count - a.count);
+      
+      setResponseData(formattedResponses);
+    } else {
+      // If we don't have precomputed data, analyze it from scratch
+      
+      // First try to find the question from the loaded questions
+      const question = questions.find(q => q.number === selectedQuestionNumber);
+      questionText = question ? question.text : `Question ${parseInt(selectedQuestionNumber)}`;
+      
+      // Analyze responses for this question from the available sales data
+      analyzeResponses(selectedQuestionNumber);
     }
+    
+    setQuestionText(questionText);
+  } else {
+    setQuestionText('');
+    setResponseData([]);
   }
-}, [selectedResponses, salesData, selectedQuestionNumber, isSharedView, contextData]);
+}, [selectedQuestionNumber, questions, isSharedView, contextData]);
 
 const processSharedResponseDemographics = (questionData, selectedResps) => {
   if (!questionData || !selectedResps || selectedResps.length === 0) return;
@@ -376,6 +379,7 @@ const processSharedResponseDemographics = (questionData, selectedResps) => {
     
     if (questionNum) {
       if (isSharedView && contextData.surveyData && contextData.surveyData.questions[questionNum]) {
+        console.log("Loading shared question data for:", questionNum);
         // Get data from precomputed survey data
         const questionData = contextData.surveyData.questions[questionNum];
         setQuestionText(questionData.questionText || `Question ${parseInt(questionNum)}`);
@@ -390,6 +394,7 @@ const processSharedResponseDemographics = (questionData, selectedResps) => {
           };
         }).sort((a, b) => b.count - a.count);
         
+        console.log("Formatted responses for shared view:", formattedResponses);
         setResponseData(formattedResponses);
       } else {
         // Find the question text
@@ -581,42 +586,54 @@ const processSharedResponseDemographics = (questionData, selectedResps) => {
       {availableQuestions.length > 0 && (
         <div className={`mb-6 p-4 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded-lg`}>
           <label htmlFor="question-select" className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Select Question:</label>
-          
-          {/* Enhanced dropdown with proper dark mode styling */}
-          <select 
-            id="question-select" 
-            value={selectedQuestionNumber} 
-            onChange={handleQuestionChange}
-            className={`mt-1 block w-full pl-3 pr-10 py-2 text-base ${
-              darkMode 
-                ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
-                : 'border-gray-300 bg-white text-gray-900 focus:ring-pink-500 focus:border-pink-500'
-            } sm:text-sm rounded-md`}
-            style={{
-              boxShadow: darkMode ? 'none' : undefined
-            }}
-          >
-            <option value="" className={darkMode ? 'bg-gray-700 text-white' : ''}>Select a question</option>
-            {questions.map(q => (
-              <option 
-                key={q.number} 
-                value={q.number}
-                className={darkMode ? 'bg-gray-700 text-white' : ''}
-              >
-                {q.text.length > 70 ? q.text.substring(0, 70) + "..." : q.text}
-              </option>
-            ))}
-          </select>
-          
-          {questionText && (
-            <div className={`mt-3 p-3 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} rounded border`}>
-              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                <span className="font-medium">Question:</span> {questionText}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
+    
+           {/* Enhanced dropdown with proper dark mode styling */}
+            <select 
+              id="question-select" 
+              value={selectedQuestionNumber} 
+              onChange={handleQuestionChange}
+              className={`mt-1 block w-full pl-3 pr-10 py-2 text-base ${
+                darkMode 
+                  ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                  : 'border-gray-300 bg-white text-gray-900 focus:ring-pink-500 focus:border-pink-500'
+              } sm:text-sm rounded-md`}
+              style={{
+                boxShadow: darkMode ? 'none' : undefined
+              }}
+            >
+              {questions.length > 0 ? (
+                questions.map(q => (
+                  <option 
+                    key={q.number} 
+                    value={q.number}
+                    className={darkMode ? 'bg-gray-700 text-white' : ''}
+                  >
+                    {q.text.length > 70 ? q.text.substring(0, 70) + "..." : q.text}
+                  </option>
+                ))
+              ) : (
+                <option value="" disabled className={darkMode ? 'bg-gray-700 text-white' : ''}>No questions available</option>
+              )}
+            </select>
+            
+            {/* Show debug details in dev mode */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Available questions: {availableQuestions.join(', ')}
+                <br/>
+                Questions array length: {questions.length}
+              </div>
+            )}
+            
+            {questionText && (
+              <div className={`mt-3 p-3 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} rounded border`}>
+                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <span className="font-medium">Question:</span> {questionText}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Response Analysis */}
       {selectedQuestionNumber && (
