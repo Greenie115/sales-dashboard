@@ -46,7 +46,7 @@ const enhanceDemographicData = (clientData) => {
   if (!clientData) return clientData;
   
   // Create a deep copy to avoid reference issues
-  const enhancedData = JSON.parse(JSON.stringify(clientData));
+  const enhancedData = _.cloneDeep(clientData);
   
   // Check if demographicData exists, if not, try to create it from available data
   if (!enhancedData.demographicData && enhancedData.salesData && enhancedData.salesData.length > 0) {
@@ -87,8 +87,6 @@ const enhanceDemographicData = (clientData) => {
         genderDistribution,
         ageDistribution
       };
-      
-      console.log("Generated demographic data:", enhancedData.demographicData);
     } catch (err) {
       console.error("Error generating demographic data:", err);
     }
@@ -107,57 +105,117 @@ const enhanceDemographicData = (clientData) => {
       const questionColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('question_'));
       const propColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('proposition_'));
       
-      if (questionColumns.length > 0 && propColumns.length > 0) {
-        // Process each proposition column
-        propColumns.forEach(propCol => {
-          const questionNumber = propCol.replace('proposition_', '');
-          const questionCol = `question_${questionNumber}`;
+      const availableQuestions = [];
+      
+      // Find matching question numbers
+      propColumns.forEach(propCol => {
+        const questionNumber = propCol.replace('proposition_', '');
+        const questionCol = `question_${questionNumber}`;
+        
+        if (questionColumns.includes(questionCol)) {
+          availableQuestions.push(questionNumber);
+        }
+      });
+      
+      // Process each available question
+      availableQuestions.forEach(questionNum => {
+        const questionKey = `question_${questionNum}`;
+        const propKey = `proposition_${questionNum}`;
+        
+        // Get question text
+        let questionText = `Question ${parseInt(questionNum)}`;
+        const questionRow = enhancedData.salesData.find(row => row[questionKey] && typeof row[questionKey] === 'string' && row[questionKey].trim() !== '');
+        if (questionRow) {
+          questionText = questionRow[questionKey];
+        }
+        
+        // Count responses
+        const validResponses = enhancedData.salesData.filter(row => 
+          row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
+        );
+        
+        const counts = {};
+        let totalResponses = 0;
+        
+        validResponses.forEach(row => {
+          const responseStr = row[propKey];
+          if (!responseStr) return;
           
-          // Find a row with this question text
-          const sampleQuestion = enhancedData.salesData.find(
-            row => row[questionCol] && typeof row[questionCol] === 'string' && row[questionCol].trim() !== ''
-          );
+          // Split by semicolon if it's a multiple-choice response
+          const responses = responseStr.split(';').map(r => r.trim());
           
-          if (sampleQuestion) {
-            // Extract unique responses for this question
-            const responses = enhancedData.salesData
-              .filter(row => row[propCol] && typeof row[propCol] === 'string' && row[propCol].trim() !== '')
-              .map(row => row[propCol]);
-            
-            const uniqueResponses = [...new Set(responses)];
-            
-            // Count response frequencies
-            const counts = {};
-            responses.forEach(response => {
+          responses.forEach(response => {
+            if (response) {
               counts[response] = (counts[response] || 0) + 1;
-            });
-            
-            // Create basic demographics structure
-            const responsesByGender = {};
-            const responsesByAge = {};
-            
-            // Add question to survey data
-            surveyData.questions[questionNumber] = {
-              questionText: sampleQuestion[questionCol],
-              propColumn: propCol,
-              questionColumn: questionCol,
-              uniqueResponses,
-              counts,
-              totalResponses: responses.length,
-              demographics: {
-                gender: responsesByGender,
-                age: responsesByAge
-              }
-            };
-            
-            surveyData.meta.questionCount++;
-            surveyData.meta.totalResponses += responses.length;
-          }
+              totalResponses++;
+            }
+          });
         });
-      }
+        
+        // Create basic demographics structure
+        const responsesByGender = {};
+        const responsesByAge = {};
+        
+        // Process gender breakdown
+        const genders = _.uniq(enhancedData.salesData.filter(row => row.gender).map(row => row.gender));
+        genders.forEach(gender => {
+          const genderRows = enhancedData.salesData.filter(row => row.gender === gender);
+          
+          responsesByGender[gender] = {
+            total: genderRows.length,
+            responseBreakdown: {}
+          };
+          
+          // Count responses by gender
+          Object.keys(counts).forEach(response => {
+            responsesByGender[gender].responseBreakdown[response] = genderRows.filter(row => {
+              const responseStr = row[propKey];
+              if (!responseStr) return false;
+              
+              const responses = responseStr.split(';').map(r => r.trim());
+              return responses.includes(response);
+            }).length;
+          });
+        });
+        
+        // Process age breakdown
+        const ageGroups = _.uniq(enhancedData.salesData.filter(row => row.age_group).map(row => row.age_group));
+        ageGroups.forEach(ageGroup => {
+          const ageRows = enhancedData.salesData.filter(row => row.age_group === ageGroup);
+          
+          responsesByAge[ageGroup] = {
+            total: ageRows.length,
+            responseBreakdown: {}
+          };
+          
+          // Count responses by age
+          Object.keys(counts).forEach(response => {
+            responsesByAge[ageGroup].responseBreakdown[response] = ageRows.filter(row => {
+              const responseStr = row[propKey];
+              if (!responseStr) return false;
+              
+              const responses = responseStr.split(';').map(r => r.trim());
+              return responses.includes(response);
+            }).length;
+          });
+        });
+        
+        // Add to survey data
+        surveyData.questions[questionNum] = {
+          questionText,
+          totalResponses,
+          counts,
+          demographics: {
+            gender: responsesByGender,
+            age: responsesByAge
+          }
+        };
+        
+        surveyData.meta.questionCount++;
+        surveyData.meta.totalResponses += totalResponses;
+      });
       
       enhancedData.surveyData = surveyData;
-      console.log("Generated survey data:", enhancedData.surveyData);
     } catch (err) {
       console.error("Error generating survey data:", err);
     }
@@ -168,12 +226,14 @@ const enhanceDemographicData = (clientData) => {
 
 // This component acts as a bridge between the ClientDataContext and the tab components
 const createSharedDataContext = (clientData) => {
+  if (!clientData) return {};
+
   return {
     // Pass through all data from clientData
     ...clientData,
     
     // Ensure essential methods exist even if not provided in clientData
-    getFilteredData: () => clientData.filteredData || [],
+    getFilteredData: () => clientData.filteredData || clientData.salesData || [],
     calculateMetrics: () => clientData.metrics || null,
     getRetailerDistribution: () => clientData.retailerData || [],
     getProductDistribution: () => clientData.productDistribution || [],
@@ -214,90 +274,7 @@ const createSharedDataContext = (clientData) => {
   };
 };
 
-const getEnhancedPreviewData = () => {
-  // Get the base preview data from the context
-  const previewData = getPreviewData();
-  
-  // Add metadata if it doesn't exist
-  if (!previewData.metadata) {
-    previewData.metadata = {
-      clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-    };
-  } else if (!previewData.metadata.clientName) {
-    // Ensure client name is set in metadata
-    previewData.metadata.clientName = clientName || 
-      (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
-  }
-  
-  // Add precomputed data if it doesn't exist
-  if (!previewData.precomputedData) {
-    // Process survey data for demographics
-    const surveyData = getSurveyResponseData(salesData, previewData.filters, getFilteredData);
-    
-    previewData.precomputedData = {
-      filteredData: getFilteredData ? 
-        getFilteredData(previewData.filters) : [],
-      metrics: calculateMetrics ? 
-        calculateMetrics() : null,
-      retailerData: getRetailerDistribution ? 
-        getRetailerDistribution() : [],
-      productDistribution: getProductDistribution ? 
-        getProductDistribution() : [],
-      // Include ALL sales data, not just a slice
-      salesData: salesData, 
-      brandNames: brandNames || [],
-      clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-      brandMapping: brandMapping || {},
-      // Include survey data
-      surveyData: surveyData
-    };
-  } else if (!previewData.precomputedData.clientName) {
-    // Ensure client name is set in precomputed data
-    previewData.precomputedData.clientName = clientName || 
-      (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
-  }
-  
-  return previewData;
-};
-
-const enhanceClientData = (data) => {
-  // Don't modify if no data is available
-  if (!data || !data.precomputedData) return data;
-  
-  // Make a deep copy to avoid reference issues
-  const enhancedData = JSON.parse(JSON.stringify(data));
-  
-  try {
-    // If the shared dashboard view is loading demographic data,
-    // we need to make sure the full demographic data is available
-    
-    // If we're currently on the demographics tab, ensure we have the full survey data
-    if (activeTab === 'demographics' && 
-        enhancedData.precomputedData.salesData && 
-        enhancedData.precomputedData.salesData.length > 0) {
-        
-      console.log("Enhancing demographics data for shared view");
-      
-      // If possible, analyze the data to extract all questions
-      const sampleRow = enhancedData.precomputedData.salesData[0] || {};
-      const questionKeys = Object.keys(sampleRow)
-        .filter(key => key.startsWith('question_'))
-        .map(key => key.replace('question_', ''));
-      
-      // Store available questions for reference
-      enhancedData.availableQuestions = questionKeys;
-      
-      // Log what we found
-      console.log(`Found ${questionKeys.length} questions in shared data`);
-    }
-  } catch (err) {
-    console.error("Error enhancing client data:", err);
-  }
-  
-  return enhancedData;
-};
-
-
+// Process survey response data for a specific question
 const processSurveyResponses = (salesData, questionNumber) => {
   if (!salesData || !Array.isArray(salesData) || salesData.length === 0 || !questionNumber) {
     return { responseData: [], ageDistribution: [], genderDistribution: [] };
@@ -340,7 +317,6 @@ const processSurveyResponses = (salesData, questionNumber) => {
     return { responseData: [] };
   }
 };
-
 
 const SharedDashboardView = () => {
   const { shareId } = useParams();
@@ -493,15 +469,15 @@ const SharedDashboardView = () => {
         // Important: Store the client data directly from the precomputed data
         if (config.precomputedData) {
           // Create a deep copy to prevent reference issues
-          const precomputedData = JSON.parse(JSON.stringify(config.precomputedData));
+          const precomputedData = _.cloneDeep(config.precomputedData);
           
           // Ensure clientName is properly set in the data
           if (!precomputedData.clientName || precomputedData.clientName === 'Client') {
             precomputedData.clientName = displayName;
           }
           
-          // Create a complete clientData object with all necessary methods
-          const newClientData = createSharedDataContext({
+          // Enhance the client data with demographic information
+          const enhancedClientData = enhanceDemographicData({
             ...precomputedData,
             filters: config.filters || {},
             brandMapping: precomputedData.brandMapping || {},
@@ -511,8 +487,9 @@ const SharedDashboardView = () => {
             isSharedView: true
           });
           
-          console.log("Setting client data from precomputedData:", newClientData);
-          setClientData(enhanceClientData(newClientData));          
+          console.log("Setting enhanced client data:", enhancedClientData);
+          setClientData(enhancedClientData);
+          
           // If we have salesData in precomputedData, set it in the DataContext
           if (precomputedData.salesData && Array.isArray(precomputedData.salesData)) {
             console.log("Setting salesData in DataContext from precomputedData");
@@ -640,10 +617,13 @@ const SharedDashboardView = () => {
     );
   }
   
+  // Create a proper shared data context with all necessary methods for the ClientDataProvider
+  const sharedDataContext = createSharedDataContext(clientData);
+  
   // Transform data based on sharing config
   const transformedData = transformDataForSharing ? 
-    transformDataForSharing({...clientData, shareConfig}) : 
-    clientData;
+    transformDataForSharing({...sharedDataContext, shareConfig}) : 
+    sharedDataContext;
   
   // Check if there's data to display
   const hasData = transformedData?.filteredData?.length > 0 || (transformedData?.salesData?.length > 0);
@@ -717,7 +697,7 @@ const SharedDashboardView = () => {
           </div>
         )}
         
-       {/* Main content based on active tab */}
+        {/* Main content based on active tab */}
         <div className={`bg-white dark:bg-gray-800 shadow rounded-lg ${!hasData ? 'p-6' : ''}`}>
           {!hasData ? (
             <div className="text-center py-12">
@@ -740,19 +720,11 @@ const SharedDashboardView = () => {
                 // Add any filter context that might be needed
                 filters: transformedData.filters || {},
                 // Make sure we're passing the right functions
-                getFilteredData: (filters) => transformedData.filteredData || [],
+                getFilteredData: () => transformedData.filteredData || transformedData.salesData || [],
                 calculateMetrics: () => transformedData.metrics || {},
                 // Set flag to ensure we're using client data
                 isSharedView: true
               }}>
-                {/* Add console log to debug data passed to provider */}
-                {console.log("Data passed to ClientDataProvider:", {
-                  dataSize: transformedData.salesData?.length,
-                  filteredSize: transformedData.filteredData?.length,
-                  hasSurveyData: !!transformedData.surveyData,
-                  activeTab
-                })}
-                
                 {/* Render the appropriate tab content */}
                 {activeTab === 'summary' && (
                   <ErrorBoundary>
