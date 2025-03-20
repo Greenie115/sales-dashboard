@@ -3,64 +3,60 @@ import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Service for managing dashboard sharing with Supabase
+ * With SSL error handling and fallbacks
  */
 const sharingService = {
   /**
    * Create a new shared dashboard
    * @param {Object} config - The dashboard configuration to share
-   * @param {Date} expiryDate - Optional expiry date
    * @returns {Promise<Object>} - The created share with ID and URL
    */
   async createSharedDashboard(config) {
-    try {
-      console.log("Starting share dashboard creation");
-      
-      // Step 1: Optimize config data before sending to Supabase
-      const optimizedConfig = this.optimizeConfigForDatabase(config);
-      
-      // Step 2: Set a longer timeout for the request (if supported by your Supabase client)
-      const timeoutOption = { requestTimeout: 60000 }; // 60 seconds
-      
-      console.log("Sending optimized config to Supabase");
-      
-      // Step 3: Use a simpler insert with fewer fields to improve performance
-      const { data, error } = await supabase
-        .from('shared_dashboards')
-        .insert({
-          // Only store essential data
-          share_id: uuidv4(), // Generate a unique ID
-          config: optimizedConfig,
-          client_name: config.metadata?.clientName || 'Client',
-          created_at: new Date().toISOString(),
-          expires_at: config.expiryDate ? new Date(config.expiryDate).toISOString() : null,
-          data_size: JSON.stringify(optimizedConfig).length
-        })
-        .select('share_id, created_at');
-      
-      if (error) {
-        console.error('Error creating shared dashboard:', error);
+    return supabase.safeQuery(
+      // The main Supabase operation
+      async (client) => {
+        console.log("Starting share dashboard creation");
         
-        // Step 4: If the error is a timeout, fall back to the client-side method
-        if (error.code === '57014' || error.message.includes('timeout')) {
-          console.log("Database timeout detected, switching to fallback mode");
-          throw new Error("TIMEOUT_SWITCH_TO_FALLBACK");
+        // Step 1: Optimize config data before sending to Supabase
+        const optimizedConfig = this.optimizeConfigForDatabase(config);
+        
+        console.log("Sending optimized config to Supabase");
+        
+        // Step 2: Use a simpler insert with fewer fields to improve performance
+        // Only include fields that exist in your database schema
+        const { data, error } = await client
+          .from('shared_dashboards')
+          .insert({
+            share_id: uuidv4(),
+            config: optimizedConfig,
+            created_at: new Date().toISOString(),
+            expires_at: config.expiryDate ? new Date(config.expiryDate).toISOString() : null
+          })
+          .select('share_id, created_at');
+        
+        if (error) {
+          console.error('Error creating shared dashboard:', error);
+          
+          // Step 3: If the error is a timeout or any other issue, switch to fallback
+          if (error.code === '57014' || error.message.includes('timeout')) {
+            console.log("Database timeout detected, switching to fallback mode");
+            throw new Error("TIMEOUT_SWITCH_TO_FALLBACK");
+          }
+          
+          throw error;
         }
         
-        throw error;
-      }
+        console.log("Successfully created shared dashboard in Supabase");
+        return data[0];
+      },
       
-      console.log("Successfully created shared dashboard in Supabase");
-      return data[0];
-    } catch (error) {
-      console.error('Error creating shared dashboard:', error);
-      
-      // If we specifically triggered a fallback, return a special signal
-      if (error.message === "TIMEOUT_SWITCH_TO_FALLBACK") {
+      // The fallback function if Supabase fails
+      async () => {
+        // Just throw a special error to signal that we need to use the base64 fallback
+        // The SharingContext will handle this by using the Base64 encoding fallback
         throw new Error("TIMEOUT_SWITCH_TO_FALLBACK");
       }
-      
-      throw error;
-    }
+    );
   },
 
   /**
@@ -115,40 +111,57 @@ const sharingService = {
    * @returns {Promise<Object>} - The dashboard configuration
    */
   async getSharedDashboard(shareId) {
-    try {
-      // Get the dashboard configuration
-      const { data, error } = await supabase
-        .from('shared_dashboards')
-        .select('*')
-        .eq('share_id', shareId)
-        .single();
+    return supabase.safeQuery(
+      // The main Supabase operation
+      async (client) => {
+        // Get the dashboard configuration
+        const { data, error } = await client
+          .from('shared_dashboards')
+          .select('*')
+          .eq('share_id', shareId)
+          .single();
+        
+        if (error) throw error;
+        
+        if (!data) {
+          throw new Error('Shared dashboard not found');
+        }
+        
+        // Check if the dashboard has expired
+        if (data.expires_at && new Date(data.expires_at) < new Date()) {
+          return { expired: true, config: data.config };
+        }
+        
+        // Increment access count if that column exists in your schema
+        try {
+          await client
+            .from('shared_dashboards')
+            .update({ access_count: (data.access_count || 0) + 1 })
+            .eq('share_id', shareId);
+        } catch (err) {
+          // Ignore errors with updating access count
+          console.warn("Could not update access count:", err.message);
+        }
+        
+        return {
+          expired: false,
+          config: data.config
+        };
+      },
       
-      if (error) throw error;
-      
-      if (!data) {
-        throw new Error('Shared dashboard not found');
+      // The fallback function if Supabase fails
+      async () => {
+        // For non-Supabase share IDs, try to decode the Base64 content
+        try {
+          // This is a placeholder for the fallback system in SharingContext
+          // The actual implementation is in SharedDashboardView component
+          throw new Error("Use SharedDashboardView fallback");
+        } catch (err) {
+          console.error("Error in sharingService fallback:", err);
+          throw err;
+        }
       }
-      
-      // Check if the dashboard has expired
-      if (data.expires_at && new Date(data.expires_at) < new Date()) {
-        return { expired: true, config: data.config };
-      }
-      
-      // Increment access count
-      await supabase
-        .from('shared_dashboards')
-        .update({ access_count: (data.access_count || 0) + 1 })
-        .eq('share_id', shareId);
-      
-      return {
-        expired: false,
-        config: data.config,
-        metadata: data.metadata
-      };
-    } catch (error) {
-      console.error('Error getting shared dashboard:', error);
-      throw error;
-    }
+    );
   },
   
   /**
@@ -156,19 +169,23 @@ const sharingService = {
    * @returns {Promise<Array>} - List of shared dashboards
    */
   async listSharedDashboards() {
-    try {
-      const { data, error } = await supabase
-        .from('shared_dashboards')
-        .select('*')
-        .order('created_at', { ascending: false });
+    return supabase.safeQuery(
+      async (client) => {
+        const { data, error } = await client
+          .from('shared_dashboards')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        return data || [];
+      },
       
-      if (error) throw error;
-      
-      return data || [];
-    } catch (error) {
-      console.error('Error listing shared dashboards:', error);
-      throw error;
-    }
+      // Fallback returns empty array if Supabase is unavailable
+      async () => {
+        return { data: [], error: null };
+      }
+    );
   },
   
   /**
@@ -177,42 +194,23 @@ const sharingService = {
    * @returns {Promise<boolean>} - Success status
    */
   async deleteSharedDashboard(shareId) {
-    try {
-      const { error } = await supabase
-        .from('shared_dashboards')
-        .delete()
-        .eq('share_id', shareId);
+    return supabase.safeQuery(
+      async (client) => {
+        const { error } = await client
+          .from('shared_dashboards')
+          .delete()
+          .eq('share_id', shareId);
+        
+        if (error) throw error;
+        
+        return true;
+      },
       
-      if (error) throw error;
-      
-      return true;
-    } catch (error) {
-      console.error('Error deleting shared dashboard:', error);
-      throw error;
-    }
-  },
-  
-  /**
-   * Update a shared dashboard configuration
-   * @param {string} shareId - The unique share ID to update
-   * @param {Object} updates - The properties to update
-   * @returns {Promise<Object>} - The updated dashboard
-   */
-  async updateSharedDashboard(shareId, updates) {
-    try {
-      const { data, error } = await supabase
-        .from('shared_dashboards')
-        .update(updates)
-        .eq('share_id', shareId)
-        .single();
-      
-      if (error) throw error;
-      
-      return data;
-    } catch (error) {
-      console.error('Error updating shared dashboard:', error);
-      throw error;
-    }
+      // Fallback returns false if Supabase is unavailable
+      async () => {
+        return { data: false, error: new Error("Cannot delete - Supabase unavailable") };
+      }
+    );
   }
 };
 

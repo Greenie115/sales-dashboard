@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import _ from 'lodash';
 import { useTheme } from '../../context/ThemeContext';
@@ -11,312 +11,7 @@ import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
 import ErrorBoundary from '../ErrorBoundary';
 import sharingService from '../../services/sharingService';
-
-// Create a more reliable function for getting client name with proper fallbacks
-const getClientDisplayName = (config) => {
-  // First try metadata.clientName as it's the most authoritative
-  if (config.metadata?.clientName) {
-    return config.metadata.clientName;
-  }
-  
-  // Then try brandNames from various sources
-  if (config.metadata?.brandNames && config.metadata.brandNames.length > 0) {
-    return config.metadata.brandNames.join(', ');
-  }
-  
-  if (config.brandNames && config.brandNames.length > 0) {
-    return config.brandNames.join(', ');
-  }
-  
-  // Try the precomputed data
-  if (config.precomputedData?.clientName) {
-    return config.precomputedData.clientName;
-  }
-  
-  if (config.precomputedData?.brandNames && config.precomputedData.brandNames.length > 0) {
-    return config.precomputedData.brandNames.join(', ');
-  }
-  
-  // Default fallback
-  return 'Client';
-};
-
-// This function ensures demographic data is available in the client data context
-const enhanceDemographicData = (clientData) => {
-  if (!clientData) return clientData;
-  
-  // Create a deep copy to avoid reference issues
-  const enhancedData = _.cloneDeep(clientData);
-  
-  // Check if demographicData exists, if not, try to create it from available data
-  if (!enhancedData.demographicData && enhancedData.salesData && enhancedData.salesData.length > 0) {
-    try {
-      // Extract gender distribution
-      const genderGroups = _.groupBy(
-        enhancedData.salesData.filter(item => item.gender),
-        'gender'
-      );
-      
-      const genderDistribution = Object.keys(genderGroups).length > 0 
-        ? Object.entries(genderGroups)
-            .map(([gender, items]) => ({
-              name: gender,
-              value: items.length,
-              percentage: (items.length / enhancedData.salesData.length) * 100
-            }))
-            .sort((a, b) => b.value - a.value)
-        : [];
-      
-      // Extract age distribution
-      const ageGroups = _.groupBy(
-        enhancedData.salesData.filter(item => item.age_group),
-        'age_group'
-      );
-      
-      const ageDistribution = Object.keys(ageGroups).length > 0
-        ? Object.entries(ageGroups)
-            .map(([ageGroup, items]) => ({
-              ageGroup,
-              count: items.length,
-              percentage: (items.length / enhancedData.salesData.length) * 100
-            }))
-            .sort((a, b) => b.count - a.count)
-        : [];
-        
-      enhancedData.demographicData = {
-        genderDistribution,
-        ageDistribution
-      };
-    } catch (err) {
-      console.error("Error generating demographic data:", err);
-    }
-  }
-  
-  // Make sure survey data is available for demographics tab
-  if (!enhancedData.surveyData && enhancedData.salesData && enhancedData.salesData.length > 0) {
-    try {
-      const surveyData = {
-        questions: {},
-        meta: { totalResponses: 0, questionCount: 0 }
-      };
-      
-      // Check for question fields in the data
-      const sampleRow = enhancedData.salesData[0];
-      const questionColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('question_'));
-      const propColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('proposition_'));
-      
-      const availableQuestions = [];
-      
-      // Find matching question numbers
-      propColumns.forEach(propCol => {
-        const questionNumber = propCol.replace('proposition_', '');
-        const questionCol = `question_${questionNumber}`;
-        
-        if (questionColumns.includes(questionCol)) {
-          availableQuestions.push(questionNumber);
-        }
-      });
-      
-      // Process each available question
-      availableQuestions.forEach(questionNum => {
-        const questionKey = `question_${questionNum}`;
-        const propKey = `proposition_${questionNum}`;
-        
-        // Get question text
-        let questionText = `Question ${parseInt(questionNum)}`;
-        const questionRow = enhancedData.salesData.find(row => row[questionKey] && typeof row[questionKey] === 'string' && row[questionKey].trim() !== '');
-        if (questionRow) {
-          questionText = questionRow[questionKey];
-        }
-        
-        // Count responses
-        const validResponses = enhancedData.salesData.filter(row => 
-          row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
-        );
-        
-        const counts = {};
-        let totalResponses = 0;
-        
-        validResponses.forEach(row => {
-          const responseStr = row[propKey];
-          if (!responseStr) return;
-          
-          // Split by semicolon if it's a multiple-choice response
-          const responses = responseStr.split(';').map(r => r.trim());
-          
-          responses.forEach(response => {
-            if (response) {
-              counts[response] = (counts[response] || 0) + 1;
-              totalResponses++;
-            }
-          });
-        });
-        
-        // Create basic demographics structure
-        const responsesByGender = {};
-        const responsesByAge = {};
-        
-        // Process gender breakdown
-        const genders = _.uniq(enhancedData.salesData.filter(row => row.gender).map(row => row.gender));
-        genders.forEach(gender => {
-          const genderRows = enhancedData.salesData.filter(row => row.gender === gender);
-          
-          responsesByGender[gender] = {
-            total: genderRows.length,
-            responseBreakdown: {}
-          };
-          
-          // Count responses by gender
-          Object.keys(counts).forEach(response => {
-            responsesByGender[gender].responseBreakdown[response] = genderRows.filter(row => {
-              const responseStr = row[propKey];
-              if (!responseStr) return false;
-              
-              const responses = responseStr.split(';').map(r => r.trim());
-              return responses.includes(response);
-            }).length;
-          });
-        });
-        
-        // Process age breakdown
-        const ageGroups = _.uniq(enhancedData.salesData.filter(row => row.age_group).map(row => row.age_group));
-        ageGroups.forEach(ageGroup => {
-          const ageRows = enhancedData.salesData.filter(row => row.age_group === ageGroup);
-          
-          responsesByAge[ageGroup] = {
-            total: ageRows.length,
-            responseBreakdown: {}
-          };
-          
-          // Count responses by age
-          Object.keys(counts).forEach(response => {
-            responsesByAge[ageGroup].responseBreakdown[response] = ageRows.filter(row => {
-              const responseStr = row[propKey];
-              if (!responseStr) return false;
-              
-              const responses = responseStr.split(';').map(r => r.trim());
-              return responses.includes(response);
-            }).length;
-          });
-        });
-        
-        // Add to survey data
-        surveyData.questions[questionNum] = {
-          questionText,
-          totalResponses,
-          counts,
-          demographics: {
-            gender: responsesByGender,
-            age: responsesByAge
-          }
-        };
-        
-        surveyData.meta.questionCount++;
-        surveyData.meta.totalResponses += totalResponses;
-      });
-      
-      enhancedData.surveyData = surveyData;
-    } catch (err) {
-      console.error("Error generating survey data:", err);
-    }
-  }
-  
-  return enhancedData;
-};
-
-// This component acts as a bridge between the ClientDataContext and the tab components
-const createSharedDataContext = (clientData) => {
-  if (!clientData) return {};
-
-  return {
-    // Pass through all data from clientData
-    ...clientData,
-    
-    // Ensure essential methods exist even if not provided in clientData
-    getFilteredData: () => clientData.filteredData || clientData.salesData || [],
-    calculateMetrics: () => clientData.metrics || null,
-    getRetailerDistribution: () => clientData.retailerData || [],
-    getProductDistribution: () => clientData.productDistribution || [],
-    
-    // Add this method specifically for demographic data
-    getSurveyResponses: (questionNumber) => {
-      // First try to get from precomputed survey data
-      if (clientData.surveyData && clientData.surveyData.questions && 
-          clientData.surveyData.questions[questionNumber]) {
-        return clientData.surveyData.questions[questionNumber];
-      }
-      
-      // If not available in precomputed data, process from salesData
-      if (clientData.salesData && Array.isArray(clientData.salesData)) {
-        return processSurveyResponses(clientData.salesData, questionNumber);
-      }
-      
-      return { responseData: [] };
-    },
-    
-    // Flags and metadata
-    isSharedView: true,
-    hasData: Boolean(clientData.filteredData?.length || clientData.salesData?.length),
-    
-    // For backward compatibility, ensure these exist
-    selectedProducts: clientData.filters?.selectedProducts || ['all'],
-    selectedRetailers: clientData.filters?.selectedRetailers || ['all'],
-    dateRange: clientData.filters?.dateRange || 'all',
-    startDate: clientData.filters?.startDate || '',
-    endDate: clientData.filters?.endDate || '',
-    selectedMonth: clientData.filters?.selectedMonth || '',
-    
-    // Empty functions for methods that shouldn't do anything in shared view
-    setSelectedProducts: () => {},
-    setSelectedRetailers: () => {},
-    setDateRange: () => {},
-    setActiveTab: () => {},
-  };
-};
-
-// Process survey response data for a specific question
-const processSurveyResponses = (salesData, questionNumber) => {
-  if (!salesData || !Array.isArray(salesData) || salesData.length === 0 || !questionNumber) {
-    return { responseData: [], ageDistribution: [], genderDistribution: [] };
-  }
-  
-  try {
-    const propKey = `proposition_${questionNumber}`;
-    const questionKey = `question_${questionNumber}`;
-    
-    // Extract responses that have valid data for this question
-    const validResponses = salesData.filter(row => 
-      row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
-    );
-    
-    if (validResponses.length === 0) return { responseData: [] };
-    
-    // Get response distribution
-    const responseCount = {};
-    validResponses.forEach(row => {
-      const response = row[propKey];
-      responseCount[response] = (responseCount[response] || 0) + 1;
-    });
-    
-    // Format response data
-    const responseData = Object.entries(responseCount).map(([fullResponse, count]) => {
-      return {
-        fullResponse,
-        count,
-        percentage: ((count / validResponses.length) * 100).toFixed(1)
-      };
-    }).sort((a, b) => b.count - a.count);
-    
-    return {
-      responseData,
-      questionText: validResponses[0][questionKey] || `Question ${questionNumber}`,
-      validResponses
-    };
-  } catch (error) {
-    console.error("Error processing survey responses:", error);
-    return { responseData: [] };
-  }
-};
+import SharedFilterPanel from '../filters/SharedFilterPanel';
 
 const SharedDashboardView = () => {
   const { shareId } = useParams();
@@ -344,44 +39,480 @@ const SharedDashboardView = () => {
   const [clientData, setClientData] = useState(null);
   const [clientDisplayName, setClientDisplayName] = useState('Client Dashboard');
   const [excludedDates, setExcludedDates] = useState([]);
-  
+  const [clientFilters, setClientFilters] = useState({
+    selectedProducts: null,
+    selectedRetailers: null,
+    dateRange: null,
+    startDate: null,
+    endDate: null,
+    selectedMonth: null
+  });
+
+  // Handle client filtering - moved inside component
+  const handleClientFilter = (filterType, value) => {
+    if (!clientData?.allowClientFiltering) return;
+
+    setClientFilters(prev => ({
+      ...prev,
+      [filterType]: value
+    }));
+  };
+
   // Check if the share ID looks like Base64 (fallback mode) or UUID (Supabase mode)
   const isBase64ShareId = (id) => {
     // If it contains characters that aren't valid in a UUID but are in Base64
     return /[+/]/.test(id) || id.length > 40;
   };
 
+  /**
+   * Unicode-safe Base64 decoding - handles all characters including emoji and special chars
+   * @param {string} base64 - The Base64 string to decode
+   * @returns {string} Decoded string
+   */
+  const unicodeSafeBase64Decode = (base64) => {
+    try {
+      // Add padding if needed
+      let paddedBase64 = base64;
+      while (paddedBase64.length % 4 !== 0) {
+        paddedBase64 += '=';
+      }
+      
+      // Convert the base64 string back to UTF-8 bytes
+      const binaryStr = atob(paddedBase64);
+      const bytes = new Uint8Array(binaryStr.length);
+      
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      
+      // Convert the bytes back to a string
+      return new TextDecoder().decode(bytes);
+    } catch (error) {
+      console.error("Error in Unicode-safe Base64 decoding:", error);
+      throw error;
+    }
+  };
+
+  // Fixed version of decodeBase64InChunks
   const decodeBase64InChunks = (base64String) => {
     console.log(`Decoding large base64 string (${base64String.length} chars)`);
     
-    // Process in smaller chunks to avoid browser freezing
     return new Promise((resolve, reject) => {
       try {
-        // Add padding if needed
+        // We need to add padding to ensure valid base64
         let paddedString = base64String;
         while (paddedString.length % 4 !== 0) {
           paddedString += '=';
         }
         
-        // Decode the base64 string
-        const decoded = atob(paddedString);
-        console.log(`Decoded string length: ${decoded.length}`);
-        
-        // Parse the JSON asynchronously to avoid blocking the UI
-        setTimeout(() => {
-          try {
-            const parsed = JSON.parse(decoded);
-            resolve(parsed);
-          } catch (err) {
-            console.error("Error parsing decoded JSON:", err);
-            reject(err);
+        // Use the unicode-safe decoder for the initial attempt
+        try {
+          const decodedJson = unicodeSafeBase64Decode(paddedString);
+          const config = JSON.parse(decodedJson);
+          
+          // Check for expiry
+          if (config.expiryDate) {
+            const expiryDate = new Date(config.expiryDate);
+            const now = new Date();
+            const expired = expiryDate < now;
+            
+            // Pass the expiry status back with the config
+            resolve({ config, expired });
+          } else {
+            resolve({ config, expired: false });
           }
-        }, 0);
+        } catch (unicodeErr) {
+          console.warn("Unicode-safe decoding failed, trying standard approach:", unicodeErr);
+          
+          // Fall back to standard base64 decoding
+          const decoded = atob(paddedString);
+          
+          // Parse the JSON asynchronously to avoid blocking the UI
+          setTimeout(() => {
+            try {
+              const parsed = JSON.parse(decoded);
+              
+              // Check for expiry
+              if (parsed.expiryDate) {
+                const expiryDate = new Date(parsed.expiryDate);
+                const now = new Date();
+                const expired = expiryDate < now;
+                resolve({ config: parsed, expired });
+              } else {
+                resolve({ config: parsed, expired: false });
+              }
+            } catch (err) {
+              console.error("Error parsing decoded JSON:", err);
+              reject(err);
+            }
+          }, 0);
+        }
       } catch (err) {
         console.error("Error decoding base64:", err);
         reject(err);
       }
     });
+  };
+  
+  // Get filtered data with client filters - moved inside component with useCallback
+  const getClientFilteredData = useCallback(() => {
+    if (!clientData || !clientData.salesData || !Array.isArray(clientData.salesData)) {
+      return [];
+    }
+    
+    // If no client filters are set, return the precomputed filtered data or all data
+    if (!clientFilters.selectedProducts && 
+        !clientFilters.selectedRetailers && 
+        !clientFilters.dateRange) {
+      return clientData.filteredData || clientData.salesData;
+    }
+    
+    try {
+      // Get filter values (use client filters if set, otherwise use initial filters)
+      const filterProducts = clientFilters.selectedProducts || 
+                           (shareConfig?.filters?.selectedProducts || ['all']);
+      const filterRetailers = clientFilters.selectedRetailers || 
+                            (shareConfig?.filters?.selectedRetailers || ['all']);
+      const filterDateRange = clientFilters.dateRange || 
+                           (shareConfig?.filters?.dateRange || 'all');
+      const filterStartDate = clientFilters.startDate || 
+                           (shareConfig?.filters?.startDate || '');
+      const filterEndDate = clientFilters.endDate || 
+                          (shareConfig?.filters?.endDate || '');
+      const filterSelectedMonth = clientFilters.selectedMonth || 
+                               (shareConfig?.filters?.selectedMonth || '');
+
+      return clientData.salesData.filter(item => {
+        if (!item) return false;
+        
+        // Product filter
+        const productMatch = filterProducts.includes('all') || 
+                            (item.product_name && filterProducts.includes(item.product_name));
+        
+        // Retailer filter
+        const retailerMatch = filterRetailers.includes('all') || 
+                              (item.chain && filterRetailers.includes(item.chain));
+        
+        // Date filter
+        let dateMatch = true;
+        if (filterDateRange === 'month' && filterSelectedMonth && item.month) {
+          dateMatch = item.month === filterSelectedMonth;
+        } else if (filterDateRange === 'custom' && filterStartDate && filterEndDate && item.receipt_date) {
+          dateMatch = item.receipt_date >= filterStartDate && item.receipt_date <= filterEndDate;
+        }
+        
+        return productMatch && retailerMatch && dateMatch;
+      });
+    } catch (e) {
+      console.error("Error in client-side filtering:", e);
+      return clientData.filteredData || clientData.salesData || [];
+    }
+  }, [clientData, clientFilters, shareConfig]);
+
+  // Create a more reliable function for getting client name with proper fallbacks
+  const getClientDisplayName = (config) => {
+    // First try metadata.clientName as it's the most authoritative
+    if (config.metadata?.clientName) {
+      return config.metadata.clientName;
+    }
+    
+    // Then try brandNames from various sources
+    if (config.metadata?.brandNames && config.metadata.brandNames.length > 0) {
+      return config.metadata.brandNames.join(', ');
+    }
+    
+    if (config.brandNames && config.brandNames.length > 0) {
+      return config.brandNames.join(', ');
+    }
+    
+    // Try the precomputed data
+    if (config.precomputedData?.clientName) {
+      return config.precomputedData.clientName;
+    }
+    
+    if (config.precomputedData?.brandNames && config.precomputedData.brandNames.length > 0) {
+      return config.precomputedData.brandNames.join(', ');
+    }
+    
+    // Default fallback
+    return 'Client';
+  };
+
+  // This function ensures demographic data is available in the client data context
+  const enhanceDemographicData = (clientData) => {
+    if (!clientData) return clientData;
+    
+    // Create a deep copy to avoid reference issues
+    const enhancedData = _.cloneDeep(clientData);
+    
+    // Check if demographicData exists, if not, try to create it from available data
+    if (!enhancedData.demographicData && enhancedData.salesData && enhancedData.salesData.length > 0) {
+      try {
+        // Extract gender distribution
+        const genderGroups = _.groupBy(
+          enhancedData.salesData.filter(item => item.gender),
+          'gender'
+        );
+        
+        const genderDistribution = Object.keys(genderGroups).length > 0 
+          ? Object.entries(genderGroups)
+              .map(([gender, items]) => ({
+                name: gender,
+                value: items.length,
+                percentage: (items.length / enhancedData.salesData.length) * 100
+              }))
+              .sort((a, b) => b.value - a.value)
+          : [];
+        
+        // Extract age distribution
+        const ageGroups = _.groupBy(
+          enhancedData.salesData.filter(item => item.age_group),
+          'age_group'
+        );
+        
+        const ageDistribution = Object.keys(ageGroups).length > 0
+          ? Object.entries(ageGroups)
+              .map(([ageGroup, items]) => ({
+                ageGroup,
+                count: items.length,
+                percentage: (items.length / enhancedData.salesData.length) * 100
+              }))
+              .sort((a, b) => b.count - a.count)
+          : [];
+          
+        enhancedData.demographicData = {
+          genderDistribution,
+          ageDistribution
+        };
+      } catch (err) {
+        console.error("Error generating demographic data:", err);
+      }
+    }
+    
+    // Make sure survey data is available for demographics tab
+    if (!enhancedData.surveyData && enhancedData.salesData && enhancedData.salesData.length > 0) {
+      try {
+        const surveyData = {
+          questions: {},
+          meta: { totalResponses: 0, questionCount: 0 }
+        };
+        
+        // Check for question fields in the data
+        const sampleRow = enhancedData.salesData[0];
+        const questionColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('question_'));
+        const propColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('proposition_'));
+        
+        const availableQuestions = [];
+        
+        // Find matching question numbers
+        propColumns.forEach(propCol => {
+          const questionNumber = propCol.replace('proposition_', '');
+          const questionCol = `question_${questionNumber}`;
+          
+          if (questionColumns.includes(questionCol)) {
+            availableQuestions.push(questionNumber);
+          }
+        });
+        
+        // Process each available question
+        availableQuestions.forEach(questionNum => {
+          const questionKey = `question_${questionNum}`;
+          const propKey = `proposition_${questionNum}`;
+          
+          // Get question text
+          let questionText = `Question ${parseInt(questionNum)}`;
+          const questionRow = enhancedData.salesData.find(row => row[questionKey] && typeof row[questionKey] === 'string' && row[questionKey].trim() !== '');
+          if (questionRow) {
+            questionText = questionRow[questionKey];
+          }
+          
+          // Count responses
+          const validResponses = enhancedData.salesData.filter(row => 
+            row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
+          );
+          
+          const counts = {};
+          let totalResponses = 0;
+          
+          validResponses.forEach(row => {
+            const responseStr = row[propKey];
+            if (!responseStr) return;
+            
+            // Split by semicolon if it's a multiple-choice response
+            const responses = responseStr.split(';').map(r => r.trim());
+            
+            responses.forEach(response => {
+              if (response) {
+                counts[response] = (counts[response] || 0) + 1;
+                totalResponses++;
+              }
+            });
+          });
+          
+          // Create basic demographics structure
+          const responsesByGender = {};
+          const responsesByAge = {};
+          
+          // Process gender breakdown
+          const genders = _.uniq(enhancedData.salesData.filter(row => row.gender).map(row => row.gender));
+          genders.forEach(gender => {
+            const genderRows = enhancedData.salesData.filter(row => row.gender === gender);
+            
+            responsesByGender[gender] = {
+              total: genderRows.length,
+              responseBreakdown: {}
+            };
+            
+            // Count responses by gender
+            Object.keys(counts).forEach(response => {
+              responsesByGender[gender].responseBreakdown[response] = genderRows.filter(row => {
+                const responseStr = row[propKey];
+                if (!responseStr) return false;
+                
+                const responses = responseStr.split(';').map(r => r.trim());
+                return responses.includes(response);
+              }).length;
+            });
+          });
+          
+          // Process age breakdown
+          const ageGroups = _.uniq(enhancedData.salesData.filter(row => row.age_group).map(row => row.age_group));
+          ageGroups.forEach(ageGroup => {
+            const ageRows = enhancedData.salesData.filter(row => row.age_group === ageGroup);
+            
+            responsesByAge[ageGroup] = {
+              total: ageRows.length,
+              responseBreakdown: {}
+            };
+            
+            // Count responses by age
+            Object.keys(counts).forEach(response => {
+              responsesByAge[ageGroup].responseBreakdown[response] = ageRows.filter(row => {
+                const responseStr = row[propKey];
+                if (!responseStr) return false;
+                
+                const responses = responseStr.split(';').map(r => r.trim());
+                return responses.includes(response);
+              }).length;
+            });
+          });
+          
+          // Add to survey data
+          surveyData.questions[questionNum] = {
+            questionText,
+            totalResponses,
+            counts,
+            demographics: {
+              gender: responsesByGender,
+              age: responsesByAge
+            }
+          };
+          
+          surveyData.meta.questionCount++;
+          surveyData.meta.totalResponses += totalResponses;
+        });
+        
+        enhancedData.surveyData = surveyData;
+      } catch (err) {
+        console.error("Error generating survey data:", err);
+      }
+    }
+    
+    return enhancedData;
+  };
+
+  // Process survey response data for a specific question - moved inside component
+  const processSurveyResponses = (salesData, questionNumber) => {
+    if (!salesData || !Array.isArray(salesData) || salesData.length === 0 || !questionNumber) {
+      return { responseData: [], ageDistribution: [], genderDistribution: [] };
+    }
+    
+    try {
+      const propKey = `proposition_${questionNumber}`;
+      const questionKey = `question_${questionNumber}`;
+      
+      // Extract responses that have valid data for this question
+      const validResponses = salesData.filter(row => 
+        row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
+      );
+      
+      if (validResponses.length === 0) return { responseData: [] };
+      
+      // Get response distribution
+      const responseCount = {};
+      validResponses.forEach(row => {
+        const response = row[propKey];
+        responseCount[response] = (responseCount[response] || 0) + 1;
+      });
+      
+      // Format response data
+      const responseData = Object.entries(responseCount).map(([fullResponse, count]) => {
+        return {
+          fullResponse,
+          count,
+          percentage: ((count / validResponses.length) * 100).toFixed(1)
+        };
+      }).sort((a, b) => b.count - a.count);
+      
+      return {
+        responseData,
+        questionText: validResponses[0][questionKey] || `Question ${questionNumber}`,
+        validResponses
+      };
+    } catch (error) {
+      console.error("Error processing survey responses:", error);
+      return { responseData: [] };
+    }
+  };
+
+  // This component acts as a bridge between the ClientDataContext and the tab components
+  const createSharedDataContext = (clientData) => {
+    if (!clientData) return {};
+
+    return {
+      // Pass through all data from clientData
+      ...clientData,
+      
+      // Ensure essential methods exist even if not provided in clientData
+      getFilteredData: () => clientData.filteredData || clientData.salesData || [],
+      calculateMetrics: () => clientData.metrics || null,
+      getRetailerDistribution: () => clientData.retailerData || [],
+      getProductDistribution: () => clientData.productDistribution || [],
+      
+      // Add this method specifically for demographic data
+      getSurveyResponses: (questionNumber) => {
+        // First try to get from precomputed survey data
+        if (clientData.surveyData && clientData.surveyData.questions && 
+            clientData.surveyData.questions[questionNumber]) {
+          return clientData.surveyData.questions[questionNumber];
+        }
+        
+        // If not available in precomputed data, process from salesData
+        if (clientData.salesData && Array.isArray(clientData.salesData)) {
+          return processSurveyResponses(clientData.salesData, questionNumber);
+        }
+        
+        return { responseData: [] };
+      },
+      
+      // Flags and metadata
+      isSharedView: true,
+      hasData: Boolean(clientData.filteredData?.length || clientData.salesData?.length),
+      
+      // For backward compatibility, ensure these exist
+      selectedProducts: clientData.filters?.selectedProducts || ['all'],
+      selectedRetailers: clientData.filters?.selectedRetailers || ['all'],
+      dateRange: clientData.filters?.dateRange || 'all',
+      startDate: clientData.filters?.startDate || '',
+      endDate: clientData.filters?.endDate || '',
+      selectedMonth: clientData.filters?.selectedMonth || '',
+      
+      // Empty functions for methods that shouldn't do anything in shared view
+      setSelectedProducts: () => {},
+      setSelectedRetailers: () => {},
+      setDateRange: () => {},
+      setActiveTab: () => {},
+    };
   };
   
   // Load shared configuration from either Supabase or fallback method
@@ -403,47 +534,95 @@ const SharedDashboardView = () => {
         const useSupabase = !isBase64ShareId(shareId);
         setIsSupabaseMode(useSupabase);
         
-        // For very large base64 shares, use a chunking approach to decode
-        if (!useSupabase && shareId.length > 10000) {
-          console.log("Using chunked decoding for large share data");
-        }
-        
         let config;
         let expired = false;
         
         console.log("Loading shared dashboard with ID:", shareId);
         console.log("Using Supabase mode:", useSupabase);
         
-        if (useSupabase) {
+        // Force fallback mode if there's an SSL error detected in the URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const forceLocal = urlParams.get('forceLocal') === 'true';
+        
+        if (useSupabase && !forceLocal) {
           try {
-            // Try Supabase first
+            // Set this flag early if SSL certificate issues are mentioned in params
+            if (urlParams.get('sslError') === 'true') {
+              console.warn("SSL error flag detected in URL, forcing fallback mode");
+              throw new Error("SSL error detected from URL parameter");
+            }
+            
+            // Try Supabase first - with robust fallback
             console.log("Using Supabase to fetch dashboard");
-            const result = await sharingService.getSharedDashboard(shareId);
-            expired = result.expired;
-            config = result.config;
-            console.log("Supabase result:", result);
+            try {
+              const result = await sharingService.getSharedDashboard(shareId);
+              expired = result.expired;
+              config = result.config;
+              console.log("Supabase result:", result); 
+            } catch (supabaseErr) {
+              // Check for known error types and handle gracefully
+              if (supabaseErr.message && (
+                  supabaseErr.message.includes("column") || 
+                  supabaseErr.message.includes("table") || 
+                  supabaseErr.message.includes("schema") ||
+                  supabaseErr.message.includes("SSL") || 
+                  supabaseErr.message.includes("certificate") ||
+                  supabaseErr.message.includes("CERT_") ||
+                  supabaseErr.message.includes("ERR_CERT"))) {
+                console.warn("Database or SSL certificate issue detected, using client-side fallback");
+              }
+              throw supabaseErr; // Re-throw to trigger fallback
+            }
           } catch (err) {
             console.error("Supabase fetch failed, trying fallback:", err);
+            
+            // Check if this is an SSL error
+            const isSSLError = err.message && (
+              err.message.includes("SSL") || 
+              err.message.includes("certificate") ||
+              err.message.includes("CERT_") ||
+              err.message.includes("ERR_CERT")
+            );
+            
+            // If SSL error detected, set a flag to use fallback in the future
+            if (isSSLError) {
+              console.error("SSL certificate error detected, switching to fallback mode permanently");
+              
+              // Try to add the SSL error parameter to URL if not already there
+              if (!urlParams.has('sslError')) {
+                urlParams.set('sslError', 'true');
+                const newUrl = `${window.location.pathname}${window.location.hash}?${urlParams.toString()}`;
+                
+                // Use history if available to avoid full page reload
+                if (window.history && window.history.replaceState) {
+                  window.history.replaceState({}, document.title, newUrl);
+                }
+              }
+            }
+            
             // If Supabase fails, try fallback method
             try {
-              // We need to add padding to ensure valid base64
-              let paddedShareId = shareId;
-              while (paddedShareId.length % 4 !== 0) {
-                paddedShareId += '=';
-              }
-              
-              const decodedConfig = JSON.parse(atob(paddedShareId));
-              config = decodedConfig;
-              
-              // Check if share link is expired (fallback mode)
-              if (decodedConfig.expiryDate) {
-                const expiryDate = new Date(decodedConfig.expiryDate);
-                const now = new Date();
-                expired = expiryDate < now;
+              if (shareId.length > 10000) {
+                // For very large shares, use chunked processing
+                const { config: decodedConfig, expired: isExpired } = await decodeBase64InChunks(shareId);
+                config = decodedConfig;
+                expired = isExpired;
+              } else {
+                // Regular processing for smaller share links
+                const decodedJson = unicodeSafeBase64Decode(shareId);
+                const decodedConfig = JSON.parse(decodedJson);
+                config = decodedConfig;
+                
+                // Check if share link is expired
+                if (decodedConfig.expiryDate) {
+                  const expiryDate = new Date(decodedConfig.expiryDate);
+                  const now = new Date();
+                  expired = expiryDate < now;
+                }
               }
               
               setIsSupabaseMode(false);
-              console.log("Fallback decode successful:", config);
+              console.log("Fallback decode successful");
             } catch (fallbackErr) {
               console.error("Fallback decode failed:", fallbackErr);
               throw new Error("Invalid or corrupted share link");
@@ -452,49 +631,38 @@ const SharedDashboardView = () => {
         } else {
           // Directly use fallback method (Base64 encoded)
           console.log("Using fallback mode to fetch dashboard");
-            try {
-              // For very large share links, use the chunked processing
-              if (shareId.length > 10000) {
-                console.log("Using chunked processing for large share");
-                try {
-                  config = await decodeBase64InChunks(shareId);
-                  
-                  // Check if share link is expired
-                  if (config.expiryDate) {
-                    const expiryDate = new Date(config.expiryDate);
-                    const now = new Date();
-                    expired = expiryDate < now;
-                  }
-                  
-                  console.log("Chunked decoding successful");
-                } catch (chunkErr) {
-                  console.error("Chunked decoding failed:", chunkErr);
-                  throw new Error("Unable to decode large share link");
-                }
-              } else {
-                // Regular processing for smaller share links
-                // We need to add padding to ensure valid base64
-                let paddedShareId = shareId;
-                while (paddedShareId.length % 4 !== 0) {
-                  paddedShareId += '=';
-                }
-                
-                const decodedConfig = JSON.parse(atob(paddedShareId));
+          try {
+            // For very large share links, use the chunked processing
+            if (shareId.length > 10000) {
+              console.log("Using chunked processing for large share");
+              try {
+                const { config: decodedConfig, expired: isExpired } = await decodeBase64InChunks(shareId);
                 config = decodedConfig;
-                
-                // Check if share link is expired (fallback mode)
-                if (decodedConfig.expiryDate) {
-                  const expiryDate = new Date(decodedConfig.expiryDate);
-                  const now = new Date();
-                  expired = expiryDate < now;
-                }
-                
-                console.log("Standard fallback decoding successful");
+                expired = isExpired;
+                console.log("Chunked decoding successful");
+              } catch (chunkErr) {
+                console.error("Chunked decoding failed:", chunkErr);
+                throw new Error("Unable to decode large share link");
               }
-            } catch (err) {
-              console.error("Error decoding fallback share:", err);
-              throw new Error("Invalid or corrupted share link");
+            } else {
+              // Regular processing for smaller share links
+              const decodedJson = unicodeSafeBase64Decode(shareId);
+              const decodedConfig = JSON.parse(decodedJson);
+              config = decodedConfig;
+              
+              // Check if share link is expired
+              if (decodedConfig.expiryDate) {
+                const expiryDate = new Date(decodedConfig.expiryDate);
+                const now = new Date();
+                expired = expiryDate < now;
+              }
+              
+              console.log("Standard fallback decoding successful");
             }
+          } catch (err) {
+            console.error("Error decoding fallback share:", err);
+            throw new Error("Invalid or corrupted share link");
+          }
         }
         
         // Check if share link is expired
@@ -683,6 +851,16 @@ const SharedDashboardView = () => {
   
   // Create a proper shared data context with all necessary methods for the ClientDataProvider
   const sharedDataContext = createSharedDataContext(clientData);
+
+  sharedDataContext.getFilteredData = getClientFilteredData;
+  sharedDataContext.setSelectedProducts = (products) => handleClientFilter('selectedProducts', products);
+  sharedDataContext.setSelectedRetailers = (retailers) => handleClientFilter('selectedRetailers', retailers);
+  sharedDataContext.setDateRange = (range) => handleClientFilter('dateRange', range);
+  sharedDataContext.setStartDate = (date) => handleClientFilter('startDate', date);
+  sharedDataContext.setEndDate = (date) => handleClientFilter('endDate', date);
+  sharedDataContext.setSelectedMonth = (month) => handleClientFilter('selectedMonth', month);
+  sharedDataContext.filteredData = getClientFilteredData();
+  sharedDataContext.allowClientFiltering = clientData?.allowClientFiltering || false;
   
   // Transform data based on sharing config
   const transformedData = transformDataForSharing ? 
@@ -787,8 +965,52 @@ const SharedDashboardView = () => {
                 getFilteredData: () => transformedData.filteredData || transformedData.salesData || [],
                 calculateMetrics: () => transformedData.metrics || {},
                 // Set flag to ensure we're using client data
+                isSharedView: true,
+                getFilteredData: sharedDataContext.getFilteredData,
+                setSelectedProducts: sharedDataContext.setSelectedProducts,
+                setSelectedRetailers: sharedDataContext.setSelectedRetailers, 
+                setDateRange: sharedDataContext.setDateRange,
+                setStartDate: sharedDataContext.setStartDate,
+                setEndDate: sharedDataContext.setEndDate,
+                setSelectedMonth: sharedDataContext.setSelectedMonth,
+                filteredData: sharedDataContext.filteredData,
+                allowClientFiltering: sharedDataContext.allowClientFiltering,
+                hiddenCharts: transformedData.hiddenCharts || [],
                 isSharedView: true
               }}>
+
+                {/* Filter Panel - only show if client filtering is allowed */}
+                {clientData && clientData.allowClientFiltering && (
+                  <SharedFilterPanel 
+                    salesData={clientData.salesData}
+                    selectedProducts={clientFilters.selectedProducts || shareConfig.filters?.selectedProducts || ['all']}
+                    selectedRetailers={clientFilters.selectedRetailers || shareConfig.filters?.selectedRetailers || ['all']}
+                    dateRange={clientFilters.dateRange || shareConfig.filters?.dateRange || 'all'}
+                    startDate={clientFilters.startDate || shareConfig.filters?.startDate || ''}
+                    endDate={clientFilters.endDate || shareConfig.filters?.endDate || ''}
+                    selectedMonth={clientFilters.selectedMonth || shareConfig.filters?.selectedMonth || ''}
+                    setSelectedProducts={(products) => handleClientFilter('selectedProducts', products)}
+                    setSelectedRetailers={(retailers) => handleClientFilter('selectedRetailers', retailers)}
+                    setDateRange={(range) => handleClientFilter('dateRange', range)}
+                    setStartDate={(date) => handleClientFilter('startDate', date)}
+                    setEndDate={(date) => handleClientFilter('endDate', date)}
+                    setSelectedMonth={(month) => handleClientFilter('selectedMonth', month)}
+                    getAvailableMonths={() => {
+                      // Extract unique months from data
+                      if (!clientData.salesData) return [];
+                      
+                      const months = new Set();
+                      clientData.salesData.forEach(item => {
+                        if (item.month) months.add(item.month);
+                      });
+                      
+                      return Array.from(months).sort();
+                    }}
+                    brandMapping={clientData.brandMapping || {}}
+                    allowClientFiltering={clientData.allowClientFiltering}
+                  />
+                )}
+
                 {/* Render the appropriate tab content */}
                 {activeTab === 'summary' && (
                   <ErrorBoundary>
