@@ -122,25 +122,59 @@ const SharedDashboardPreview = ({ config, onClose }) => {
   const enhancedData = useMemo(() => {
     if (!precomputedData) {
       console.warn('No precomputedData available to enhance');
-      return null;
+      // Instead of returning null, create a basic structure with empty arrays
+      return {
+        salesData: [],
+        filteredData: [],
+        metrics: {},
+        retailerDistribution: [],
+        productDistribution: [],
+        brandNames: [],
+        clientName: 'Client',
+        isSharedView: true
+      };
     }
     
     // Create enhanced data object with all the processed data
     const enhanced = {
       ...precomputedData,
-      // Ensure we have salesData
-      salesData: salesData.length > 0 ? salesData : precomputedData.salesData || [],
-      // Add all the processed data
-      metrics: metrics,
-      retailerDistribution: retailerDistribution,
-      productDistribution: productDistribution,
-      timeSeriesData: getTimeSeriesData('daily'),
-      weeklyData: getTimeSeriesData('weekly'),
-      monthlyData: getTimeSeriesData('monthly'),
-      keyInsights: getKeyInsights(),
-      demographicData: getDemographicMetrics(),
-      brandMapping: brandMapping,
-      brandNames: detectedBrandNames.length > 0 ? detectedBrandNames : brandNames
+      // Ensure we have salesData - check all possible sources
+      salesData: (salesData?.length > 0 ? salesData : 
+                 (precomputedData.salesData?.length > 0 ? precomputedData.salesData : 
+                 (precomputedData.filteredData?.length > 0 ? precomputedData.filteredData : []))),
+      
+      // Ensure we have filteredData for components that expect it
+      filteredData: (precomputedData.filteredData?.length > 0 ? precomputedData.filteredData : 
+                    (salesData?.length > 0 ? salesData : 
+                    (precomputedData.salesData?.length > 0 ? precomputedData.salesData : []))),
+      
+      // Add all the processed data, with fallbacks
+      metrics: metrics || precomputedData.metrics || {},
+      retailerDistribution: retailerDistribution?.length > 0 ? retailerDistribution : (precomputedData.retailerDistribution || []),
+      productDistribution: productDistribution?.length > 0 ? productDistribution : (precomputedData.productDistribution || []),
+      
+      // Add time series data
+      timeSeriesData: getTimeSeriesData ? getTimeSeriesData('daily') : [],
+      weeklyData: getTimeSeriesData ? getTimeSeriesData('weekly') : [],
+      monthlyData: getTimeSeriesData ? getTimeSeriesData('monthly') : [],
+      
+      // Add insights and demographics
+      keyInsights: getKeyInsights ? getKeyInsights() : [],
+      demographicData: getDemographicMetrics ? getDemographicMetrics() : {},
+      
+      // Add brand information
+      brandMapping: brandMapping || precomputedData.brandMapping || {},
+      brandNames: detectedBrandNames?.length > 0 ? detectedBrandNames : 
+                 (brandNames?.length > 0 ? brandNames : 
+                 (precomputedData.brandNames || [])),
+      
+      // Ensure client name is set
+      clientName: precomputedData.clientName || 
+                 (detectedBrandNames?.length > 0 ? detectedBrandNames.join(', ') : 
+                 (brandNames?.length > 0 ? brandNames.join(', ') : 'Client')),
+      
+      // Set flag to ensure components know this is a shared view
+      isSharedView: true
     };
     
     console.log('Enhanced data created:', enhanced);
@@ -286,19 +320,42 @@ const SharedDashboardPreview = ({ config, onClose }) => {
             ) : (
               // Make sure we pass the enhanced data to the provider
               <DataProvider data={enhancedData}>
-                <ClientDataProvider clientData={enhancedData}>
+                <ClientDataProvider clientData={{
+                  ...enhancedData,
+                  // Essential data
+                  salesData: enhancedData.salesData || [],
+                  filteredData: enhancedData.filteredData || enhancedData.salesData || [],
+                  brandMapping: enhancedData.brandMapping || {},
+                  brandNames: enhancedData.brandNames || [],
+                  clientName: enhancedData.clientName || 'Client',
+                  
+                  // Essential functions
+                  getFilteredData: () => enhancedData.filteredData || enhancedData.salesData || [],
+                  calculateMetrics: () => enhancedData.metrics || {},
+                  getRetailerDistribution: () => enhancedData.retailerDistribution || [],
+                  getProductDistribution: () => enhancedData.productDistribution || [],
+                  
+                  // Flag for shared view
+                  isSharedView: true,
+                  
+                  // Charts control
+                  hiddenCharts: enhancedData.hiddenCharts || [],
+                  
+                  // Pass any excluded dates
+                  excludedDates: excludedDates || []
+                }}>
                   {/* Show the correct tab content based on activeTab */}
-                  {activeTab === 'summary' && <SummaryTab isSharedView={true} directData={enhancedData} />}
+                  {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
                   {activeTab === 'sales' && (
                     <SalesTab 
+                      isSharedView={true}
                       excludedDates={excludedDates}
                       onAddDate={handleAddExcludedDate}
                       onRemoveExcludedDate={handleRemoveExcludedDate}
-                      directData={enhancedData}
                     />
                   )}
-                  {activeTab === 'demographics' && <DemographicsTab isSharedView={true} directData={enhancedData} />}
-                  {activeTab === 'offers' && <OffersTab isSharedView={true} directData={enhancedData} />}
+                  {activeTab === 'demographics' && <DemographicsTab isSharedView={true} />}
+                  {activeTab === 'offers' && <OffersTab isSharedView={true} />}
                 </ClientDataProvider>
               </DataProvider>
             )}

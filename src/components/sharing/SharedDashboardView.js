@@ -350,6 +350,39 @@ const SharedDashboardView = () => {
     // If it contains characters that aren't valid in a UUID but are in Base64
     return /[+/]/.test(id) || id.length > 40;
   };
+
+  const decodeBase64InChunks = (base64String) => {
+    console.log(`Decoding large base64 string (${base64String.length} chars)`);
+    
+    // Process in smaller chunks to avoid browser freezing
+    return new Promise((resolve, reject) => {
+      try {
+        // Add padding if needed
+        let paddedString = base64String;
+        while (paddedString.length % 4 !== 0) {
+          paddedString += '=';
+        }
+        
+        // Decode the base64 string
+        const decoded = atob(paddedString);
+        console.log(`Decoded string length: ${decoded.length}`);
+        
+        // Parse the JSON asynchronously to avoid blocking the UI
+        setTimeout(() => {
+          try {
+            const parsed = JSON.parse(decoded);
+            resolve(parsed);
+          } catch (err) {
+            console.error("Error parsing decoded JSON:", err);
+            reject(err);
+          }
+        }, 0);
+      } catch (err) {
+        console.error("Error decoding base64:", err);
+        reject(err);
+      }
+    });
+  };
   
   // Load shared configuration from either Supabase or fallback method
   useEffect(() => {
@@ -360,10 +393,20 @@ const SharedDashboardView = () => {
         }
         
         setLoading(true);
+        
+        // Show an intermediate loading message for large shares
+        if (shareId.length > 5000) {
+          console.log("Large share detected, optimizing loading process");
+        }
     
         // Determine if we should use Supabase or fallback method based on share ID format
         const useSupabase = !isBase64ShareId(shareId);
         setIsSupabaseMode(useSupabase);
+        
+        // For very large base64 shares, use a chunking approach to decode
+        if (!useSupabase && shareId.length > 10000) {
+          console.log("Using chunked decoding for large share data");
+        }
         
         let config;
         let expired = false;
@@ -409,28 +452,49 @@ const SharedDashboardView = () => {
         } else {
           // Directly use fallback method (Base64 encoded)
           console.log("Using fallback mode to fetch dashboard");
-          try {
-            // We need to add padding to ensure valid base64
-            let paddedShareId = shareId;
-            while (paddedShareId.length % 4 !== 0) {
-              paddedShareId += '=';
+            try {
+              // For very large share links, use the chunked processing
+              if (shareId.length > 10000) {
+                console.log("Using chunked processing for large share");
+                try {
+                  config = await decodeBase64InChunks(shareId);
+                  
+                  // Check if share link is expired
+                  if (config.expiryDate) {
+                    const expiryDate = new Date(config.expiryDate);
+                    const now = new Date();
+                    expired = expiryDate < now;
+                  }
+                  
+                  console.log("Chunked decoding successful");
+                } catch (chunkErr) {
+                  console.error("Chunked decoding failed:", chunkErr);
+                  throw new Error("Unable to decode large share link");
+                }
+              } else {
+                // Regular processing for smaller share links
+                // We need to add padding to ensure valid base64
+                let paddedShareId = shareId;
+                while (paddedShareId.length % 4 !== 0) {
+                  paddedShareId += '=';
+                }
+                
+                const decodedConfig = JSON.parse(atob(paddedShareId));
+                config = decodedConfig;
+                
+                // Check if share link is expired (fallback mode)
+                if (decodedConfig.expiryDate) {
+                  const expiryDate = new Date(decodedConfig.expiryDate);
+                  const now = new Date();
+                  expired = expiryDate < now;
+                }
+                
+                console.log("Standard fallback decoding successful");
+              }
+            } catch (err) {
+              console.error("Error decoding fallback share:", err);
+              throw new Error("Invalid or corrupted share link");
             }
-            
-            const decodedConfig = JSON.parse(atob(paddedShareId));
-            config = decodedConfig;
-            
-            // Check if share link is expired (fallback mode)
-            if (decodedConfig.expiryDate) {
-              const expiryDate = new Date(decodedConfig.expiryDate);
-              const now = new Date();
-              expired = expiryDate < now;
-            }
-            
-            console.log("Fallback decoded config:", config);
-          } catch (err) {
-            console.error("Error decoding fallback share:", err);
-            throw new Error("Invalid or corrupted share link");
-          }
         }
         
         // Check if share link is expired

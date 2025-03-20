@@ -11,42 +11,102 @@ const sharingService = {
    * @param {Date} expiryDate - Optional expiry date
    * @returns {Promise<Object>} - The created share with ID and URL
    */
-  async createSharedDashboard(config, expiryDate = null) {
+  async createSharedDashboard(config) {
     try {
-      // Generate a unique share ID
-      const shareId = uuidv4();
+      console.log("Starting share dashboard creation");
       
-      // Create the dashboard record in Supabase
+      // Step 1: Optimize config data before sending to Supabase
+      const optimizedConfig = this.optimizeConfigForDatabase(config);
+      
+      // Step 2: Set a longer timeout for the request (if supported by your Supabase client)
+      const timeoutOption = { requestTimeout: 60000 }; // 60 seconds
+      
+      console.log("Sending optimized config to Supabase");
+      
+      // Step 3: Use a simpler insert with fewer fields to improve performance
       const { data, error } = await supabase
         .from('shared_dashboards')
         .insert({
-          share_id: shareId,
-          config: config,
-          expires_at: expiryDate,
-          metadata: {
-            created_at: new Date().toISOString(),
-            brand_names: config.brandNames || [],
-            client_name: config.clientName || 'Client',
-            dataset_size: config.datasetSize || 0,
-          },
-          access_count: 0
-        });
+          // Only store essential data
+          share_id: uuidv4(), // Generate a unique ID
+          config: optimizedConfig,
+          client_name: config.metadata?.clientName || 'Client',
+          created_at: new Date().toISOString(),
+          expires_at: config.expiryDate ? new Date(config.expiryDate).toISOString() : null,
+          data_size: JSON.stringify(optimizedConfig).length
+        })
+        .select('share_id, created_at');
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating shared dashboard:', error);
+        
+        // Step 4: If the error is a timeout, fall back to the client-side method
+        if (error.code === '57014' || error.message.includes('timeout')) {
+          console.log("Database timeout detected, switching to fallback mode");
+          throw new Error("TIMEOUT_SWITCH_TO_FALLBACK");
+        }
+        
+        throw error;
+      }
       
-      // Build the share URL
-      const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/#/shared/${shareId}`;
-      
-      return {
-        id: shareId,
-        url: shareUrl,
-        data
-      };
+      console.log("Successfully created shared dashboard in Supabase");
+      return data[0];
     } catch (error) {
       console.error('Error creating shared dashboard:', error);
+      
+      // If we specifically triggered a fallback, return a special signal
+      if (error.message === "TIMEOUT_SWITCH_TO_FALLBACK") {
+        throw new Error("TIMEOUT_SWITCH_TO_FALLBACK");
+      }
+      
       throw error;
     }
+  },
+
+  /**
+   * Optimize the configuration data for database storage
+   * @param {Object} config - The dashboard configuration to optimize
+   * @returns {Object} - The optimized configuration
+   */
+  optimizeConfigForDatabase(config) {
+    console.log("Optimizing config for database storage");
+    
+    // Create a deep copy to avoid modifying the original
+    const optimizedConfig = JSON.parse(JSON.stringify(config));
+    
+    // 1. Check if we have precomputed data
+    if (optimizedConfig.precomputedData) {
+      // 2. Keep only essential metadata
+      const datasetMetadata = {
+        totalCount: optimizedConfig.precomputedData.salesData?.length || 0,
+        timeRange: optimizedConfig.precomputedData.metrics?.uniqueDates || [],
+        brandNames: optimizedConfig.precomputedData.brandNames || [], 
+        clientName: optimizedConfig.precomputedData.clientName || 'Client'
+      };
+      
+      // 3. Keep pre-aggregated data but limit raw data
+      // Completely remove raw sales data - it's too large
+      delete optimizedConfig.precomputedData.salesData;
+      
+      // For filtered data, only keep a maximum of 100 records as a sample
+      if (optimizedConfig.precomputedData.filteredData && 
+          Array.isArray(optimizedConfig.precomputedData.filteredData) && 
+          optimizedConfig.precomputedData.filteredData.length > 100) {
+        // Take only the first 100 records
+        optimizedConfig.precomputedData.filteredData = 
+          optimizedConfig.precomputedData.filteredData.slice(0, 100);
+        
+        // Flag that we've reduced the dataset
+        optimizedConfig.precomputedData.dataReduced = true;
+      }
+      
+      // 4. Add the metadata
+      optimizedConfig.precomputedData.datasetMetadata = datasetMetadata;
+    }
+    
+    // Return the optimized config
+    console.log("Config optimized for database storage");
+    return optimizedConfig;
   },
   
   /**

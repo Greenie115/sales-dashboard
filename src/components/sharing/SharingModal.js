@@ -55,14 +55,20 @@ const SharingModal = () => {
   // Create a fallback link using Base64 encoding
   const generateFallbackLink = () => {
     try {
+      console.log("Generating fallback link");
+      
       // Create a copy of the current sharing configuration
-      const configToShare = { ...shareConfig };
+      const configToShare = JSON.parse(JSON.stringify(shareConfig));
   
       // Ensure we have an active tab that's in the allowed tabs
-      if (!configToShare.allowedTabs.includes(configToShare.activeTab)) {
+      if (!configToShare.allowedTabs || !Array.isArray(configToShare.allowedTabs) || configToShare.allowedTabs.length === 0) {
+        configToShare.allowedTabs = ['summary'];
+      }
+      
+      if (!configToShare.activeTab || !configToShare.allowedTabs.includes(configToShare.activeTab)) {
         configToShare.activeTab = configToShare.allowedTabs[0];
       }
-
+  
       // Add metadata
       configToShare.metadata = {
         createdAt: new Date().toISOString(),
@@ -71,38 +77,129 @@ const SharingModal = () => {
         datasetSize: Array.isArray(salesData) ? salesData.length : 0,
       };
   
+      // Log the data we're preparing for the link
+      console.log("Preparing filtered data with filters:", configToShare.filters);
+      
+      // Get filtered data using the current filters
+      let filteredData = [];
+      try {
+        filteredData = getFilteredData ? getFilteredData(configToShare.filters) : [];
+        console.log(`Got ${filteredData.length} records of filtered data`);
+      } catch (err) {
+        console.error("Error getting filtered data:", err);
+        // Fallback to a subset of all sales data
+        filteredData = salesData ? salesData.slice(0, Math.min(5000, salesData.length)) : [];
+        console.log(`Using fallback with ${filteredData.length} records`);
+      }
+      
+      // Try to calculate metrics
+      let metrics = null;
+      try {
+        metrics = calculateMetrics ? calculateMetrics() : null;
+        console.log("Calculated metrics:", metrics ? "success" : "failed");
+      } catch (err) {
+        console.error("Error calculating metrics:", err);
+      }
+      
+      // Try to get retailer distribution
+      let retailerData = [];
+      try {
+        retailerData = getRetailerDistribution ? getRetailerDistribution() : [];
+        console.log(`Got ${retailerData.length} retailer records`);
+      } catch (err) {
+        console.error("Error getting retailer distribution:", err);
+      }
+      
+      // Try to get product distribution
+      let productDistribution = [];
+      try {
+        productDistribution = getProductDistribution ? getProductDistribution() : [];
+        console.log(`Got ${productDistribution.length} product records`);
+      } catch (err) {
+        console.error("Error getting product distribution:", err);
+      }
+  
       // IMPORTANT: Add precomputed data for the client view
       configToShare.precomputedData = {
-        filteredData: getFilteredData ? getFilteredData(configToShare.filters) : [],
-        metrics: calculateMetrics ? calculateMetrics() : null,
-        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? getProductDistribution() : [],
+        filteredData: filteredData,
+        metrics: metrics,
+        retailerData: retailerData,
+        productDistribution: productDistribution,
         brandMapping: brandMapping || {},
         brandNames: brandNames || [],
         clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-        salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
+        // Include a reasonable subset of the data
+        salesData: salesData ? salesData.slice(0, Math.min(5000, salesData.length)) : [], 
+        // Set flag for shared view
+        isSharedView: true,
+        // Include hidden charts
+        hiddenCharts: configToShare.hiddenCharts || []
       };
   
-      console.log("Generating share link with config:", {
+      console.log("Generated share config with:", {
         activeTab: configToShare.activeTab,
-        allowedTabs: configToShare.allowedTabs
+        allowedTabs: configToShare.allowedTabs,
+        salesDataLength: configToShare.precomputedData.salesData.length,
+        filteredDataLength: configToShare.precomputedData.filteredData.length
       });
   
+      // Try to serialize the config to catch any circular reference errors
+      const configJson = JSON.stringify(configToShare);
+      
       // Generate an ID using Base64 encoding
-      const shareId = btoa(JSON.stringify(configToShare)).replace(/=/g, '');
+      const shareId = btoa(configJson).replace(/=/g, '');
   
       // Create the shareable URL with hash for HashRouter
       const baseUrl = window.location.origin;
       const shareUrl = `${baseUrl}/#/shared/${shareId}`;
   
       setShareableLink(shareUrl);
+      console.log("Successfully generated fallback share link");
       return shareUrl;
     } catch (error) {
       console.error("Error generating fallback link:", error);
-      return "";
+      
+      // Try a more minimal approach if the full approach failed
+      try {
+        console.log("Attempting minimal fallback link generation");
+        
+        // Create a more minimal configuration
+        const minimalConfig = {
+          activeTab: shareConfig.activeTab || 'summary',
+          allowedTabs: shareConfig.allowedTabs || ['summary'],
+          filters: shareConfig.filters || {},
+          metadata: {
+            clientName: clientName || 'Client',
+            createdAt: new Date().toISOString()
+          },
+          branding: shareConfig.branding || {},
+          clientNote: shareConfig.clientNote || '',
+          hiddenCharts: shareConfig.hiddenCharts || []
+        };
+        
+        // Minimal precomputed data
+        minimalConfig.precomputedData = {
+          clientName: clientName || 'Client',
+          brandNames: brandNames || [],
+          salesData: salesData ? salesData.slice(0, 1000) : []
+        };
+        
+        // Generate share ID
+        const shareId = btoa(JSON.stringify(minimalConfig)).replace(/=/g, '');
+        
+        // Create the shareable URL
+        const baseUrl = window.location.origin;
+        const shareUrl = `${baseUrl}/#/shared/${shareId}`;
+        
+        setShareableLink(shareUrl);
+        console.log("Generated minimal fallback share link");
+        return shareUrl;
+      } catch (minimalError) {
+        console.error("Error generating minimal fallback link:", minimalError);
+        return "";
+      }
     }
   };
-
 
   // Toggle fallback mode
   const toggleFallbackMode = () => {
@@ -127,45 +224,123 @@ const SharingModal = () => {
   }, [copySuccess]);
   
   const getEnhancedPreviewData = () => {
-    // Get the base preview data from the context
-    const previewData = getPreviewData();
+    // Get the base preview data from the context, with fallback
+    const previewData = getPreviewData() || { 
+      filters: {
+        selectedProducts: selectedProducts || ['all'],
+        selectedRetailers: selectedRetailers || ['all'],
+        dateRange: dateRange || 'all',
+        startDate: startDate || '',
+        endDate: endDate || '',
+        selectedMonth: selectedMonth || ''
+      },
+      allowedTabs: shareConfig.allowedTabs || ['summary'],
+      activeTab: shareConfig.activeTab || 'summary',
+      branding: shareConfig.branding || { 
+        companyName: 'Company',
+        primaryColor: '#FF0066',
+        showLogo: true
+      },
+      clientNote: shareConfig.clientNote || ''
+    };
     
-    // Add metadata if it doesn't exist
+    // Ensure we have metadata
     if (!previewData.metadata) {
       previewData.metadata = {
         clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
+        brandNames: brandNames || [],
+        datasetSize: Array.isArray(salesData) ? salesData.length : 0,
+        createdAt: new Date().toISOString()
       };
-    } else if (!previewData.metadata.clientName) {
-      // Ensure client name is set in metadata
-      previewData.metadata.clientName = clientName || 
-        (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
+    } else {
+      // Update metadata fields if missing
+      previewData.metadata.clientName = previewData.metadata.clientName || 
+        clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
+      previewData.metadata.brandNames = previewData.metadata.brandNames || brandNames || [];
+      previewData.metadata.datasetSize = previewData.metadata.datasetSize || 
+        (Array.isArray(salesData) ? salesData.length : 0);
     }
     
-    // Add precomputed data if it doesn't exist
-    if (!previewData.precomputedData) {
+    // Ensure we have precomputed data
+    if (!previewData.precomputedData || 
+        (!previewData.precomputedData.salesData && !previewData.precomputedData.filteredData)) {
+      console.log("Creating new precomputed data for preview");
+      
+      // Get filtered data based on the current filters
+      const filteredSalesData = getFilteredData ? 
+        getFilteredData(previewData.filters) : (salesData || []);
+      
+      // Calculate metrics
+      const calculatedMetrics = calculateMetrics ? 
+        calculateMetrics() : null;
+      
+      // Create the precomputed data
       previewData.precomputedData = {
-        filteredData: getFilteredData ? 
-          getFilteredData(previewData.filters) : [],
-        metrics: calculateMetrics ? 
-          calculateMetrics() : null,
+        // Include data
+        filteredData: filteredSalesData,
+        salesData: salesData ? 
+          salesData.slice(0, Math.min(5000, salesData.length)) : [],
+        
+        // Include calculated metrics and distributions
+        metrics: calculatedMetrics,
         retailerData: getRetailerDistribution ? 
           getRetailerDistribution() : [],
         productDistribution: getProductDistribution ? 
           getProductDistribution() : [],
-        salesData: salesData ? 
-          salesData.slice(0, 1000) : [],
+        
+        // Include brand and client information
         brandNames: brandNames || [],
         clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-        brandMapping: brandMapping || {}
+        brandMapping: brandMapping || {},
+        
+        // Set flags
+        isSharedView: true,
+        hiddenCharts: shareConfig.hiddenCharts || []
       };
-    } else if (!previewData.precomputedData.clientName) {
-      // Ensure client name is set in precomputed data
-      previewData.precomputedData.clientName = clientName || 
-        (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
+      
+      console.log("Created precomputed data:", previewData.precomputedData);
+    } else {
+      console.log("Updating existing precomputed data for preview");
+      
+      // Update precomputed data if incomplete
+      if (!previewData.precomputedData.salesData || previewData.precomputedData.salesData.length === 0) {
+        previewData.precomputedData.salesData = salesData ? 
+          salesData.slice(0, Math.min(5000, salesData.length)) : [];
+      }
+      
+      if (!previewData.precomputedData.filteredData || previewData.precomputedData.filteredData.length === 0) {
+        previewData.precomputedData.filteredData = getFilteredData ? 
+          getFilteredData(previewData.filters) : (previewData.precomputedData.salesData || []);
+      }
+      
+      if (!previewData.precomputedData.metrics) {
+        previewData.precomputedData.metrics = calculateMetrics ? 
+          calculateMetrics() : null;
+      }
+      
+      if (!previewData.precomputedData.retailerData || previewData.precomputedData.retailerData.length === 0) {
+        previewData.precomputedData.retailerData = getRetailerDistribution ? 
+          getRetailerDistribution() : [];
+      }
+      
+      if (!previewData.precomputedData.productDistribution || previewData.precomputedData.productDistribution.length === 0) {
+        previewData.precomputedData.productDistribution = getProductDistribution ? 
+          getProductDistribution() : [];
+      }
+      
+      // Ensure client name is set
+      previewData.precomputedData.clientName = previewData.precomputedData.clientName || 
+        clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
+      
+      // Ensure we have all required flags
+      previewData.precomputedData.isSharedView = true;
+      previewData.precomputedData.hiddenCharts = shareConfig.hiddenCharts || [];
     }
     
+    console.log("Enhanced preview data:", previewData);
     return previewData;
   };
+
   // Handle generating share link
   const handleGenerateLink = async () => {
     // Ensure we have at least one tab selected
