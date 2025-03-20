@@ -5,6 +5,10 @@ import { useData } from '../../context/DataContext';
 import { Modal, Button, Icon } from '../ui';
 import supabase from '../../utils/supabase';
 
+/**
+ * SharingModal component
+ * Fixed to prevent undefined sharingOptions error
+ */
 const SharingModal = () => {
   const { 
     isSharingModalOpen, 
@@ -13,7 +17,7 @@ const SharingModal = () => {
     sharingInProgress,
     sharingError,
     shareableLink,
-    sharingOptions,
+    shareConfig,
     updateSharingOptions
   } = useSharing();
   
@@ -41,6 +45,24 @@ const SharingModal = () => {
   const [error, setError] = useState(null);
   const [showSSLWarning, setShowSSLWarning] = useState(false);
   
+  // Default configuration in case shareConfig is not provided
+  const defaultConfig = {
+    allowedTabs: ['summary', 'sales'],
+    activeTab: 'summary',
+    expiryDays: 30,
+    clientNote: '',
+    allowClientFiltering: false,
+    hiddenCharts: [],
+    branding: {
+      showLogo: true,
+      companyName: 'Shopmium Insights',
+      primaryColor: '#FF0066',
+    }
+  };
+  
+  // Safely get the share configuration or use defaults
+  const safeShareConfig = shareConfig || defaultConfig;
+  
   // Reset state when modal opens
   useEffect(() => {
     if (isSharingModalOpen) {
@@ -50,7 +72,7 @@ const SharingModal = () => {
       setError(null);
       
       // Check if Supabase has SSL issues
-      setShowSSLWarning(supabase.hasSslError && supabase.hasSslError());
+      setShowSSLWarning(typeof supabase.hasSslError === 'function' && supabase.hasSslError());
     }
   }, [isSharingModalOpen]);
   
@@ -63,7 +85,8 @@ const SharingModal = () => {
   
   // Handle checkbox changes for allowed tabs
   const handleTabCheckboxChange = (tab) => {
-    const currentTabs = [...sharingOptions.allowedTabs];
+    // Get current tabs
+    const currentTabs = [...(safeShareConfig.allowedTabs || ['summary', 'sales'])];
     
     if (currentTabs.includes(tab)) {
       // Don't allow removing the last tab
@@ -73,7 +96,7 @@ const SharingModal = () => {
       const updatedTabs = currentTabs.filter(t => t !== tab);
       
       // If active tab is removed, update it
-      let updatedActiveTab = sharingOptions.activeTab;
+      let updatedActiveTab = safeShareConfig.activeTab;
       if (updatedActiveTab === tab) {
         updatedActiveTab = updatedTabs[0];
       }
@@ -107,9 +130,9 @@ const SharingModal = () => {
       
       // Prepare options for sharing
       const options = {
-        ...sharingOptions,
+        ...safeShareConfig,
         filters,
-        activeTab: activeTab || sharingOptions.activeTab,
+        activeTab: activeTab || safeShareConfig.activeTab,
         salesData,
         filteredData,
         metrics,
@@ -168,7 +191,7 @@ const SharingModal = () => {
         </label>
         <select
           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-          value={sharingOptions.expiryDays}
+          value={safeShareConfig.expiryDays}
           onChange={(e) => handleOptionChange('expiryDays', parseInt(e.target.value))}
         >
           <option value={7}>7 days</option>
@@ -188,10 +211,10 @@ const SharingModal = () => {
               <input
                 type="checkbox"
                 id={`tab-${tab}`}
-                checked={sharingOptions.allowedTabs.includes(tab)}
+                checked={safeShareConfig.allowedTabs?.includes(tab) || false}
                 onChange={() => handleTabCheckboxChange(tab)}
                 className="h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded dark:border-gray-600 dark:bg-gray-700"
-                disabled={sharingOptions.allowedTabs.length === 1 && sharingOptions.allowedTabs.includes(tab)}
+                disabled={safeShareConfig.allowedTabs?.length === 1 && safeShareConfig.allowedTabs?.includes(tab)}
               />
               <label htmlFor={`tab-${tab}`} className="ml-2 block text-sm text-gray-700 dark:text-gray-300 capitalize">
                 {tab}
@@ -207,10 +230,10 @@ const SharingModal = () => {
         </label>
         <select
           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-          value={sharingOptions.activeTab}
+          value={safeShareConfig.activeTab}
           onChange={(e) => handleOptionChange('activeTab', e.target.value)}
         >
-          {sharingOptions.allowedTabs.map((tab) => (
+          {(safeShareConfig.allowedTabs || ['summary']).map((tab) => (
             <option key={tab} value={tab} className="capitalize">
               {tab}
             </option>
@@ -226,7 +249,7 @@ const SharingModal = () => {
           rows={3}
           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
           placeholder="Add a note for the client..."
-          value={sharingOptions.clientNote}
+          value={safeShareConfig.clientNote || ''}
           onChange={(e) => handleOptionChange('clientNote', e.target.value)}
         />
       </div>
@@ -236,7 +259,7 @@ const SharingModal = () => {
           <input
             type="checkbox"
             id="allow-filtering"
-            checked={sharingOptions.allowClientFiltering}
+            checked={safeShareConfig.allowClientFiltering || false}
             onChange={(e) => handleOptionChange('allowClientFiltering', e.target.checked)}
             className="h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded dark:border-gray-600 dark:bg-gray-700"
           />
@@ -295,19 +318,19 @@ const SharingModal = () => {
               Link Details
             </h4>
             <ul className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-              <li>• Tabs: {sharingOptions.allowedTabs.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(', ')}</li>
-              <li>• Default Tab: {sharingOptions.activeTab.charAt(0).toUpperCase() + sharingOptions.activeTab.slice(1)}</li>
-              {sharingOptions.expiryDays > 0 ? (
-                <li>• Expires: {sharingOptions.expiryDays} days from now</li>
+              <li>• Tabs: {safeShareConfig.allowedTabs?.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(', ') || 'Summary'}</li>
+              <li>• Default Tab: {safeShareConfig.activeTab ? (safeShareConfig.activeTab.charAt(0).toUpperCase() + safeShareConfig.activeTab.slice(1)) : 'Summary'}</li>
+              {safeShareConfig.expiryDays > 0 ? (
+                <li>• Expires: {safeShareConfig.expiryDays} days from now</li>
               ) : (
                 <li>• Expires: Never</li>
               )}
-              <li>• Client Filtering: {sharingOptions.allowClientFiltering ? 'Enabled' : 'Disabled'}</li>
+              <li>• Client Filtering: {safeShareConfig.allowClientFiltering ? 'Enabled' : 'Disabled'}</li>
               <li>• Storage Mode: {showSSLWarning ? 'Local (URL encoded)' : 'Database'}</li>
             </ul>
           </div>
           
-          {showSSLWarning && !supabase.isAvailable() && (
+          {showSSLWarning && !supabase.isAvailable?.() && (
             <div className="mt-4 p-2 bg-blue-100 text-blue-700 rounded dark:bg-blue-900/30 dark:text-blue-300 text-xs">
               <p className="font-medium mb-1">Using Local Sharing Mode</p>
               <p>Database connection currently unavailable. Your link contains all necessary data and will work normally.</p>
