@@ -1,197 +1,205 @@
 import supabase from '../utils/supabase';
 import { v4 as uuidv4 } from 'uuid';
+import { compressData, decompressData } from '../utils/compressionUtils'; // Import compression utils
 
 /**
- * Service for managing dashboard sharing with Supabase
- * With SSL error handling and fallbacks
+ * Service for managing dashboard sharing with Supabase.
+ * Stores compressed configuration (storageId, initialFilters) and metadata.
  */
 const sharingService = {
   /**
-   * Create a new shared dashboard
-   * @param {Object} config - The dashboard configuration to share
-   * @returns {Promise<Object>} - The created share with ID and URL
+   * Create a new shared dashboard entry in Supabase.
+   * @param {Object} shareDetails - Object containing storageId, initialFilters, metadata, expiryDate.
+   * @param {string} shareDetails.storageId - The ID/path of the raw data file in Supabase Storage.
+   * @param {Object} [shareDetails.initialFilters] - Optional initial filters for the shared view.
+   * @param {Object} [shareDetails.metadata] - Optional metadata (clientName, brandNames, etc.).
+   * @param {string|Date} [shareDetails.expiryDate] - Optional expiry date.
+   * @returns {Promise<Object>} - The created share record containing at least the share_id.
    */
-  async createSharedDashboard(config) {
+  async createSharedDashboard({ storageId, initialFilters = {}, metadata = {}, expiryDate = null }) {
+    // Use safeQuery to handle potential Supabase connection errors
     return supabase.safeQuery(
-      // The main Supabase operation
       async (client) => {
-        console.log("Starting share dashboard creation");
+        console.log("Attempting to save share configuration to Supabase...");
         
-        // Step 1: Optimize config data before sending to Supabase
-        const optimizedConfig = this.optimizeConfigForDatabase(config);
+        if (!storageId) {
+          throw new Error("storageId is required to create a shared dashboard.");
+        }
+
+        const shareId = uuidv4(); // Generate UUID here
         
-        console.log("Sending optimized config to Supabase");
-        
-        // Step 2: Use a simpler insert with fewer fields to improve performance
-        // Only include fields that exist in your database schema
+        // Prepare the core configuration to be compressed
+        const configToStore = { storageId, initialFilters };
+        const compressedConfigData = compressData(configToStore);
+
+        // Prepare the record for insertion
+        const recordToInsert = {
+          share_id: shareId,
+          config_data: compressedConfigData, // Store compressed config string
+          metadata: metadata, // Store metadata object (assuming JSONB column)
+          created_at: new Date().toISOString(),
+          expires_at: expiryDate ? new Date(expiryDate).toISOString() : null,
+          access_count: 0
+          // Add user_id here later when authentication is implemented
+        };
+
+        console.log("Inserting record:", { ...recordToInsert, config_data: '...' }); // Don't log large compressed string
+
         const { data, error } = await client
-          .from('shared_dashboards')
-          .insert({
-            share_id: uuidv4(),
-            config: optimizedConfig,
-            created_at: new Date().toISOString(),
-            expires_at: config.expiryDate ? new Date(config.expiryDate).toISOString() : null
-          })
-          .select('share_id, created_at');
-        
+          .from('shared_dashboards') // Ensure this table name is correct
+          .insert(recordToInsert)
+          .select('share_id, created_at'); // Select minimal data to confirm success
+
         if (error) {
-          console.error('Error creating shared dashboard:', error);
-          
-          // Step 3: If the error is a timeout or any other issue, switch to fallback
-          if (error.code === '57014' || error.message.includes('timeout')) {
-            console.log("Database timeout detected, switching to fallback mode");
-            throw new Error("TIMEOUT_SWITCH_TO_FALLBACK");
-          }
-          
-          throw error;
+          console.error('Supabase error creating shared dashboard:', error);
+          throw error; 
+        }
+
+        if (!data || data.length === 0) {
+           console.error('Supabase insert succeeded but returned no data.');
+           throw new Error('Failed to create shared dashboard record.');
         }
         
-        console.log("Successfully created shared dashboard in Supabase");
-        return data[0];
+        console.log("Successfully saved share configuration to Supabase with ID:", data[0].share_id);
+        // Return the essential info, primarily the ID
+        return data[0]; 
       },
-      
-      // The fallback function if Supabase fails
-      async () => {
-        // Just throw a special error to signal that we need to use the base64 fallback
-        // The SharingContext will handle this by using the Base64 encoding fallback
-        throw new Error("TIMEOUT_SWITCH_TO_FALLBACK");
+      // Fallback for safeQuery
+      async (error) => {
+        console.error("Supabase query failed:", error);
+        throw error; 
       }
     );
   },
 
   /**
-   * Optimize the configuration data for database storage
-   * @param {Object} config - The dashboard configuration to optimize
-   * @returns {Object} - The optimized configuration
-   */
-  optimizeConfigForDatabase(config) {
-    console.log("Optimizing config for database storage");
-    
-    // Create a deep copy to avoid modifying the original
-    const optimizedConfig = JSON.parse(JSON.stringify(config));
-    
-    // 1. Check if we have precomputed data
-    if (optimizedConfig.precomputedData) {
-      // 2. Keep only essential metadata
-      const datasetMetadata = {
-        totalCount: optimizedConfig.precomputedData.salesData?.length || 0,
-        timeRange: optimizedConfig.precomputedData.metrics?.uniqueDates || [],
-        brandNames: optimizedConfig.precomputedData.brandNames || [], 
-        clientName: optimizedConfig.precomputedData.clientName || 'Client'
-      };
-      
-      // 3. Keep pre-aggregated data but limit raw data
-      // Completely remove raw sales data - it's too large
-      delete optimizedConfig.precomputedData.salesData;
-      
-      // For filtered data, only keep a maximum of 100 records as a sample
-      if (optimizedConfig.precomputedData.filteredData && 
-          Array.isArray(optimizedConfig.precomputedData.filteredData) && 
-          optimizedConfig.precomputedData.filteredData.length > 100) {
-        // Take only the first 100 records
-        optimizedConfig.precomputedData.filteredData = 
-          optimizedConfig.precomputedData.filteredData.slice(0, 100);
-        
-        // Flag that we've reduced the dataset
-        optimizedConfig.precomputedData.dataReduced = true;
-      }
-      
-      // 4. Add the metadata
-      optimizedConfig.precomputedData.datasetMetadata = datasetMetadata;
-    }
-    
-    // Return the optimized config
-    console.log("Config optimized for database storage");
-    return optimizedConfig;
-  },
-  
-  /**
-   * Get a shared dashboard by its share ID
-   * @param {string} shareId - The unique share ID
-   * @returns {Promise<Object>} - The dashboard configuration
+   * Get a shared dashboard configuration from Supabase by its share ID.
+   * @param {string} shareId - The unique share ID (UUID).
+   * @returns {Promise<Object>} - An object containing { expired: boolean, storageId: string, initialFilters: Object, metadata: Object }.
    */
   async getSharedDashboard(shareId) {
+    // Use safeQuery for potential connection errors
     return supabase.safeQuery(
-      // The main Supabase operation
       async (client) => {
-        // Get the dashboard configuration
+        console.log("Attempting to fetch dashboard from Supabase with ID:", shareId);
+
         const { data, error } = await client
           .from('shared_dashboards')
-          .select('*')
+          .select('config_data, metadata, expires_at, access_count') // Select needed fields
           .eq('share_id', shareId)
-          .single();
-        
-        if (error) throw error;
-        
+          .single(); // Expect only one record
+
+        if (error) {
+          if (error.code === 'PGRST116') { 
+             console.error('Shared dashboard not found in Supabase:', shareId);
+             throw new Error('Shared dashboard not found');
+          }
+          console.error("Supabase error retrieving dashboard:", error);
+          throw error; 
+        }
+
         if (!data) {
-          throw new Error('Shared dashboard not found');
+           console.error('Shared dashboard not found (no data returned):', shareId);
+           throw new Error('Shared dashboard not found');
         }
-        
+
+        console.log("Successfully retrieved dashboard record from Supabase");
+
         // Check if the dashboard has expired
-        if (data.expires_at && new Date(data.expires_at) < new Date()) {
-          return { expired: true, config: data.config };
-        }
+        const isExpired = data.expires_at && new Date(data.expires_at) < new Date();
         
-        // Increment access count if that column exists in your schema
+        if (isExpired) {
+           console.log("Shared dashboard link has expired:", shareId);
+           return { expired: true, storageId: null, initialFilters: {}, metadata: data.metadata || {} };
+        }
+
+        // Decompress the configuration data
+        let decompressedConfig;
         try {
-          await client
-            .from('shared_dashboards')
-            .update({ access_count: (data.access_count || 0) + 1 })
-            .eq('share_id', shareId);
-        } catch (err) {
-          // Ignore errors with updating access count
-          console.warn("Could not update access count:", err.message);
+          decompressedConfig = decompressData(data.config_data);
+          if (!decompressedConfig || typeof decompressedConfig.storageId !== 'string') {
+             throw new Error("Decompressed data is invalid or missing storageId.");
+          }
+        } catch (decompressionError) {
+          console.error("Failed to decompress or validate config_data:", decompressionError);
+          throw new Error("Invalid shared data format.");
         }
         
+        // Increment access count asynchronously (fire and forget)
+        client
+          .from('shared_dashboards')
+          .update({ access_count: (data.access_count || 0) + 1 })
+          .eq('share_id', shareId)
+          .then(({ error: updateError }) => {
+            if (updateError) {
+              console.warn("Could not update access count:", updateError.message);
+            }
+          });
+
         return {
           expired: false,
-          config: data.config
+          storageId: decompressedConfig.storageId,
+          initialFilters: decompressedConfig.initialFilters || {},
+          metadata: data.metadata || {}
         };
       },
-      
-      // The fallback function if Supabase fails
-      async () => {
-        // For non-Supabase share IDs, try to decode the Base64 content
-        try {
-          // This is a placeholder for the fallback system in SharingContext
-          // The actual implementation is in SharedDashboardView component
-          throw new Error("Use SharedDashboardView fallback");
-        } catch (err) {
-          console.error("Error in sharingService fallback:", err);
-          throw err;
-        }
+      // Fallback for safeQuery
+      async (error) => {
+        console.error("Supabase query failed:", error);
+        throw error; // Re-throw
       }
     );
   },
-  
+
   /**
-   * List all shared dashboards created by the user
-   * @returns {Promise<Array>} - List of shared dashboards
+   * List all shared dashboards (metadata only).
+   * Assumes a 'shared_dashboards' table with 'metadata' JSONB column.
+   * @returns {Promise<Array>} - List of shared dashboard metadata.
    */
   async listSharedDashboards() {
     return supabase.safeQuery(
       async (client) => {
         const { data, error } = await client
           .from('shared_dashboards')
-          .select('*')
+          .select(`
+            share_id, 
+            created_at, 
+            expires_at, 
+            access_count,
+            metadata->>clientName, 
+            metadata->>brandNames
+          `) // Access metadata fields directly
           .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        return data || [];
+
+        if (error) {
+          console.error("Supabase error listing shared dashboards:", error);
+          throw error;
+        }
+
+        console.log(`Retrieved ${data ? data.length : 0} shared dashboards from Supabase`);
+        // Format data slightly if needed for consistency
+        return (data || []).map(item => ({
+           share_id: item.share_id,
+           created_at: item.created_at,
+           expires_at: item.expires_at,
+           access_count: item.access_count || 0,
+           clientName: item.clientName || 'N/A', // Handle potential nulls from JSON access
+           brandNames: item.brandNames || [],   // Handle potential nulls from JSON access
+           isLocal: false // Indicate it's from Supabase
+        }));
       },
-      
       // Fallback returns empty array if Supabase is unavailable
-      async () => {
-        return { data: [], error: null };
+      async (error) => {
+        console.warn("Could not list shared dashboards from Supabase:", error);
+        return []; // Return empty array on failure
       }
     );
   },
-  
+
   /**
-   * Delete a shared dashboard
-   * @param {string} shareId - The unique share ID to delete
-   * @returns {Promise<boolean>} - Success status
+   * Delete a shared dashboard from Supabase.
+   * @param {string} shareId - The unique share ID (UUID) to delete.
+   * @returns {Promise<boolean>} - Success status.
    */
   async deleteSharedDashboard(shareId) {
     return supabase.safeQuery(
@@ -200,15 +208,19 @@ const sharingService = {
           .from('shared_dashboards')
           .delete()
           .eq('share_id', shareId);
-        
-        if (error) throw error;
-        
+
+        if (error) {
+          console.error("Supabase error deleting shared dashboard:", error);
+          throw error;
+        }
+
+        console.log(`Successfully deleted dashboard from Supabase with ID: ${shareId}`);
         return true;
       },
-      
       // Fallback returns false if Supabase is unavailable
-      async () => {
-        return { data: false, error: new Error("Cannot delete - Supabase unavailable") };
+      async (error) => {
+        console.warn("Could not delete shared dashboard from Supabase:", error);
+        return false; // Return failure on error
       }
     );
   }

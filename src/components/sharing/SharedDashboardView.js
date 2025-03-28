@@ -1,451 +1,142 @@
+// SharedDashboardView.js - Refactored to fetch config and download raw data from Supabase Storage
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import _ from 'lodash';
 import { useTheme } from '../../context/ThemeContext';
-import { useSharing } from '../../context/SharingContext';
-import { useData } from '../../context/DataContext';
 import { ClientDataProvider } from '../../context/ClientDataContext';
+import supabase from '../../utils/supabase'; // Import supabase with correct path
+import { filterSalesData, computeMetrics, computeDemographicData, computeRetailerDistribution, computeProductDistribution } from '../../utils/sharedDataUtils'; // Keep utils for client-side computation
+import { inspectObject, validateSharedDashboardData } from '../../utils/debugUtils'; // Keep debug utilities
 import SummaryTab from '../dashboard/tabs/SummaryTab';
 import SalesTab from '../dashboard/tabs/SalesTab';
 import DemographicsTab from '../dashboard/tabs/DemographicsTab';
 import OffersTab from '../dashboard/tabs/OffersTab';
 import ErrorBoundary from '../ErrorBoundary';
-import sharingService from '../../services/sharingService';
 import SharedFilterPanel from '../filters/SharedFilterPanel';
+import sharingService from '../../services/sharingService'; // Keep service
 
+/**
+ * SharedDashboardView component - Fetches configuration and raw data via shareId.
+ */
 const SharedDashboardView = () => {
-  const { shareId } = useParams();
+  const { shareId } = useParams(); // UUID from URL
   const navigate = useNavigate();
   const { darkMode } = useTheme();
-  const { transformDataForSharing } = useSharing();
-  
-  // Destructure only what we need from the DataContext
-  const { 
-    setSalesData,
-    setSelectedProducts,
-    setSelectedRetailers,
-    setDateRange,
-    setStartDate,
-    setEndDate,
-    setSelectedMonth
-  } = useData();
-  
+
+  // State variables
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [shareConfig, setShareConfig] = useState(null);
+  const [shareMetadata, setShareMetadata] = useState(null); // Stores metadata from DB record
+  const [initialFilters, setInitialFilters] = useState({}); // Stores initial filters from DB record
+  const [rawData, setRawData] = useState(null); // Stores the full raw data downloaded from Storage
   const [activeTab, setActiveTab] = useState(null);
   const [isExpired, setIsExpired] = useState(false);
-  const [isSupabaseMode, setIsSupabaseMode] = useState(true);
-  const [clientData, setClientData] = useState(null);
   const [clientDisplayName, setClientDisplayName] = useState('Client Dashboard');
-  const [excludedDates, setExcludedDates] = useState([]);
+  const [renderReady, setRenderReady] = useState(false);
+  const [allowClientFiltering, setAllowClientFiltering] = useState(false);
+
+  // Client-side filtering state (operates on the full rawData if allowed)
   const [clientFilters, setClientFilters] = useState({
-    selectedProducts: null,
-    selectedRetailers: null,
-    dateRange: null,
-    startDate: null,
-    endDate: null,
-    selectedMonth: null
+    selectedProducts: ['all'], // Default to 'all'
+    selectedRetailers: ['all'], // Default to 'all'
+    dateRange: 'all', // Default to 'all'
+    startDate: '',
+    endDate: '',
+    selectedMonth: '' // Default to empty string
   });
 
-  // Handle client filtering - moved inside component
+  // Handle client filtering
   const handleClientFilter = (filterType, value) => {
-    if (!clientData?.allowClientFiltering) return;
+    if (!allowClientFiltering) return; // Check top-level flag
 
-    setClientFilters(prev => ({
-      ...prev,
-      [filterType]: value
-    }));
-  };
+    console.log(`[SharedView] Client filter change: ${filterType} =`, value);
 
-  // Check if the share ID looks like Base64 (fallback mode) or UUID (Supabase mode)
-  const isBase64ShareId = (id) => {
-    // If it contains characters that aren't valid in a UUID but are in Base64
-    return /[+/]/.test(id) || id.length > 40;
-  };
-
-  /**
-   * Unicode-safe Base64 decoding - handles all characters including emoji and special chars
-   * @param {string} base64 - The Base64 string to decode
-   * @returns {string} Decoded string
-   */
-  const unicodeSafeBase64Decode = (base64) => {
-    try {
-      // Add padding if needed
-      let paddedBase64 = base64;
-      while (paddedBase64.length % 4 !== 0) {
-        paddedBase64 += '=';
-      }
-      
-      // Convert the base64 string back to UTF-8 bytes
-      const binaryStr = atob(paddedBase64);
-      const bytes = new Uint8Array(binaryStr.length);
-      
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      
-      // Convert the bytes back to a string
-      return new TextDecoder().decode(bytes);
-    } catch (error) {
-      console.error("Error in Unicode-safe Base64 decoding:", error);
-      throw error;
-    }
-  };
-
-  // Fixed version of decodeBase64InChunks
-  const decodeBase64InChunks = (base64String) => {
-    console.log(`Decoding large base64 string (${base64String.length} chars)`);
-    
-    return new Promise((resolve, reject) => {
-      try {
-        // We need to add padding to ensure valid base64
-        let paddedString = base64String;
-        while (paddedString.length % 4 !== 0) {
-          paddedString += '=';
-        }
-        
-        // Use the unicode-safe decoder for the initial attempt
-        try {
-          const decodedJson = unicodeSafeBase64Decode(paddedString);
-          const config = JSON.parse(decodedJson);
-          
-          // Check for expiry
-          if (config.expiryDate) {
-            const expiryDate = new Date(config.expiryDate);
-            const now = new Date();
-            const expired = expiryDate < now;
-            
-            // Pass the expiry status back with the config
-            resolve({ config, expired });
-          } else {
-            resolve({ config, expired: false });
+    setClientFilters(prev => {
+      let newValue = value;
+      // Ensure 'all' is handled correctly when selecting specific items
+      if (Array.isArray(value)) {
+        if (value.includes('all')) {
+          newValue = ['all']; // If 'all' is selected, only keep 'all'
+        } else {
+          newValue = value.filter(v => v !== 'all'); // Remove 'all' if specific items are chosen
+          if (newValue.length === 0) {
+             newValue = ['all']; // If selection becomes empty, default back to 'all'
           }
-        } catch (unicodeErr) {
-          console.warn("Unicode-safe decoding failed, trying standard approach:", unicodeErr);
-          
-          // Fall back to standard base64 decoding
-          const decoded = atob(paddedString);
-          
-          // Parse the JSON asynchronously to avoid blocking the UI
-          setTimeout(() => {
-            try {
-              const parsed = JSON.parse(decoded);
-              
-              // Check for expiry
-              if (parsed.expiryDate) {
-                const expiryDate = new Date(parsed.expiryDate);
-                const now = new Date();
-                const expired = expiryDate < now;
-                resolve({ config: parsed, expired });
-              } else {
-                resolve({ config: parsed, expired: false });
-              }
-            } catch (err) {
-              console.error("Error parsing decoded JSON:", err);
-              reject(err);
-            }
-          }, 0);
         }
-      } catch (err) {
-        console.error("Error decoding base64:", err);
-        reject(err);
       }
+      return {
+        ...prev,
+        [filterType]: newValue
+      };
     });
   };
-  
-  // Get filtered data with client filters - moved inside component with useCallback
+
+  // Get filtered data using the FULL raw data if client filtering is active
   const getClientFilteredData = useCallback(() => {
-    if (!clientData || !clientData.salesData || !Array.isArray(clientData.salesData)) {
+    if (!rawData || !Array.isArray(rawData)) {
+      console.warn("[SharedView] No raw data available for filtering.");
       return [];
     }
-    
-    // If no client filters are set, return the precomputed filtered data or all data
-    if (!clientFilters.selectedProducts && 
-        !clientFilters.selectedRetailers && 
-        !clientFilters.dateRange) {
-      return clientData.filteredData || clientData.salesData;
+
+    let filtersToApply = {};
+
+    // Determine if any client filters are active (different from default 'all' or empty)
+    const clientFiltersActive =
+      (clientFilters.selectedProducts && !_.isEqual(clientFilters.selectedProducts, ['all'])) ||
+      (clientFilters.selectedRetailers && !_.isEqual(clientFilters.selectedRetailers, ['all'])) ||
+      (clientFilters.dateRange && clientFilters.dateRange !== 'all') ||
+      (clientFilters.selectedMonth && clientFilters.selectedMonth !== '') ||
+      (clientFilters.dateRange === 'custom' && clientFilters.startDate && clientFilters.endDate);
+
+    if (allowClientFiltering && clientFiltersActive) {
+      // Use client filters if allowed and active
+      filtersToApply = clientFilters;
+      console.log("[SharedView] Applying client filters:", filtersToApply);
+    } else if (initialFilters && Object.keys(initialFilters).length > 0) {
+      // Otherwise, use initial filters if they exist
+      filtersToApply = initialFilters;
+      console.log("[SharedView] Applying initial filters:", filtersToApply);
+    } else {
+      // No filters to apply, return raw data
+      console.log("[SharedView] No filters applied, returning raw data.");
+      return rawData;
     }
-    
+
+    // Apply the chosen filters to the full raw data
     try {
-      // Get filter values (use client filters if set, otherwise use initial filters)
-      const filterProducts = clientFilters.selectedProducts || 
-                           (shareConfig?.filters?.selectedProducts || ['all']);
-      const filterRetailers = clientFilters.selectedRetailers || 
-                            (shareConfig?.filters?.selectedRetailers || ['all']);
-      const filterDateRange = clientFilters.dateRange || 
-                           (shareConfig?.filters?.dateRange || 'all');
-      const filterStartDate = clientFilters.startDate || 
-                           (shareConfig?.filters?.startDate || '');
-      const filterEndDate = clientFilters.endDate || 
-                          (shareConfig?.filters?.endDate || '');
-      const filterSelectedMonth = clientFilters.selectedMonth || 
-                               (shareConfig?.filters?.selectedMonth || '');
-
-      return clientData.salesData.filter(item => {
-        if (!item) return false;
-        
-        // Product filter
-        const productMatch = filterProducts.includes('all') || 
-                            (item.product_name && filterProducts.includes(item.product_name));
-        
-        // Retailer filter
-        const retailerMatch = filterRetailers.includes('all') || 
-                              (item.chain && filterRetailers.includes(item.chain));
-        
-        // Date filter
-        let dateMatch = true;
-        if (filterDateRange === 'month' && filterSelectedMonth && item.month) {
-          dateMatch = item.month === filterSelectedMonth;
-        } else if (filterDateRange === 'custom' && filterStartDate && filterEndDate && item.receipt_date) {
-          dateMatch = item.receipt_date >= filterStartDate && item.receipt_date <= filterEndDate;
-        }
-        
-        return productMatch && retailerMatch && dateMatch;
-      });
+      return filterSalesData(rawData, filtersToApply);
     } catch (e) {
-      console.error("Error in client-side filtering:", e);
-      return clientData.filteredData || clientData.salesData || [];
+      console.error("[SharedView] Error applying filters:", e);
+      return rawData; // Fallback to raw data on error
     }
-  }, [clientData, clientFilters, shareConfig]);
+  }, [rawData, clientFilters, allowClientFiltering, initialFilters]);
 
-  // Create a more reliable function for getting client name with proper fallbacks
-  const getClientDisplayName = (config) => {
-    // First try metadata.clientName as it's the most authoritative
-    if (config.metadata?.clientName) {
-      return config.metadata.clientName;
-    }
-    
-    // Then try brandNames from various sources
-    if (config.metadata?.brandNames && config.metadata.brandNames.length > 0) {
-      return config.metadata.brandNames.join(', ');
-    }
-    
-    if (config.brandNames && config.brandNames.length > 0) {
-      return config.brandNames.join(', ');
-    }
-    
-    // Try the precomputed data
-    if (config.precomputedData?.clientName) {
-      return config.precomputedData.clientName;
-    }
-    
-    if (config.precomputedData?.brandNames && config.precomputedData.brandNames.length > 0) {
-      return config.precomputedData.brandNames.join(', ');
-    }
-    
-    // Default fallback
-    return 'Client';
+  // Get client display name from the fetched metadata
+  const getClientDisplayName = (metadata) => {
+    return metadata?.clientName || 'Client';
   };
 
-  // This function ensures demographic data is available in the client data context
-  const enhanceDemographicData = (clientData) => {
-    if (!clientData) return clientData;
-    
-    // Create a deep copy to avoid reference issues
-    const enhancedData = _.cloneDeep(clientData);
-    
-    // Check if demographicData exists, if not, try to create it from available data
-    if (!enhancedData.demographicData && enhancedData.salesData && enhancedData.salesData.length > 0) {
-      try {
-        // Extract gender distribution
-        const genderGroups = _.groupBy(
-          enhancedData.salesData.filter(item => item.gender),
-          'gender'
-        );
-        
-        const genderDistribution = Object.keys(genderGroups).length > 0 
-          ? Object.entries(genderGroups)
-              .map(([gender, items]) => ({
-                name: gender,
-                value: items.length,
-                percentage: (items.length / enhancedData.salesData.length) * 100
-              }))
-              .sort((a, b) => b.value - a.value)
-          : [];
-        
-        // Extract age distribution
-        const ageGroups = _.groupBy(
-          enhancedData.salesData.filter(item => item.age_group),
-          'age_group'
-        );
-        
-        const ageDistribution = Object.keys(ageGroups).length > 0
-          ? Object.entries(ageGroups)
-              .map(([ageGroup, items]) => ({
-                ageGroup,
-                count: items.length,
-                percentage: (items.length / enhancedData.salesData.length) * 100
-              }))
-              .sort((a, b) => b.count - a.count)
-          : [];
-          
-        enhancedData.demographicData = {
-          genderDistribution,
-          ageDistribution
-        };
-      } catch (err) {
-        console.error("Error generating demographic data:", err);
-      }
-    }
-    
-    // Make sure survey data is available for demographics tab
-    if (!enhancedData.surveyData && enhancedData.salesData && enhancedData.salesData.length > 0) {
-      try {
-        const surveyData = {
-          questions: {},
-          meta: { totalResponses: 0, questionCount: 0 }
-        };
-        
-        // Check for question fields in the data
-        const sampleRow = enhancedData.salesData[0];
-        const questionColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('question_'));
-        const propColumns = Object.keys(sampleRow || {}).filter(key => key.startsWith('proposition_'));
-        
-        const availableQuestions = [];
-        
-        // Find matching question numbers
-        propColumns.forEach(propCol => {
-          const questionNumber = propCol.replace('proposition_', '');
-          const questionCol = `question_${questionNumber}`;
-          
-          if (questionColumns.includes(questionCol)) {
-            availableQuestions.push(questionNumber);
-          }
-        });
-        
-        // Process each available question
-        availableQuestions.forEach(questionNum => {
-          const questionKey = `question_${questionNum}`;
-          const propKey = `proposition_${questionNum}`;
-          
-          // Get question text
-          let questionText = `Question ${parseInt(questionNum)}`;
-          const questionRow = enhancedData.salesData.find(row => row[questionKey] && typeof row[questionKey] === 'string' && row[questionKey].trim() !== '');
-          if (questionRow) {
-            questionText = questionRow[questionKey];
-          }
-          
-          // Count responses
-          const validResponses = enhancedData.salesData.filter(row => 
-            row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
-          );
-          
-          const counts = {};
-          let totalResponses = 0;
-          
-          validResponses.forEach(row => {
-            const responseStr = row[propKey];
-            if (!responseStr) return;
-            
-            // Split by semicolon if it's a multiple-choice response
-            const responses = responseStr.split(';').map(r => r.trim());
-            
-            responses.forEach(response => {
-              if (response) {
-                counts[response] = (counts[response] || 0) + 1;
-                totalResponses++;
-              }
-            });
-          });
-          
-          // Create basic demographics structure
-          const responsesByGender = {};
-          const responsesByAge = {};
-          
-          // Process gender breakdown
-          const genders = _.uniq(enhancedData.salesData.filter(row => row.gender).map(row => row.gender));
-          genders.forEach(gender => {
-            const genderRows = enhancedData.salesData.filter(row => row.gender === gender);
-            
-            responsesByGender[gender] = {
-              total: genderRows.length,
-              responseBreakdown: {}
-            };
-            
-            // Count responses by gender
-            Object.keys(counts).forEach(response => {
-              responsesByGender[gender].responseBreakdown[response] = genderRows.filter(row => {
-                const responseStr = row[propKey];
-                if (!responseStr) return false;
-                
-                const responses = responseStr.split(';').map(r => r.trim());
-                return responses.includes(response);
-              }).length;
-            });
-          });
-          
-          // Process age breakdown
-          const ageGroups = _.uniq(enhancedData.salesData.filter(row => row.age_group).map(row => row.age_group));
-          ageGroups.forEach(ageGroup => {
-            const ageRows = enhancedData.salesData.filter(row => row.age_group === ageGroup);
-            
-            responsesByAge[ageGroup] = {
-              total: ageRows.length,
-              responseBreakdown: {}
-            };
-            
-            // Count responses by age
-            Object.keys(counts).forEach(response => {
-              responsesByAge[ageGroup].responseBreakdown[response] = ageRows.filter(row => {
-                const responseStr = row[propKey];
-                if (!responseStr) return false;
-                
-                const responses = responseStr.split(';').map(r => r.trim());
-                return responses.includes(response);
-              }).length;
-            });
-          });
-          
-          // Add to survey data
-          surveyData.questions[questionNum] = {
-            questionText,
-            totalResponses,
-            counts,
-            demographics: {
-              gender: responsesByGender,
-              age: responsesByAge
-            }
-          };
-          
-          surveyData.meta.questionCount++;
-          surveyData.meta.totalResponses += totalResponses;
-        });
-        
-        enhancedData.surveyData = surveyData;
-      } catch (err) {
-        console.error("Error generating survey data:", err);
-      }
-    }
-    
-    return enhancedData;
-  };
-
-  // Process survey response data for a specific question - moved inside component
-  const processSurveyResponses = (salesData, questionNumber) => {
-    if (!salesData || !Array.isArray(salesData) || salesData.length === 0 || !questionNumber) {
+  // Process survey responses - Operates on the currently filtered data
+  const processSurveyResponses = (filteredData, questionNumber) => {
+     if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0 || !questionNumber) {
       return { responseData: [], ageDistribution: [], genderDistribution: [] };
     }
-    
     try {
       const propKey = `proposition_${questionNumber}`;
       const questionKey = `question_${questionNumber}`;
-      
-      // Extract responses that have valid data for this question
-      const validResponses = salesData.filter(row => 
-        row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
+
+      const validResponses = filteredData.filter(row =>
+        row && row[propKey] && typeof row[propKey] === 'string' && row[propKey].trim() !== ''
       );
-      
+
       if (validResponses.length === 0) return { responseData: [] };
-      
-      // Get response distribution
+
       const responseCount = {};
       validResponses.forEach(row => {
         const response = row[propKey];
         responseCount[response] = (responseCount[response] || 0) + 1;
       });
-      
-      // Format response data
+
       const responseData = Object.entries(responseCount).map(([fullResponse, count]) => {
         return {
           fullResponse,
@@ -453,329 +144,249 @@ const SharedDashboardView = () => {
           percentage: ((count / validResponses.length) * 100).toFixed(1)
         };
       }).sort((a, b) => b.count - a.count);
-      
+
       return {
         responseData,
-        questionText: validResponses[0][questionKey] || `Question ${questionNumber}`,
+        questionText: validResponses[0]?.[questionKey] || `Question ${questionNumber}`,
         validResponses
       };
     } catch (error) {
-      console.error("Error processing survey responses:", error);
+      console.error("[SharedView] Error processing survey responses:", error);
       return { responseData: [] };
     }
   };
 
-  // This component acts as a bridge between the ClientDataContext and the tab components
-  const createSharedDataContext = (clientData) => {
-    if (!clientData) return {};
+  // Create context value using the raw data and metadata
+  const createSharedDataContext = (currentRawData, currentMetadata) => {
+    if (!currentRawData || !currentMetadata) {
+       console.warn("[SharedView] Cannot create context, missing rawData or metadata");
+       return {};
+    }
 
-    return {
-      // Pass through all data from clientData
-      ...clientData,
-      
-      // Ensure essential methods exist even if not provided in clientData
-      getFilteredData: () => clientData.filteredData || clientData.salesData || [],
-      calculateMetrics: () => clientData.metrics || null,
-      getRetailerDistribution: () => clientData.retailerData || [],
-      getProductDistribution: () => clientData.productDistribution || [],
-      
-      // Add this method specifically for demographic data
-      getSurveyResponses: (questionNumber) => {
-        // First try to get from precomputed survey data
-        if (clientData.surveyData && clientData.surveyData.questions && 
-            clientData.surveyData.questions[questionNumber]) {
-          return clientData.surveyData.questions[questionNumber];
-        }
-        
-        // If not available in precomputed data, process from salesData
-        if (clientData.salesData && Array.isArray(clientData.salesData)) {
-          return processSurveyResponses(clientData.salesData, questionNumber);
-        }
-        
-        return { responseData: [] };
-      },
-      
+    const filteredData = getClientFilteredData(); // Get currently filtered data
+    console.log(`[SharedView] Filtered data length for context: ${filteredData.length}`);
+
+    // Compute metrics and distributions based on the *filtered* data
+    const metrics = computeMetrics(filteredData);
+    const retailerDistribution = computeRetailerDistribution(filteredData);
+
+    // TODO: Need brandMapping for product distribution. Where does it come from?
+    // Assuming it might be part of rawData or metadata for now.
+    // Let's try to derive it from rawData if possible, otherwise use metadata.
+    let brandMapping = currentMetadata?.brandMapping || {};
+    if (currentRawData.length > 0 && Object.keys(brandMapping).length === 0) {
+       // Attempt to derive from rawData if not in metadata (this might be slow/inefficient)
+       console.warn("[SharedView] BrandMapping missing, attempting to derive from raw data (may be slow). Consider adding to metadata.");
+       // This requires the brand detection utils, which might not be ideal here.
+       // For now, leave it potentially empty or rely on metadata.
+       // const uniqueProducts = _.uniq(currentRawData.map(item => item.product_name)).filter(Boolean);
+       // brandMapping = identifyBrandPrefixes(uniqueProducts); // Requires identifyBrandPrefixes util
+    }
+
+    const productDistribution = computeProductDistribution(filteredData, brandMapping);
+    const demographicData = computeDemographicData(filteredData); // Compute demographics
+
+    const contextValue = {
+      // Core data
+      salesData: currentRawData, // Provide full raw data
+      filteredData: filteredData, // Provide currently filtered data
+      brandMapping: brandMapping, // Provide brand mapping
+      brandNames: currentMetadata?.brandNames || [],
+      clientName: currentMetadata?.clientName || 'Client',
+      hiddenCharts: currentMetadata?.hiddenCharts || [],
+      metrics, // Computed metrics based on filtered data
+      retailerDistribution, // Computed based on filtered data
+      productDistribution, // Computed based on filtered data
+      demographicData, // Computed based on filtered data
+      // surveyData: null, // Survey data needs separate handling/computation
+
       // Flags and metadata
       isSharedView: true,
-      hasData: Boolean(clientData.filteredData?.length || clientData.salesData?.length),
-      
-      // For backward compatibility, ensure these exist
-      selectedProducts: clientData.filters?.selectedProducts || ['all'],
-      selectedRetailers: clientData.filters?.selectedRetailers || ['all'],
-      dateRange: clientData.filters?.dateRange || 'all',
-      startDate: clientData.filters?.startDate || '',
-      endDate: clientData.filters?.endDate || '',
-      selectedMonth: clientData.filters?.selectedMonth || '',
-      
-      // Empty functions for methods that shouldn't do anything in shared view
-      setSelectedProducts: () => {},
-      setSelectedRetailers: () => {},
-      setDateRange: () => {},
-      setActiveTab: () => {},
+      hasData: Boolean(currentRawData && currentRawData.length > 0), // Check raw data presence
+      allowClientFiltering: allowClientFiltering,
+
+      // Methods
+      getFilteredData: getClientFilteredData, // Provides currently filtered data
+      calculateMetrics: () => metrics || {}, // Return computed metrics
+      getRetailerDistribution: () => retailerDistribution || [],
+      getProductDistribution: () => productDistribution || [],
+      getSurveyResponses: (qNum) => processSurveyResponses(filteredData, qNum), // Process from filtered data
+
+      // Client filtering methods (passed down to panel)
+      setSelectedProducts: (products) => handleClientFilter('selectedProducts', products),
+      setSelectedRetailers: (retailers) => handleClientFilter('selectedRetailers', retailers),
+      setDateRange: (range) => handleClientFilter('dateRange', range),
+      setStartDate: (date) => handleClientFilter('startDate', date),
+      setEndDate: (date) => handleClientFilter('endDate', date),
+      setSelectedMonth: (month) => handleClientFilter('selectedMonth', month),
+
+      // Original filters (read-only)
+      originalFilters: initialFilters || {},
+
+      // Add validation info for debugging
+      _dataSource: 'raw',
+      _dataSampled: false, // Data is not sampled in this approach
     };
+    console.log("[SharedView] Context value created:", {
+       ...contextValue,
+       salesData: `Array(${contextValue.salesData?.length})`, // Avoid logging large arrays
+       filteredData: `Array(${contextValue.filteredData?.length})`
+    });
+    return contextValue;
   };
-  
-  // Load shared configuration from either Supabase or fallback method
+
+  // Download and process raw data from storage
+  const downloadAndProcessData = async (storageId) => {
+    console.log("[SharedView] Downloading raw data from storage:", storageId);
+    try {
+      const { data: blob, error: downloadError } = await supabase.downloadFromStorage('raw-datasets', storageId);
+
+      if (downloadError) {
+        console.error("[SharedView] Supabase storage download error:", downloadError);
+        // Handle specific errors like "Object not found"
+        if (downloadError.message?.includes('Object not found')) {
+           throw new Error(`Shared data file not found in storage (ID: ${storageId}). It may have been deleted.`);
+        }
+        throw new Error(`Failed to download shared data: ${downloadError.message}`);
+      }
+
+      if (!blob) {
+        throw new Error("Downloaded data is empty.");
+      }
+
+      console.log("[SharedView] Download successful, processing JSON...");
+      const text = await blob.text();
+      const parsedData = JSON.parse(text);
+      console.log(`[SharedView] JSON parsed successfully. Records: ${parsedData?.length}`);
+
+      // Basic validation
+      if (!Array.isArray(parsedData)) {
+        throw new Error("Downloaded data is not a valid array.");
+      }
+
+      return parsedData;
+
+    } catch (err) {
+      console.error("[SharedView] Error downloading or processing data:", err);
+      throw new Error(`Failed to load or parse shared data: ${err.message}`);
+    }
+  };
+
+  // Load shared configuration and raw data
   useEffect(() => {
-    const fetchSharedDashboard = async () => {
+    const fetchSharedData = async () => {
+      console.log("[SharedView] useEffect triggered. Share ID:", shareId);
       try {
         if (!shareId) {
           throw new Error("No share ID provided");
         }
-        
+
         setLoading(true);
-        
-        // Show an intermediate loading message for large shares
-        if (shareId.length > 5000) {
-          console.log("Large share detected, optimizing loading process");
-        }
-    
-        // Determine if we should use Supabase or fallback method based on share ID format
-        const useSupabase = !isBase64ShareId(shareId);
-        setIsSupabaseMode(useSupabase);
-        
-        let config;
-        let expired = false;
-        
-        console.log("Loading shared dashboard with ID:", shareId);
-        console.log("Using Supabase mode:", useSupabase);
-        
-        // Force fallback mode if there's an SSL error detected in the URL parameter
-        const urlParams = new URLSearchParams(window.location.search);
-        const forceLocal = urlParams.get('forceLocal') === 'true';
-        
-        if (useSupabase && !forceLocal) {
-          try {
-            // Set this flag early if SSL certificate issues are mentioned in params
-            if (urlParams.get('sslError') === 'true') {
-              console.warn("SSL error flag detected in URL, forcing fallback mode");
-              throw new Error("SSL error detected from URL parameter");
-            }
-            
-            // Try Supabase first - with robust fallback
-            console.log("Using Supabase to fetch dashboard");
-            try {
-              const result = await sharingService.getSharedDashboard(shareId);
-              expired = result.expired;
-              config = result.config;
-              console.log("Supabase result:", result); 
-            } catch (supabaseErr) {
-              // Check for known error types and handle gracefully
-              if (supabaseErr.message && (
-                  supabaseErr.message.includes("column") || 
-                  supabaseErr.message.includes("table") || 
-                  supabaseErr.message.includes("schema") ||
-                  supabaseErr.message.includes("SSL") || 
-                  supabaseErr.message.includes("certificate") ||
-                  supabaseErr.message.includes("CERT_") ||
-                  supabaseErr.message.includes("ERR_CERT"))) {
-                console.warn("Database or SSL certificate issue detected, using client-side fallback");
-              }
-              throw supabaseErr; // Re-throw to trigger fallback
-            }
-          } catch (err) {
-            console.error("Supabase fetch failed, trying fallback:", err);
-            
-            // Check if this is an SSL error
-            const isSSLError = err.message && (
-              err.message.includes("SSL") || 
-              err.message.includes("certificate") ||
-              err.message.includes("CERT_") ||
-              err.message.includes("ERR_CERT")
-            );
-            
-            // If SSL error detected, set a flag to use fallback in the future
-            if (isSSLError) {
-              console.error("SSL certificate error detected, switching to fallback mode permanently");
-              
-              // Try to add the SSL error parameter to URL if not already there
-              if (!urlParams.has('sslError')) {
-                urlParams.set('sslError', 'true');
-                const newUrl = `${window.location.pathname}${window.location.hash}?${urlParams.toString()}`;
-                
-                // Use history if available to avoid full page reload
-                if (window.history && window.history.replaceState) {
-                  window.history.replaceState({}, document.title, newUrl);
-                }
-              }
-            }
-            
-            // If Supabase fails, try fallback method
-            try {
-              if (shareId.length > 10000) {
-                // For very large shares, use chunked processing
-                const { config: decodedConfig, expired: isExpired } = await decodeBase64InChunks(shareId);
-                config = decodedConfig;
-                expired = isExpired;
-              } else {
-                // Regular processing for smaller share links
-                const decodedJson = unicodeSafeBase64Decode(shareId);
-                const decodedConfig = JSON.parse(decodedJson);
-                config = decodedConfig;
-                
-                // Check if share link is expired
-                if (decodedConfig.expiryDate) {
-                  const expiryDate = new Date(decodedConfig.expiryDate);
-                  const now = new Date();
-                  expired = expiryDate < now;
-                }
-              }
-              
-              setIsSupabaseMode(false);
-              console.log("Fallback decode successful");
-            } catch (fallbackErr) {
-              console.error("Fallback decode failed:", fallbackErr);
-              throw new Error("Invalid or corrupted share link");
-            }
-          }
-        } else {
-          // Directly use fallback method (Base64 encoded)
-          console.log("Using fallback mode to fetch dashboard");
-          try {
-            // For very large share links, use the chunked processing
-            if (shareId.length > 10000) {
-              console.log("Using chunked processing for large share");
-              try {
-                const { config: decodedConfig, expired: isExpired } = await decodeBase64InChunks(shareId);
-                config = decodedConfig;
-                expired = isExpired;
-                console.log("Chunked decoding successful");
-              } catch (chunkErr) {
-                console.error("Chunked decoding failed:", chunkErr);
-                throw new Error("Unable to decode large share link");
-              }
-            } else {
-              // Regular processing for smaller share links
-              const decodedJson = unicodeSafeBase64Decode(shareId);
-              const decodedConfig = JSON.parse(decodedJson);
-              config = decodedConfig;
-              
-              // Check if share link is expired
-              if (decodedConfig.expiryDate) {
-                const expiryDate = new Date(decodedConfig.expiryDate);
-                const now = new Date();
-                expired = expiryDate < now;
-              }
-              
-              console.log("Standard fallback decoding successful");
-            }
-          } catch (err) {
-            console.error("Error decoding fallback share:", err);
-            throw new Error("Invalid or corrupted share link");
-          }
-        }
-        
-        // Check if share link is expired
+        setRenderReady(false);
+        setError(null);
+        setRawData(null); // Reset raw data
+        setShareMetadata(null); // Reset metadata
+        setInitialFilters({}); // Reset initial filters
+        setClientFilters({ // Reset client filters to default
+           selectedProducts: ['all'],
+           selectedRetailers: ['all'],
+           dateRange: 'all',
+           startDate: '',
+           endDate: '',
+           selectedMonth: ''
+        });
+
+        console.log("[SharedView] Fetching share config from Supabase:", shareId);
+        const { expired, storageId, initialFilters: fetchedFilters, metadata } = await sharingService.getSharedDashboard(shareId);
+
+        console.log("[SharedView] Fetched config:", { expired, storageId, fetchedFilters, metadata });
+        inspectObject(metadata, "[SharedView] Fetched Metadata Inspection");
+        inspectObject(fetchedFilters, "[SharedView] Fetched Initial Filters Inspection");
+
+
         if (expired) {
+          console.log("Share link is expired.");
           setIsExpired(true);
-          setShareConfig(config); // Still set the config for branding display
+          setShareMetadata(metadata); // Keep metadata for branding/message
           setLoading(false);
           return;
         }
-        
-        setShareConfig(config);
-      
-        // Set active tab from config, ensuring it's in the allowed tabs
-        if (config.activeTab && config.allowedTabs && config.allowedTabs.includes(config.activeTab)) {
-          console.log("Setting active tab to config value:", config.activeTab);
-          setActiveTab(config.activeTab);
-        } else if (config.allowedTabs && config.allowedTabs.length > 0) {
-          console.log("Setting active tab to first allowed tab:", config.allowedTabs[0]);
-          setActiveTab(config.allowedTabs[0]);
-        } else {
-          console.log("No valid tabs found, defaulting to summary");
-          setActiveTab('summary');
+
+        if (!storageId) {
+          throw new Error("Share configuration is missing the data storage ID.");
         }
 
-        console.log("Shared dashboard configuration:", {
-          activeTab: config.activeTab,
-          allowedTabs: config.allowedTabs,
-          setActiveTabTo: activeTab
-        });
+        // Store metadata and initial filters
+        const currentMetadata = metadata || {};
+        const currentInitialFilters = fetchedFilters || {};
+        setShareMetadata(currentMetadata);
+        setInitialFilters(currentInitialFilters);
+        const clientFilteringEnabled = currentMetadata?.allowClientFiltering || false;
+        setAllowClientFiltering(clientFilteringEnabled);
+        console.log(`[SharedView] Client filtering allowed: ${clientFilteringEnabled}`);
 
-        // Set client display name
-        const displayName = getClientDisplayName(config);
+        // Set client display name early
+        const displayName = getClientDisplayName(currentMetadata);
         setClientDisplayName(displayName + ' Dashboard');
-        console.log("Set client display name to:", displayName + ' Dashboard');
-        
-        // Important: Store the client data directly from the precomputed data
-        if (config.precomputedData) {
-          // Create a deep copy to prevent reference issues
-          const precomputedData = _.cloneDeep(config.precomputedData);
-          
-          // Ensure clientName is properly set in the data
-          if (!precomputedData.clientName || precomputedData.clientName === 'Client') {
-            precomputedData.clientName = displayName;
-          }
-          
-          // Enhance the client data with demographic information
-          const enhancedClientData = enhanceDemographicData({
-            ...precomputedData,
-            filters: config.filters || {},
-            brandMapping: precomputedData.brandMapping || {},
-            brandNames: precomputedData.brandNames || [], 
-            clientName: displayName,
-            shareConfig: config,
-            isSharedView: true
-          });
-          
-          console.log("Setting enhanced client data:", enhancedClientData);
-          setClientData(enhancedClientData);
-          
-          // If we have salesData in precomputedData, set it in the DataContext
-          if (precomputedData.salesData && Array.isArray(precomputedData.salesData)) {
-            console.log("Setting salesData in DataContext from precomputedData");
-            setSalesData(precomputedData.salesData);
-          }
-        } else {
-          console.warn("No precomputed data found in share config");
+        console.log("[SharedView] Set client display name to:", displayName + ' Dashboard');
+
+        // Download and process the raw data
+        const downloadedRawData = await downloadAndProcessData(storageId);
+        setRawData(downloadedRawData);
+
+        // Set active tab from metadata, ensuring it's allowed
+        const allowed = currentMetadata?.allowedTabs || ['summary'];
+        const defaultTab = allowed[0];
+        const targetTab = currentMetadata?.activeTab && allowed.includes(currentMetadata.activeTab) ? currentMetadata.activeTab : defaultTab;
+        console.log("[SharedView] Setting active tab:", targetTab, "Allowed:", allowed);
+        setActiveTab(targetTab);
+
+        // Apply initial filters to client filter state as the starting point
+        if (currentInitialFilters && Object.keys(currentInitialFilters).length > 0) {
+           console.log("[SharedView] Setting initial filters as starting point for client state:", currentInitialFilters);
+           setClientFilters(prev => ({
+             ...prev, // Keep defaults like 'all'
+             ...currentInitialFilters // Override with initial filters
+           }));
         }
-        
-        // Apply filters from the shared config
-        if (config.filters) {
-          if (config.filters.selectedProducts) setSelectedProducts(config.filters.selectedProducts);
-          if (config.filters.selectedRetailers) setSelectedRetailers(config.filters.selectedRetailers);
-          if (config.filters.dateRange) setDateRange(config.filters.dateRange);
-          if (config.filters.startDate) setStartDate(config.filters.startDate);
-          if (config.filters.endDate) setEndDate(config.filters.endDate);
-          if (config.filters.selectedMonth) setSelectedMonth(config.filters.selectedMonth);
-        }
-        
-        // Set excluded dates from config
-        if (config.customExcludedDates && Array.isArray(config.customExcludedDates)) {
-          setExcludedDates(config.customExcludedDates);
-        }
-        
-        setLoading(false);
+
+        // Mark rendering as ready
+        setRenderReady(true);
+
       } catch (err) {
-        console.error("Error loading shared dashboard:", err);
-        setError("Invalid or expired share link");
-        setLoading(false);
+        console.error("[SharedView] Error loading shared dashboard:", err);
+        // Provide more specific error messages
+        let displayError = "Could not load the shared dashboard.";
+        if (err.message === 'Shared dashboard not found') {
+           displayError = "This shared dashboard link is invalid or has been deleted.";
+        } else if (err.message.includes('NetworkError') || err.message.includes('Failed to fetch')) {
+           displayError = "Network error: Could not connect to the server.";
+        } else if (err.message.includes('Shared data file not found')) {
+           displayError = "The data associated with this share link could not be found. It might have been deleted.";
+        } else {
+           displayError = `An error occurred: ${err.message}`;
+        }
+        setError(displayError);
+      } finally {
+         setLoading(false); // Ensure loading is set to false in all cases
       }
     };
-    
-    fetchSharedDashboard();
-  }, [shareId, setSalesData, setSelectedProducts, setSelectedRetailers, setDateRange, setStartDate, setEndDate, setSelectedMonth]);
+
+    fetchSharedData();
+  }, [shareId, navigate]); // Added navigate to dependencies
 
   // Handle tab selection
   const handleTabChange = (tab) => {
     console.log("Changing active tab to:", tab);
-    if (tab && shareConfig.allowedTabs.includes(tab)) {
+    if (tab && shareMetadata?.allowedTabs?.includes(tab)) { // Check against metadata
       setActiveTab(tab);
+    } else {
+       console.warn("Attempted to switch to disallowed tab:", tab);
     }
   };
-  
-  // Handle adding an excluded date
-  const handleAddExcludedDate = (date) => {
-    setExcludedDates(prev => [...prev, date]);
-  };
-  
-  // Handle removing an excluded date
-  const handleRemoveExcludedDate = (date) => {
-    setExcludedDates(prev => prev.filter(d => d !== date));
-  };
-  
-  // If still loading
+
+  // --- Render Logic ---
+
   if (loading) {
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
@@ -786,25 +397,32 @@ const SharedDashboardView = () => {
       </div>
     );
   }
-  
-  // If error
+
   if (error) {
+    // Display specific error messages
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
         <div className={`w-full max-w-md p-6 rounded-lg shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-          <h2 className="text-xl font-bold text-red-600 mb-4">Error Loading Dashboard</h2>
-          <p className="mb-4">{error}</p>
-          <button 
-            onClick={() => navigate('/')}
-            className="px-4 py-2 bg-pink-600 text-white rounded-md hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-pink-500"
-          >
-            Go to Dashboard
-          </button>
+          <div className="text-red-500 mb-4">
+            <svg className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-center mb-4">Error Loading Dashboard</h2>
+          <p className="text-center mb-6">{error}</p> {/* Display the specific error */}
+          <div className="flex justify-center">
+            <button
+              onClick={() => navigate('/')} // Navigate to base path
+              className="px-4 py-2 bg-pink-600 text-white rounded-md hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-pink-500"
+            >
+              Go to Main Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
   }
-  
+
   if (isExpired) {
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
@@ -814,86 +432,48 @@ const SharedDashboardView = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-center mb-4">This Dashboard Link Has Expired</h2>
+          <h2 className="text-xl font-bold text-center mb-4">Dashboard Link Expired</h2>
           <p className="text-center mb-6">
-            Please contact {shareConfig.branding?.companyName || 'the dashboard owner'} for an updated link.
+            This link has expired. Please contact {shareMetadata?.branding?.companyName || 'the dashboard owner'} for an updated link.
           </p>
         </div>
       </div>
     );
   }
-  
-  if (!shareConfig) {
-    return (
-      <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
-        <div className={`w-full max-w-md p-6 rounded-lg shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-          <h2 className="text-xl font-bold text-center mb-4">Dashboard Not Found</h2>
-          <p className="text-center mb-6">
-            The dashboard you're looking for doesn't exist or may have been deleted.
-          </p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Ensure we have clientData to work with
-  if (!clientData) {
-    console.error("Missing client data for shared dashboard");
-    return (
-      <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
-        <div className={`w-full max-w-md p-6 rounded-lg shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-          <h2 className="text-xl font-bold text-red-600 mb-4">Error Loading Dashboard Data</h2>
-          <p className="mb-4">The dashboard data could not be loaded.</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Create a proper shared data context with all necessary methods for the ClientDataProvider
-  const sharedDataContext = createSharedDataContext(clientData);
 
-  sharedDataContext.getFilteredData = getClientFilteredData;
-  sharedDataContext.setSelectedProducts = (products) => handleClientFilter('selectedProducts', products);
-  sharedDataContext.setSelectedRetailers = (retailers) => handleClientFilter('selectedRetailers', retailers);
-  sharedDataContext.setDateRange = (range) => handleClientFilter('dateRange', range);
-  sharedDataContext.setStartDate = (date) => handleClientFilter('startDate', date);
-  sharedDataContext.setEndDate = (date) => handleClientFilter('endDate', date);
-  sharedDataContext.setSelectedMonth = (month) => handleClientFilter('selectedMonth', month);
-  sharedDataContext.filteredData = getClientFilteredData();
-  sharedDataContext.allowClientFiltering = clientData?.allowClientFiltering || false;
-  
-  // Transform data based on sharing config
-  const transformedData = transformDataForSharing ? 
-    transformDataForSharing({...sharedDataContext, shareConfig}) : 
-    sharedDataContext;
-  
-  // Check if there's data to display
-  const hasData = transformedData?.filteredData?.length > 0 || (transformedData?.salesData?.length > 0);
-  
+  // If data isn't ready (should be caught by loading/error states mostly)
+  if (!renderReady || !rawData || !shareMetadata || !activeTab) {
+     console.warn("[SharedView] Render readiness check failed:", { renderReady, rawData, shareMetadata, activeTab });
+    return (
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} flex items-center justify-center p-4`}>
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 border-t-2 border-b-2 border-pink-600 rounded-full animate-spin"></div>
+          <p className="mt-4">Preparing dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Create the context value using the raw data and metadata
+  const sharedDataContextValue = createSharedDataContext(rawData, shareMetadata);
+
+  // Check if there's meaningful data to display
+  const hasDisplayableData = sharedDataContextValue.hasData;
+  console.log("[SharedView] hasDisplayableData check:", hasDisplayableData);
+
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      {/* Storage type indicator - Only visible in development */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className={`fixed top-0 right-0 m-4 z-50 px-3 py-1 rounded-full text-xs font-medium ${
-          isSupabaseMode 
-            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' 
-            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-        }`}>
-          {isSupabaseMode ? 'Supabase Mode' : 'Fallback Mode'}
-        </div>
-      )}
-      
       {/* Header */}
       <header className={`w-full border-b ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center">
-            {shareConfig.branding?.showLogo && (
-              <div 
+            {shareMetadata.branding?.showLogo && (
+              <div
                 className="h-10 w-10 rounded-full mr-3 flex items-center justify-center"
-                style={{ backgroundColor: shareConfig.branding.primaryColor || '#FF0066' }}
+                style={{ backgroundColor: shareMetadata.branding.primaryColor || '#FF0066' }}
               >
                 <span className="text-white font-bold text-lg">
-                  {(shareConfig.branding.companyName || 'C').slice(0, 1)}
+                  {(shareMetadata.branding.companyName || 'C').slice(0, 1)}
                 </span>
               </div>
             )}
@@ -902,27 +482,27 @@ const SharedDashboardView = () => {
                 {clientDisplayName}
               </h1>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Shared by {shareConfig.branding?.companyName || 'Shopmium Insights'}
+                Shared by {shareMetadata.branding?.companyName || 'Shopmium Insights'}
               </p>
             </div>
           </div>
         </div>
       </header>
-      
+
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Client note if provided */}
-        {shareConfig.clientNote && (
+        {/* Client note */}
+        {shareMetadata.clientNote && (
           <div className={`mb-6 p-4 rounded-lg ${darkMode ? 'bg-blue-900/20 text-blue-300' : 'bg-blue-50 text-blue-800'}`}>
-            <p>{shareConfig.clientNote}</p>
+            <p>{shareMetadata.clientNote}</p>
           </div>
         )}
-        
-        {/* Tabs navigation if multiple tabs are allowed */}
-        {shareConfig.allowedTabs && shareConfig.allowedTabs.length > 1 && (
+
+        {/* Tabs navigation */}
+        {shareMetadata.allowedTabs && shareMetadata.allowedTabs.length > 1 && (
           <div className={`mb-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
             <div className="flex flex-wrap">
-              {shareConfig.allowedTabs.map(tab => (
+              {shareMetadata.allowedTabs.map(tab => (
                 <button
                   key={tab}
                   onClick={() => handleTabChange(tab)}
@@ -938,113 +518,75 @@ const SharedDashboardView = () => {
             </div>
           </div>
         )}
-        
-        {/* Main content based on active tab */}
-        <div className={`bg-white dark:bg-gray-800 shadow rounded-lg ${!hasData ? 'p-6' : ''}`}>
-          {!hasData ? (
+
+        {/* Main content area */}
+        <div className={`bg-white dark:bg-gray-800 shadow rounded-lg ${!hasDisplayableData ? 'p-6' : ''}`}>
+          {!hasDisplayableData ? (
             <div className="text-center py-12">
               <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
               <h3 className={`mt-2 text-base font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>No data available</h3>
               <p className={`mt-1 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                There is no data to display with the current filters.
+                There is no data to display for this shared view{allowClientFiltering ? ' with the current filters' : ''}.
               </p>
             </div>
           ) : (
             <ErrorBoundary>
-              <ClientDataProvider clientData={{
-                ...transformedData,
-                hiddenCharts: transformedData.hiddenCharts || [],
-                // Explicitly pass through all data needed for demographics
-                salesData: transformedData.salesData || [], 
-                surveyData: transformedData.surveyData,
-                // Add any filter context that might be needed
-                filters: transformedData.filters || {},
-                // Make sure we're passing the right functions
-                getFilteredData: () => transformedData.filteredData || transformedData.salesData || [],
-                calculateMetrics: () => transformedData.metrics || {},
-                // Set flag to ensure we're using client data
-                isSharedView: true,
-                getFilteredData: sharedDataContext.getFilteredData,
-                setSelectedProducts: sharedDataContext.setSelectedProducts,
-                setSelectedRetailers: sharedDataContext.setSelectedRetailers, 
-                setDateRange: sharedDataContext.setDateRange,
-                setStartDate: sharedDataContext.setStartDate,
-                setEndDate: sharedDataContext.setEndDate,
-                setSelectedMonth: sharedDataContext.setSelectedMonth,
-                filteredData: sharedDataContext.filteredData,
-                allowClientFiltering: sharedDataContext.allowClientFiltering,
-                hiddenCharts: transformedData.hiddenCharts || [],
-                isSharedView: true
-              }}>
+              {/* Provide the processed context value */}
+              <ClientDataProvider clientData={sharedDataContextValue}>
 
                 {/* Filter Panel - only show if client filtering is allowed */}
-                {clientData && clientData.allowClientFiltering && (
-                  <SharedFilterPanel 
-                    salesData={clientData.salesData}
-                    selectedProducts={clientFilters.selectedProducts || shareConfig.filters?.selectedProducts || ['all']}
-                    selectedRetailers={clientFilters.selectedRetailers || shareConfig.filters?.selectedRetailers || ['all']}
-                    dateRange={clientFilters.dateRange || shareConfig.filters?.dateRange || 'all'}
-                    startDate={clientFilters.startDate || shareConfig.filters?.startDate || ''}
-                    endDate={clientFilters.endDate || shareConfig.filters?.endDate || ''}
-                    selectedMonth={clientFilters.selectedMonth || shareConfig.filters?.selectedMonth || ''}
+                {allowClientFiltering && (
+                  <SharedFilterPanel
+                    // Pass the FULL rawData for deriving filter options
+                    salesData={rawData || []}
+                    // Use client filter state
+                    selectedProducts={clientFilters.selectedProducts}
+                    selectedRetailers={clientFilters.selectedRetailers}
+                    dateRange={clientFilters.dateRange}
+                    startDate={clientFilters.startDate}
+                    endDate={clientFilters.endDate}
+                    selectedMonth={clientFilters.selectedMonth}
+                    // Pass filter update handlers
                     setSelectedProducts={(products) => handleClientFilter('selectedProducts', products)}
                     setSelectedRetailers={(retailers) => handleClientFilter('selectedRetailers', retailers)}
                     setDateRange={(range) => handleClientFilter('dateRange', range)}
                     setStartDate={(date) => handleClientFilter('startDate', date)}
                     setEndDate={(date) => handleClientFilter('endDate', date)}
                     setSelectedMonth={(month) => handleClientFilter('selectedMonth', month)}
+                    // Pass other necessary props
                     getAvailableMonths={() => {
-                      // Extract unique months from data
-                      if (!clientData.salesData) return [];
-                      
-                      const months = new Set();
-                      clientData.salesData.forEach(item => {
-                        if (item.month) months.add(item.month);
-                      });
-                      
+                      if (!rawData) return [];
+                      const months = new Set(rawData.map(item => item?.month).filter(Boolean));
                       return Array.from(months).sort();
                     }}
-                    brandMapping={clientData.brandMapping || {}}
-                    allowClientFiltering={clientData.allowClientFiltering}
+                    // Pass brandMapping derived in context creation
+                    brandMapping={sharedDataContextValue.brandMapping || {}}
+                    allowClientFiltering={allowClientFiltering}
                   />
                 )}
 
                 {/* Render the appropriate tab content */}
-                {activeTab === 'summary' && (
-                  <ErrorBoundary>
-                    <SummaryTab isSharedView={true} />
-                  </ErrorBoundary>
-                )}
-                {activeTab === 'sales' && (
-                  <ErrorBoundary>
-                    <SalesTab isSharedView={true} />
-                  </ErrorBoundary>
-                )}
-                {activeTab === 'demographics' && (
-                  <ErrorBoundary>
-                    <DemographicsTab isSharedView={true} />
-                  </ErrorBoundary>
-                )}
-                {activeTab === 'offers' && (
-                  <ErrorBoundary>
-                    <OffersTab isSharedView={true} />
-                  </ErrorBoundary>
-                )}
+                {activeTab === 'summary' && <SummaryTab isSharedView={true} />}
+                {activeTab === 'sales' && <SalesTab isSharedView={true} />}
+                {activeTab === 'demographics' && <DemographicsTab isSharedView={true} />}
+                {activeTab === 'offers' && <OffersTab isSharedView={true} />}
+
               </ClientDataProvider>
             </ErrorBoundary>
           )}
         </div>
       </main>
-      
+
       {/* Footer */}
-      <footer className={`w-full border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+      <footer className={`w-full border-t mt-8 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center">
             <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              Shared with you by {shareConfig.branding?.companyName || 'Shopmium Insights'}
+              Shared by {shareMetadata?.branding?.companyName || 'Shopmium Insights'}
             </span>
+             {/* Removed data sampled message */}
           </div>
         </div>
       </footer>

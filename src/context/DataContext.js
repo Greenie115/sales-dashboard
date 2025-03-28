@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import Papa from 'papaparse';
 import _ from 'lodash';
+import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { identifyBrandPrefixes, extractBrandNames } from '../utils/brandDetection';
+import supabase from '../utils/supabase'; // Import supabase utils
 
 // Create context
 const DataContext = createContext();
@@ -39,6 +41,10 @@ export const DataProvider = ({ children }) => {
   // Active tab state
   const [activeTab, setActiveTab] = useState('summary');
 
+  // State for Supabase Storage ID
+  const [currentDatasetStorageId, setCurrentDatasetStorageId] = useState(null);
+  const isUploadingRef = useRef(false); // Ref to prevent duplicate uploads
+
   // Added from FilterContext: Filter UI state
   const [isFilterPanelCollapsed, setIsFilterPanelCollapsed] = useState(false);
 
@@ -46,6 +52,46 @@ export const DataProvider = ({ children }) => {
     const saved = localStorage.getItem('excludedDates');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // Helper function to upload raw data (defined before handleFileUpload)
+  const uploadRawDataToStorage = useCallback(async (data, type) => {
+    if (!supabase.isAvailable()) {
+      console.warn("Supabase not available, skipping data upload.");
+      return null;
+    }
+    if (!data || data.length === 0) {
+      console.warn("No data provided to upload.");
+      return null;
+    }
+
+    try {
+      const jsonDataString = JSON.stringify(data);
+      const jsonBlob = new Blob([jsonDataString], { type: 'application/json' });
+      const filePath = `datasets/${type}-${uuidv4()}.json`; // Unique path
+
+      console.log(`Uploading ${type} to ${filePath}...`);
+      const { data: uploadData, error: uploadError } = await supabase.uploadToStorage(
+        'raw-datasets', // Bucket name (ensure this exists in Supabase)
+        filePath,
+        jsonBlob,
+        { upsert: false } // Don't upsert, always create new
+      );
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      if (uploadData && uploadData.path) {
+        return uploadData.path; // Return the storage path/ID
+      } else {
+        throw new Error("Upload completed but no path returned.");
+      }
+    } catch (error) {
+      console.error(`Error uploading ${type} to Supabase Storage:`, error);
+      setError(`Failed to save ${type} for sharing: ${error.message}`); // Use setError from DataProvider state
+      return null;
+    }
+  }, [setError]); // Depend on setError
 
   // Process uploaded file
   const handleFileUpload = useCallback((file) => {
@@ -55,9 +101,17 @@ export const DataProvider = ({ children }) => {
     }
     
     console.log("Processing file:", file.name);
+    if (isUploadingRef.current) {
+      console.warn("Upload already in progress, skipping.");
+      return;
+    }
+    
+    console.log("Processing file:", file.name);
     setLoading(true);
     setError('');
-    
+    setCurrentDatasetStorageId(null); // Reset storage ID on new upload
+    isUploadingRef.current = true; // Set upload flag
+
     // Check if we're dealing with sales or offer data
     const isOfferData = file.name.toLowerCase().includes('hits_offer');
     console.log("Is offer data:", isOfferData);
@@ -100,11 +154,31 @@ export const DataProvider = ({ children }) => {
                     }
                     return row;
                   });
-                  
                   setOfferData(processedOfferData);
                   setHasOfferData(true);
                   console.log("Offer data processed successfully", processedOfferData.length);
-                  
+
+                  // Upload Offer Data to Supabase Storage
+                  uploadRawDataToStorage(processedOfferData, 'offer-data')
+                    .then(storageId => {
+                      if (storageId) {
+                        setCurrentDatasetStorageId(storageId);
+                        console.log("Offer data uploaded to storage:", storageId);
+                      } else {
+                        // Handle case where upload resolved but returned no ID
+                        console.error("Offer data upload resolved but no storage ID returned.");
+                        setError("Storage upload succeeded but failed to return an ID.");
+                      }
+                    })
+                    .catch(err => {
+                      console.error("Failed to upload offer data:", err);
+                      setError(`Storage upload failed: ${err.message || 'Unknown error'}`); // Set specific error
+                    })
+                    .finally(() => {
+                      isUploadingRef.current = false; // Clear upload flag
+                      setLoading(false); // Ensure loading is false after upload attempt
+                    });
+
                   // Set active tab to offers
                   setActiveTab('offers');
                 }
@@ -209,36 +283,62 @@ export const DataProvider = ({ children }) => {
                   
                   // Set active tab to summary
                   setActiveTab('summary');
-                  
                   console.log("Sales data processed successfully");
+
+                  // Upload Sales Data to Supabase Storage
+                  uploadRawDataToStorage(processedData, 'sales-data')
+                    .then(storageId => {
+                      if (storageId) {
+                        setCurrentDatasetStorageId(storageId);
+                        console.log("Sales data uploaded to storage:", storageId);
+                      } else {
+                        // Handle case where upload resolved but returned no ID
+                        console.error("Sales data upload resolved but no storage ID returned.");
+                        setError("Storage upload succeeded but failed to return an ID.");
+                      }
+                    })
+                    .catch(err => {
+                      console.error("Failed to upload sales data:", err);
+                      setError(`Storage upload failed: ${err.message || 'Unknown error'}`); // Set specific error
+                    })
+                    .finally(() => {
+                      isUploadingRef.current = false; // Clear upload flag
+                      setLoading(false); // Ensure loading is false after upload attempt
+                    });
+
                 }
               }
             } else {
               setError('No data found in file');
+              setLoading(false); // Stop loading if no data
+              isUploadingRef.current = false; // Clear upload flag
             }
-            setLoading(false);
+            // setLoading(false); // Moved to finally block of upload
           },
           error: (error) => {
             console.error("CSV parsing error:", error);
             setError('Error parsing file: ' + error.message);
             setLoading(false);
+            isUploadingRef.current = false; // Clear upload flag
           }
         });
       } catch (e) {
         console.error("Error in file upload handler:", e);
         setError('Error processing file: ' + e.message);
         setLoading(false);
+        isUploadingRef.current = false; // Clear upload flag
       }
     };
-    
+
     reader.onerror = (e) => {
       console.error("File read error:", e);
       setError('Error reading file');
       setLoading(false);
+      isUploadingRef.current = false; // Clear upload flag
     };
-    
+
     reader.readAsText(file);
-  }, []);
+  }, [uploadRawDataToStorage, clientName]); // Added clientName dependency
 
   // Get filtered data based on selections
   const getFilteredData = useCallback((arg1, arg2) => {
@@ -404,6 +504,7 @@ export const DataProvider = ({ children }) => {
     setSelectedRetailers(['all']);
     setDateRange('all');
     setActiveTab('summary');
+    setCurrentDatasetStorageId(null); // Clear storage ID on data clear
   }, []);
 
   // Get retailer distribution data
@@ -586,6 +687,7 @@ export const DataProvider = ({ children }) => {
     toggleFilterPanel,
     formatMonth,
     filters, // Expose filters object for backward compatibility
+    currentDatasetStorageId, // Expose the storage ID
   };
 
   return (

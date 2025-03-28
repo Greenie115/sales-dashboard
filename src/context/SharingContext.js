@@ -1,13 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+// Removed uuidv4 as it's not used after local storage removal
 import sharingService from '../services/sharingService';
 import { useData } from './DataContext';
+// Removed unused imports: sharedDataUtils, testSharedData, compressionUtils
 
 // Create the context
 const SharingContext = createContext();
 
 /**
- * SharingProvider component - Provides sharing functionality
+ * SharingProvider component - Provides sharing functionality using Supabase storage.
  */
 export const SharingProvider = ({ children }) => {
   // State for sharing modal
@@ -22,7 +23,7 @@ export const SharingProvider = ({ children }) => {
     activeTab: 'summary',
     expiryDays: 30,
     clientNote: '',
-    allowClientFiltering: false,
+    allowClientFiltering: false, // Default to false, user enables in modal
     hiddenCharts: [],
     branding: {
       showLogo: true,
@@ -31,12 +32,27 @@ export const SharingProvider = ({ children }) => {
     }
   });
   
-  // Get data context
+  // Get data context - Destructure all potentially needed fields
+  const dataContext = useData();
   const { 
+    activeTab,
     clientName,
     brandNames,
-    activeTab 
-  } = useData();
+    // Get filter state for initialFilters
+    selectedProducts,
+    selectedRetailers,
+    dateRange,
+    startDate,
+    endDate,
+    selectedMonth,
+    comparisonMode,
+    comparisonDateRange,
+    comparisonStartDate,
+    comparisonEndDate,
+    comparisonMonth,
+    // Get the storage ID
+    currentDatasetStorageId
+  } = dataContext;
 
   // When the component mounts, set default values
   useEffect(() => {
@@ -49,11 +65,12 @@ export const SharingProvider = ({ children }) => {
   // Open sharing modal
   const openSharingModal = () => {
     setIsSharingModalOpen(true);
-    
     // Reset state when modal opens
     setShareableLink('');
     setSharingError(null);
     setSharingInProgress(false);
+    // Ensure allowClientFiltering is reset or set based on a default preference
+    updateSharingOptions({ allowClientFiltering: false }); 
   };
 
   // Close sharing modal
@@ -65,271 +82,130 @@ export const SharingProvider = ({ children }) => {
   const openDashboardManager = () => setDashboardManagerOpen(true);
   const closeDashboardManager = () => setDashboardManagerOpen(false);
 
-  // Update sharing options
+  // Update sharing options (e.g., from the modal UI)
   const updateSharingOptions = (options) => {
     setShareConfig(prev => ({ ...prev, ...options }));
   };
 
-  const saveLocalSharedDashboard = (dashboard) => {
-    try {
-      if (!dashboard || !dashboard.share_id) return false;
-      
-      // Get existing dashboards
-      const dashboards = getLocalSharedDashboards();
-      
-      // Check if this dashboard already exists
-      const existingIndex = dashboards.findIndex(dash => dash.share_id === dashboard.share_id);
-      if (existingIndex >= 0) {
-        // Update existing dashboard
-        dashboards[existingIndex] = {...dashboards[existingIndex], ...dashboard};
-      } else {
-        // Add new dashboard
-        dashboards.push(dashboard);
-      }
-      
-      // Save back to localStorage
-      localStorage.setItem('sharedDashboards', JSON.stringify(dashboards));
-      return true;
-    } catch (err) {
-      console.error("Error saving local shared dashboard:", err);
-      return false;
-    }
-  };
-  
+  // --- Removed Local Storage Functions ---
+  // saveLocalSharedDashboard and getLocalSharedDashboards removed as they are obsolete.
+  // The primary sharing mechanism now relies on Supabase storage IDs.
+  // --- End Removed Local Storage Functions ---
+
+
   /**
-   * Get shared dashboards from localStorage
-   * 
-   * @returns {Array} - List of shared dashboards from localStorage
-   */
-  const getLocalSharedDashboards = () => {
-    try {
-      // Get from localStorage
-      const dashboardsJson = localStorage.getItem('sharedDashboards');
-      if (!dashboardsJson) return [];
-      
-      // Parse and validate the data
-      const parsedData = JSON.parse(dashboardsJson);
-      if (!Array.isArray(parsedData)) return [];
-      
-      // Filter out invalid entries and sort by created_at
-      return parsedData
-        .filter(dash => dash && dash.share_id && dash.created_at)
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    } catch (err) {
-      console.error("Error getting local shared dashboards:", err);
-      return [];
-    }
-  };
-  
-  /**
-   * Improved Base64 encoding that handles all characters including unicode
-   * @param {string} str - The string to encode
-   * @returns {string} - Base64 URL-safe encoded string
-   */
-  const unicodeSafeBase64Encode = (str) => {
-    try {
-      // Convert the string to UTF-8 bytes
-      const bytes = new TextEncoder().encode(str);
-      
-      // Convert the bytes to base64
-      let base64 = '';
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-      const byteLength = bytes.byteLength;
-      const byteRemainder = byteLength % 3;
-      const mainLength = byteLength - byteRemainder;
-      
-      // Process 3 bytes at a time, each producing 4 characters
-      for (let i = 0; i < mainLength; i += 3) {
-        // Use bitwise operators to combine the bytes and extract 6-bit segments
-        const chunk = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-        const a = (chunk & 16515072) >> 18; // 16515072 = (2^6 - 1) << 18
-        const b = (chunk & 258048) >> 12;   // 258048 = (2^6 - 1) << 12
-        const c = (chunk & 4032) >> 6;      // 4032 = (2^6 - 1) << 6
-        const d = chunk & 63;               // 63 = 2^6 - 1
-        
-        // Convert the 6-bit segments to base64 chars
-        base64 += chars[a] + chars[b] + chars[c] + chars[d];
-      }
-      
-      // Handle the remaining bytes
-      if (byteRemainder === 1) {
-        const chunk = bytes[mainLength];
-        const a = (chunk & 252) >> 2; // 252 = (2^6 - 1) << 2
-        const b = (chunk & 3) << 4;   // 3 = 2^2 - 1
-        
-        base64 += chars[a] + chars[b] + '==';
-      } else if (byteRemainder === 2) {
-        const chunk = (bytes[mainLength] << 8) | bytes[mainLength + 1];
-        const a = (chunk & 64512) >> 10; // 64512 = (2^6 - 1) << 10
-        const b = (chunk & 1008) >> 4;   // 1008 = (2^6 - 1) << 4
-        const c = (chunk & 15) << 2;     // 15 = 2^4 - 1
-        
-        base64 += chars[a] + chars[b] + chars[c] + '=';
-      }
-      
-      // Make the base64 URL-safe
-      return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-    } catch (error) {
-      console.error("Error in unicodeSafeBase64Encode:", error);
-      throw error;
-    }
-  };
-  
-  /**
-   * Generate a URL-safe version of JSON for sharing
-   * @param {Object} data - The data to encode
-   * @returns {string} - URL-safe encoded string
-   */
-  const generateUrlSafeData = (data) => {
-    try {
-      // Convert data to JSON
-      const jsonString = JSON.stringify(data);
-      
-      // Use our improved Unicode-safe Base64 encoding
-      return unicodeSafeBase64Encode(jsonString);
-    } catch (error) {
-      console.error("Error generating URL-safe data:", error);
-      throw error;
-    }
-  };
-  
-  /**
-   * Generate a shareable link for the dashboard
-   * @param {Object} options - Options for sharing
-   * @returns {Promise<string>} - The shareable link
+   * Generate a shareable link by compressing data and saving to Supabase.
+   * @param {Object} options - Options for sharing (e.g., expiryDays, clientNote, allowClientFiltering)
+   * @returns {Promise<string>} - The shareable link (ID-based).
    */
   const generateShareableLink = async (options) => {
     try {
       setSharingInProgress(true);
       setSharingError(null);
 
-      // Create the share configuration
-      const shareData = {
-        ...shareConfig,
-        ...options,
-        // Add metadata
-        metadata: {
-          clientName: clientName || 'Client',
-          brandNames: brandNames || [],
-          createdAt: new Date().toISOString(),
-        }
-      };
-      
-      // Calculate expiry date if needed
-      if (shareData.expiryDays > 0) {
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + shareData.expiryDays);
-        shareData.expiryDate = expiryDate.toISOString();
+      // 1. Get the storageId from DataContext
+      if (!currentDatasetStorageId) {
+        throw new Error("Dataset has not been saved yet. Please wait for upload to complete or re-upload.");
       }
-      
-      // Try to use Supabase first
-      try {
-        const result = await sharingService.createSharedDashboard(shareData);
-        const shareableLink = `${window.location.origin}${window.location.pathname}#/shared/${result.share_id}`;
-        setShareableLink(shareableLink);
-        setSharingInProgress(false);
-        return shareableLink;
-      } catch (err) {
-        // Check if this is a timeout or other error that should trigger fallback
-        if (err.message === 'TIMEOUT_SWITCH_TO_FALLBACK' || 
-            sharingService.hasSSLErrors && sharingService.hasSSLErrors()) {
-          console.log("Supabase operation failed or has schema issues, using fallback mode");
-        } else {
-          // For other errors, throw to show the error to the user
-          throw err;
-        }
-      }
-      
-      // If we got here, use Base64 fallback
-      console.log("Using Base64 fallback for sharing");
-      
-      // Generate a local share ID
-      const localShareId = uuidv4();
-      
-      // Save a record of this shared dashboard to localStorage
-      const localDashboard = {
-        share_id: localShareId,
-        created_at: new Date().toISOString(),
-        config: shareData,
-        expires_at: shareData.expiryDate,
-        access_count: 0
+      console.log("Using storageId:", currentDatasetStorageId);
+
+      // 2. Gather initial filters (use current filter state from DataContext)
+      // Only include filters if allowClientFiltering is potentially true or needed for initial view
+      const initialFilters = options.allowClientFiltering ? {
+        selectedProducts,
+        selectedRetailers,
+        dateRange,
+        startDate,
+        endDate,
+        selectedMonth,
+        // Include comparison filters if relevant? Decide based on requirements.
+        // comparisonMode, comparisonDateRange, comparisonStartDate, comparisonEndDate, comparisonMonth
+      } : {}; // Empty object if client filtering is disabled
+
+      // 3. Gather metadata
+      const metadata = {
+        clientName: clientName || 'Client', // Get from DataContext
+        brandNames: brandNames || [],     // Get from DataContext
+        createdAt: new Date().toISOString(),
+        // Add other relevant metadata from shareConfig or options
+        clientNote: options.clientNote || '',
+        allowedTabs: options.allowedTabs || shareConfig.allowedTabs,
+        activeTab: options.activeTab || shareConfig.activeTab,
+        allowClientFiltering: options.allowClientFiltering || false,
+        hiddenCharts: options.hiddenCharts || shareConfig.hiddenCharts,
+        branding: options.branding || shareConfig.branding,
       };
-      saveLocalSharedDashboard(localDashboard);
-      
-      // Generate URL-safe Base64 data - store both the shareId and the data
-      shareData.share_id = localShareId;
-      const base64Data = generateUrlSafeData(shareData);
-      
-      // Create shareable link
-      const shareableLink = `${window.location.origin}${window.location.pathname}#/shared/${base64Data}`;
-      setShareableLink(shareableLink);
+
+      // 4. Calculate expiry date
+      let expiryDateIso = null;
+      if (options.expiryDays && options.expiryDays > 0) {
+        const expiry = new Date();
+        expiry.setDate(expiry.getDate() + options.expiryDays);
+        expiryDateIso = expiry.toISOString();
+      } else if (shareConfig.expiryDays && shareConfig.expiryDays > 0 && !options.expiryDays) {
+         const expiry = new Date();
+         expiry.setDate(expiry.getDate() + shareConfig.expiryDays);
+         expiryDateIso = expiry.toISOString();
+      }
+
+      // 5. Call the updated sharingService
+      console.log("Calling sharingService.createSharedDashboard with:", {
+        storageId: currentDatasetStorageId,
+        initialFilters,
+        metadata,
+        expiryDate: expiryDateIso
+      });
+
+      const result = await sharingService.createSharedDashboard({
+        storageId: currentDatasetStorageId,
+        initialFilters,
+        metadata,
+        expiryDate: expiryDateIso
+      });
+
+      // 6. Construct the simple, ID-based URL
+      const newShareableLink = `${window.location.origin}/share/${result.share_id}`;
+      setShareableLink(newShareableLink);
       setSharingInProgress(false);
-      return shareableLink;
+      console.log("Generated share link:", newShareableLink);
+      return newShareableLink;
+
     } catch (err) {
       console.error("Error generating shareable link:", err);
-      setSharingError(err.message || "Failed to generate shareable link");
+      // Provide a more specific error message if possible
+      let errorMessage = "Failed to generate shareable link.";
+      if (err.message.includes('Failed to fetch')) {
+         errorMessage = "Network error: Could not connect to the database.";
+      } else if (err.message.includes('duplicate key value violates unique constraint')) {
+         errorMessage = "Error: A share with this ID already exists (unexpected).";
+      } else if (err.message) {
+         errorMessage = `Error: ${err.message}`;
+      }
+      setSharingError(errorMessage);
       setSharingInProgress(false);
-      throw err;
+      throw err; // Re-throw if needed for further handling
     }
   };
   
-  /**
-   * Transform data for sharing with specific rules
-   * @param {Object} data - The data to transform
-   * @returns {Object} - Transformed data
-   */
-  const transformDataForSharing = (data) => {
-    if (!data) return data;
-    
-    try {
-      // Make a deep copy to avoid modifying the original
-      const transformedData = JSON.parse(JSON.stringify(data));
-      
-      // Apply sharing-specific transformations
-      // For example, remove sensitive fields
-      
-      // If hiddenCharts are specified, use them
-      if (data.shareConfig && data.shareConfig.hiddenCharts) {
-        transformedData.hiddenCharts = data.shareConfig.hiddenCharts;
-      }
-      
-      return transformedData;
-    } catch (err) {
-      console.error("Error transforming data for sharing:", err);
-      // Return original data if transformation fails
-      return data;
-    }
-  };
+  // Remove transformDataForSharing function - no longer needed for this approach
+  // const transformDataForSharing = (...) => { ... };
   
   // Create the context value
   const contextValue = {
     // Modal state
-    isSharingModalOpen,
-    openSharingModal,
-    closeSharingModal,
-    dashboardManagerOpen,
-    openDashboardManager,
-    closeDashboardManager,
+    isSharingModalOpen, openSharingModal, closeSharingModal,
+    dashboardManagerOpen, openDashboardManager, closeDashboardManager,
     
-    // Share configuration
-    shareConfig,
-    updateSharingOptions,
+    // Share configuration state
+    shareConfig, updateSharingOptions,
     
-    // Share link generation
-    shareableLink,
-    generateShareableLink,
-    sharingInProgress,
-    sharingError,
+    // Share link generation state and function
+    shareableLink, generateShareableLink, sharingInProgress, sharingError,
     
     // Preview state
-    previewActiveTab,
-    setPreviewActiveTab,
+    previewActiveTab, setPreviewActiveTab,
     
-    // Data transformation
-    transformDataForSharing,
-    
-    // Utility functions
-    generateUrlSafeData
+    // Removed getLocalSharedDashboards from context value
   };
 
   return (

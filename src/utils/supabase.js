@@ -151,6 +151,107 @@ const supabase = {
         throw error;
       }
     );
+  },
+
+  /**
+   * Uploads a file to Supabase Storage.
+   * @param {string} bucketName - The name of the storage bucket.
+   * @param {string} filePath - The path (including filename) within the bucket.
+   * @param {File|Blob} fileBody - The file content to upload.
+   * @param {object} [options] - Optional upload options (e.g., { upsert: true }).
+   * @returns {Promise<{ data: { path: string } | null, error: Error | null }>} - Result of the upload.
+   */
+  async uploadToStorage(bucketName, filePath, fileBody, options = {}) {
+    if (!this.isAvailable()) {
+      const error = new Error('Supabase client not available for storage upload.');
+      console.error(error.message);
+      return { data: null, error };
+    }
+    try {
+      const client = this.getClient();
+      const { data, error } = await client.storage
+        .from(bucketName)
+        .upload(filePath, fileBody, options);
+
+      if (error) {
+        console.error('Supabase storage upload error:', error);
+      }
+      return { data, error };
+    } catch (error) {
+      console.error('Exception during Supabase storage upload:', error);
+      // Check for SSL errors specifically if needed, similar to safeQuery
+      if (error.message && (error.message.includes('SSL') || error.message.includes('certificate'))) {
+        sslError = true;
+      }
+      return { data: null, error };
+    }
+  },
+
+  /**
+   * Gets the public URL for a file in Supabase Storage.
+   * Assumes the bucket/file has appropriate public access policies.
+   * @param {string} bucketName - The name of the storage bucket.
+   * @param {string} filePath - The path of the file within the bucket.
+   * @returns {{ data: { publicUrl: string } | null, error: Error | null }} - Object containing the public URL or an error.
+   */
+  getStoragePublicUrl(bucketName, filePath) {
+     if (!this.isAvailable()) {
+      // Even if client isn't fully available for queries due to SSL, URL generation might work
+      // But let's be consistent and require availability.
+      const error = new Error('Supabase client not available for getting public URL.');
+      console.error(error.message);
+      // Return structure consistent with Supabase client methods
+      return { data: null, error };
+    }
+     try {
+      const client = this.getClient();
+      const { data } = client.storage
+        .from(bucketName)
+        .getPublicUrl(filePath);
+
+      if (!data || !data.publicUrl) {
+         // This case might indicate the file doesn't exist or path is wrong,
+         // but the client itself doesn't throw an error here.
+         console.warn(`Could not get public URL for ${bucketName}/${filePath}. File might not exist or bucket policies incorrect.`);
+         return { data: null, error: new Error('Public URL not found or not accessible.') };
+      }
+      return { data, error: null };
+    } catch (error) {
+      // Catch potential errors during client interaction, though getPublicUrl is typically synchronous
+      console.error('Exception during Supabase getPublicUrl:', error);
+      return { data: null, error };
+    }
+  },
+
+   /**
+   * Downloads a file from Supabase Storage.
+   * @param {string} bucketName - The name of the storage bucket.
+   * @param {string} filePath - The path of the file within the bucket.
+   * @returns {Promise<{ data: Blob | null, error: Error | null }>} - Result of the download.
+   */
+  async downloadFromStorage(bucketName, filePath) {
+    if (!this.isAvailable()) {
+      const error = new Error('Supabase client not available for storage download.');
+      console.error(error.message);
+      return { data: null, error };
+    }
+    try {
+      const client = this.getClient();
+      const { data, error } = await client.storage
+        .from(bucketName)
+        .download(filePath);
+
+      if (error) {
+        console.error('Supabase storage download error:', error);
+      }
+      return { data, error };
+    } catch (error) {
+      console.error('Exception during Supabase storage download:', error);
+      if (error.message && (error.message.includes('SSL') || error.message.includes('certificate'))) {
+        sslError = true;
+      }
+      return { data: null, error };
+    }
   }
 };
 
