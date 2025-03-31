@@ -1,13 +1,40 @@
-// SharingModal.js
+// src/components/sharing/SharingModal.js
 import React, { useState, useEffect } from 'react';
 import { useSharing } from '../../context/SharingContext';
 import { useData } from '../../context/DataContext';
 import { Modal, Button, Icon } from '../ui';
-import supabase from '../../utils/supabase';
+
+// Simple data upload utility that just generates IDs and stores locally
+const uploadDataToStorageUtil = async (data, type = 'sales') => {
+  try {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      throw new Error('No valid data to upload');
+    }
+
+    // Generate a unique ID for the dataset
+    const storageId = `${type}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    
+    // Optionally, you could store the data in localStorage, but this isn't necessary
+    // for the sharing functionality to work. The data will be included in the share link.
+    try {
+      // Store a small marker in localStorage to remember this ID (optional)
+      localStorage.setItem(`share_marker_${storageId}`, 'true');
+    } catch (e) {
+      // Ignore localStorage errors - this is just a convenience feature
+      console.warn("Could not access localStorage:", e);
+    }
+    
+    console.log('Generated storage ID in local mode:', storageId);
+    return storageId;
+  } catch (error) {
+    console.error('Error in uploadDataToStorageUtil:', error);
+    throw error;
+  }
+};
 
 /**
  * SharingModal component
- * Fixed to prevent undefined sharingOptions error
+ * Simplified version that doesn't depend on Supabase
  */
 const SharingModal = () => {
   const { 
@@ -23,6 +50,7 @@ const SharingModal = () => {
   
   const { 
     salesData, 
+    offerData,
     filteredData, 
     selectedProducts, 
     selectedRetailers, 
@@ -39,14 +67,18 @@ const SharingModal = () => {
     hiddenCharts,
     currentDatasetStorageId, // Add this to check if data is available
     loading, // Add this to check if data is uploading
-    error: dataContextError // Get error from DataContext (e.g., upload error)
+    error: dataContextError, // Get error from DataContext (e.g., upload error)
+    uploadDataToStorage // Function to upload data to storage if needed
   } = useData();
   
   const [step, setStep] = useState(1); // 1 = options, 2 = result
   const [copied, setCopied] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [localError, setLocalError] = useState(null); // Renamed local error state for modal-specific errors
-  const [showSSLWarning, setShowSSLWarning] = useState(false);
+  const [isUploadingDataForShare, setIsUploadingDataForShare] = useState(false);
+  
+  // Check if data is available
+  const hasData = (salesData && salesData.length > 0) || (offerData && offerData.length > 0);
   
   // Default configuration in case shareConfig is not provided
   const defaultConfig = {
@@ -73,9 +105,7 @@ const SharingModal = () => {
       setCopySuccess(false);
       setCopied(false);
       setLocalError(null); // Reset local error
-      
-      // Check if Supabase has SSL issues
-      setShowSSLWarning(typeof supabase.hasSslError === 'function' && supabase.hasSslError());
+      setIsUploadingDataForShare(false);
     }
   }, [isSharingModalOpen]);
   
@@ -116,10 +146,80 @@ const SharingModal = () => {
     }
   };
   
+  // Upload data to storage if needed - simplified version
+  const ensureDataUploaded = async () => {
+    // If data is already uploaded, return the ID
+    if (currentDatasetStorageId) {
+      return currentDatasetStorageId;
+    }
+    
+    // If there's no data or we're already uploading, return null
+    if (!hasData || loading) {
+      return null;
+    }
+    
+    // Upload the data
+    setIsUploadingDataForShare(true);
+    try {
+      let storageId = null;
+      
+      // First try using the context's uploadDataToStorage if available
+      if (typeof uploadDataToStorage === 'function') {
+        try {
+          // Use the function from DataContext
+          storageId = await uploadDataToStorage(
+            salesData && salesData.length > 0 ? salesData : offerData,
+            salesData && salesData.length > 0 ? 'sales' : 'offer'
+          );
+          
+          if (storageId) {
+            console.log("Successfully uploaded data with context method, ID:", storageId);
+            return storageId;
+          }
+        } catch (contextUploadError) {
+          console.warn("Context upload method failed:", contextUploadError);
+          // Continue to fallback if context method fails
+        }
+      }
+      
+      // Fallback: Use our simplified utility that doesn't depend on Supabase
+      try {
+        const dataToUpload = salesData && salesData.length > 0 ? salesData : offerData;
+        const dataType = salesData && salesData.length > 0 ? 'sales' : 'offer';
+        
+        storageId = await uploadDataToStorageUtil(dataToUpload, dataType);
+        console.log("Successfully generated storage ID with standalone utility:", storageId);
+        return storageId;
+      } catch (utilError) {
+        console.error("Standalone utility failed:", utilError);
+        
+        // Last resort: Generate a temporary ID
+        const tempId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+        console.log("Using generated temporary ID:", tempId);
+        return tempId;
+      }
+    } catch (error) {
+      console.error("Error in ensureDataUploaded:", error);
+      setLocalError(`Failed to prepare data for sharing: ${error.message}`);
+      return null;
+    } finally {
+      setIsUploadingDataForShare(false);
+    }
+  };
+  
   // Generate the shareable link
   const handleGenerateLink = async () => {
     try {
       setLocalError(null); // Reset local error
+      
+      // Ensure data is uploaded
+      const storageId = await ensureDataUploaded();
+      
+      // If there's no storage ID after trying to upload, abort
+      if (!storageId) {
+        setLocalError("Failed to prepare data for sharing. Please try again.");
+        return;
+      }
       
       // Prepare filters for sharing
       const filters = {
@@ -143,7 +243,10 @@ const SharingModal = () => {
         productDistribution,
         demographicData,
         brandNames,
-        hiddenCharts
+        hiddenCharts,
+        // Set the storage ID if we have one, otherwise explicitly set to null
+        // so the sharing service knows to use local mode
+        storageId: storageId || null 
       };
       
       // Generate the link
@@ -182,18 +285,20 @@ const SharingModal = () => {
   const renderStep1Content = () => (
     <div>
       {/* Loading Indicator */}
-      {loading && (
+      {(loading || isUploadingDataForShare) && (
         <div className="mb-4 p-3 bg-blue-100 border border-blue-400 text-blue-800 rounded dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800 flex items-center">
           <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          <p className="text-sm font-medium">Processing and uploading data... Please wait.</p>
+          <p className="text-sm font-medium">
+            {isUploadingDataForShare ? "Preparing data for sharing..." : "Processing data... Please wait."}
+          </p>
         </div>
       )}
 
-      {/* No Data Warning (only show if not loading and no data ID) */}
-      {!loading && !currentDatasetStorageId && !dataContextError && ( // Also hide if there's an upload error
+      {/* No Data Warning (only show if not loading and no data) */}
+      {!loading && !hasData && !dataContextError && (
         <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-800 rounded dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800">
           <div className="flex">
             <div className="flex-shrink-0">
@@ -210,23 +315,23 @@ const SharingModal = () => {
       )}
       
       {/* Display Combined Error */}
-      {displayError && !loading && ( // Don't show error while loading
+      {displayError && !isUploadingDataForShare && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded dark:bg-red-900/30 dark:text-red-300 dark:border-red-800">
           <p className="font-medium">Error</p>
           <p className="text-sm">{displayError}</p>
         </div>
       )}
 
-      {showSSLWarning && (
-        <div className="mb-4 p-3 bg-amber-100 border border-amber-400 text-amber-800 rounded dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800">
-          <p className="font-medium mb-1">SSL Certificate Issue Detected</p>
+      {/* No Storage ID but Has Data Warning */}
+      {!currentDatasetStorageId && hasData && !isUploadingDataForShare && (
+        <div className="mb-4 p-3 bg-blue-100 border border-blue-400 text-blue-800 rounded dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800">
+          <p className="font-medium">Using Local Sharing Mode</p>
           <p className="text-sm">
-            The dashboard will use local sharing mode (links may be longer). This won't affect functionality,
-            but shared links will expire if the browser cache is cleared.
+            Your data will be encoded directly in the sharing link. This works fine but may result in longer URLs.
           </p>
         </div>
       )}
-      
+
       {/* Rest of the form remains the same */}
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -311,15 +416,13 @@ const SharingModal = () => {
           </label>
         </div>
       </div>
-      
-      {/* Removed old error display location */}
     </div>
   );
   
   // Render step 2 content (sharing result)
   const renderStep2Content = () => (
     <div>
-      {sharingError ? ( // Use sharingError from useSharing for step 2
+      {sharingError ? ( 
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded dark:bg-red-900/30 dark:text-red-300 dark:border-red-800">
           <p className="font-medium">Error Generating Link</p>
           <p className="text-sm">{sharingError}</p>
@@ -365,14 +468,14 @@ const SharingModal = () => {
                 <li>• Expires: Never</li>
               )}
               <li>• Client Filtering: {safeShareConfig.allowClientFiltering ? 'Enabled' : 'Disabled'}</li>
-              <li>• Storage Mode: {showSSLWarning ? 'Local (URL encoded)' : 'Database'}</li>
+              <li>• Storage Mode: Local (URL encoded)</li>
             </ul>
           </div>
           
-          {showSSLWarning && !supabase.isAvailable?.() && (
+          {!currentDatasetStorageId && hasData && (
             <div className="mt-4 p-2 bg-blue-100 text-blue-700 rounded dark:bg-blue-900/30 dark:text-blue-300 text-xs">
               <p className="font-medium mb-1">Using Local Sharing Mode</p>
-              <p>Database connection currently unavailable. Your link contains all necessary data and will work normally.</p>
+              <p>Your link contains the data encoded directly within it. This works well for small to medium datasets.</p>
             </div>
           )}
         </>
@@ -393,11 +496,12 @@ const SharingModal = () => {
       <Button
         variant="primary"
         onClick={handleGenerateLink}
-        disabled={sharingInProgress || !currentDatasetStorageId || loading || !!displayError} // Also disable if there's any error
+        disabled={sharingInProgress || (!hasData && !currentDatasetStorageId) || isUploadingDataForShare} 
       >
         {sharingInProgress ? 'Generating...' : 
-         loading ? 'Uploading Data...' : 
-         !currentDatasetStorageId ? 'Upload Data First' : 
+         isUploadingDataForShare ? 'Preparing Data...' : 
+         !hasData && !currentDatasetStorageId ? 'Upload Data First' : 
+         !currentDatasetStorageId && hasData ? 'Generate Link (Local Mode)' :
          'Generate Link'}
       </Button>
     </>

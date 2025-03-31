@@ -5,10 +5,18 @@ import Papa from 'papaparse';
 
 const EmptyState = () => {
   const fileInputRef = useRef(null);
-  const { setLoading, setSalesData, setOfferData, setHasOfferData, setError } = useData();
+  const { 
+    setLoading, 
+    setSalesData, 
+    setOfferData, 
+    setHasOfferData, 
+    setError,
+    uploadDataToStorage
+  } = useData();
+  
   const [processingFile, setProcessingFile] = useState(false);
 
-  // Implement our own file handling logic since handleFileUpload is not working
+  // Implement our own file handling logic
   const processFile = (file) => {
     if (!file) {
       setError('No file selected');
@@ -29,7 +37,7 @@ const EmptyState = () => {
           header: true,
           dynamicTyping: true,
           skipEmptyLines: true,
-          complete: (results) => {
+          complete: async (results) => {
             
             if (results.data && results.data.length > 0) {
               if (isOfferData) {
@@ -41,8 +49,33 @@ const EmptyState = () => {
                 if (validOfferData.length === 0) {
                   setError('No valid offer data found. Please ensure your CSV has the correct format.');
                 } else {
-                  setOfferData(validOfferData);
+                  // Process dates and add required fields
+                  const processedOfferData = validOfferData.map(row => {
+                    if (row.created_at) {
+                      try {
+                        const date = new Date(row.created_at);
+                        return {
+                          ...row,
+                          created_at: !isNaN(date) ? date.toISOString() : row.created_at
+                        };
+                      } catch (e) {
+                        return row;
+                      }
+                    }
+                    return row;
+                  });
+                  
+                  // Set the offer data
+                  setOfferData(processedOfferData);
                   setHasOfferData(true);
+                  
+                  // Upload the processed data to storage
+                  try {
+                    await uploadDataToStorage(processedOfferData, 'offer');
+                  } catch (uploadError) {
+                    console.error("Error uploading offer data:", uploadError);
+                    // Continue anyway - the error is already captured in the DataContext
+                  }
                 }
               } else {
                 // Process sales data
@@ -72,7 +105,16 @@ const EmptyState = () => {
                     }
                   });
                   
+                  // Set the sales data
                   setSalesData(processedData);
+                  
+                  // Upload the processed data to storage
+                  try {
+                    await uploadDataToStorage(processedData, 'sales');
+                  } catch (uploadError) {
+                    console.error("Error uploading sales data:", uploadError);
+                    // Continue anyway - the error is already captured in the DataContext
+                  }
                 }
               }
             } else {

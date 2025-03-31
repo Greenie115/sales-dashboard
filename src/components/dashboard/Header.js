@@ -31,10 +31,12 @@ const Header = () => {
     setError,
     setBrandMapping,
     setBrandNames,
-    setActiveTab
+    setActiveTab,
+    uploadDataToStorage,
+    currentDatasetStorageId
   } = useData();
   
-  // Define our own file processing logic since handleFileUpload is not working
+  // Define our own file processing logic
   const processFile = (file) => {
     if (!file) {
       setError('No file selected');
@@ -49,13 +51,13 @@ const Header = () => {
     const isOfferData = file.name.toLowerCase().includes('hits_offer');
     
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         Papa.parse(e.target.result, {
           header: true,
           dynamicTyping: true,
           skipEmptyLines: true,
-          complete: (results) => {
+          complete: async (results) => {
             
             if (results.data && results.data.length > 0) {
               if (isOfferData) {
@@ -83,11 +85,20 @@ const Header = () => {
                     return row;
                   });
                   
+                  // Set offer data
                   setOfferData(processedOfferData);
                   setHasOfferData(true);
                   
                   // Set active tab to offers
                   setActiveTab('offers');
+                  
+                  // Upload data to storage for sharing
+                  try {
+                    await uploadDataToStorage(processedOfferData, 'offer');
+                  } catch (uploadError) {
+                    console.error("Error uploading offer data:", uploadError);
+                    // Continue anyway - the error is already captured in the DataContext
+                  }
                 }
               } else {
                 // Process sales data
@@ -118,8 +129,18 @@ const Header = () => {
                       // Return the original row if date processing fails
                       return row;
                     }
-                  })
+                  });
+                  
+                  // Set sales data
                   setSalesData(processedData);
+                  
+                  // Upload data to storage for sharing
+                  try {
+                    await uploadDataToStorage(processedData, 'sales');
+                  } catch (uploadError) {
+                    console.error("Error uploading sales data:", uploadError);
+                    // Continue anyway - the error is already captured in the DataContext
+                  }
                   
                   // Set active tab to summary
                   setActiveTab('summary');
@@ -200,10 +221,20 @@ const Header = () => {
               {salesData && salesData.length > 0 ? (
                 <span className="mr-4 text-sm text-green-600 dark:text-green-400 font-medium hidden md:block">
                   {salesData.length} records loaded
+                  {currentDatasetStorageId && (
+                    <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                      (ID: {currentDatasetStorageId.substring(0, 8)}...)
+                    </span>
+                  )}
                 </span>
               ) : offerData && offerData.length > 0 ? (
                 <span className="mr-4 text-sm text-green-600 dark:text-green-400 font-medium hidden md:block">
                   {offerData.length} offer records loaded
+                  {currentDatasetStorageId && (
+                    <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                      (ID: {currentDatasetStorageId.substring(0, 8)}...)
+                    </span>
+                  )}
                 </span>
               ) : (
                 <span className="mr-4 text-sm text-gray-500 dark:text-gray-400 font-medium hidden md:block">
@@ -223,18 +254,20 @@ const Header = () => {
                 </Button>
               </div>
               
-              {/* Share button - only show when data is loaded */}
-              {hasData && (
-                <div className="mr-2">
-                  <ShareButton />
-                </div>
-              )}
+              {/* Share button - always show, but it will be disabled if no data */}
+              <div className="mr-2">
+                <ShareButton />
+              </div>
               
               {/* Upload button */}
               <div className="mr-2">
                 <label 
-                  className="cursor-pointer bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-800/40 px-3 py-2 rounded-md text-sm font-medium flex items-center"
-                  onClick={() => fileInputRef.current?.click()}
+                  className={`cursor-pointer ${
+                    processingFile || loading 
+                      ? 'bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-400' 
+                      : 'bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-800/40'
+                  } px-3 py-2 rounded-md text-sm font-medium flex items-center`}
+                  onClick={() => !processingFile && !loading && fileInputRef.current?.click()}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -246,6 +279,7 @@ const Header = () => {
                     accept=".csv" 
                     ref={fileInputRef} 
                     onChange={handleFileChange}
+                    disabled={processingFile || loading}
                   />
                 </label>
               </div>

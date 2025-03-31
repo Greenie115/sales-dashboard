@@ -1,7 +1,7 @@
-// ShareButton.js
+// src/components/sharing/ShareButton.js
 import React from 'react';
 import { useSharing } from '../../context/SharingContext';
-import { useData } from '../../context/DataContext'; // Add this import
+import { useData } from '../../context/DataContext';
 
 // Share icon as inline SVG
 const ShareIcon = ({ className }) => (
@@ -23,39 +23,43 @@ const ShareIcon = ({ className }) => (
 
 const ShareButton = ({ className = "", variant = "primary", size = "md", icon = true, label = "Share" }) => {
   // Access the sharing context
-  const sharingContext = useSharing();
+  const { openSharingModal } = useSharing();
   
   // Access data context for upload status
-  const { loading, currentDatasetStorageId, error: dataError } = useData(); // Also get error state
+  const { 
+    loading, 
+    currentDatasetStorageId, 
+    error: dataError,
+    salesData,
+    offerData
+  } = useData();
   
-  // Determine if the button should be functionally disabled (prevent generating link)
-  // It's disabled if not loading AND (no ID yet OR there was an error during upload)
-  const isShareDisabled = !loading && (!currentDatasetStorageId || !!dataError);
+  // Check if there's any data to share
+  const hasData = (salesData && salesData.length > 0) || (offerData && offerData.length > 0);
+  
+  // Determine if the button should be disabled 
+  // The button should be enabled if:
+  // 1. Data is currently loading (to show upload progress) OR
+  // 2. We have a valid storage ID (data is uploaded to storage) OR
+  // 3. We have data (even if not yet uploaded to storage, we can try to upload on demand)
+  const isShareDisabled = !loading && !currentDatasetStorageId && !hasData;
   
   // Determine appropriate button text
   const buttonText = loading ? "Uploading..." :
-                    (!currentDatasetStorageId || !!dataError) ? "Upload data first" : // Show this if disabled after loading
-                    label; // Show normal label if enabled
+                    (!currentDatasetStorageId && !hasData) ? "Upload data first" :
+                    (!currentDatasetStorageId && hasData) ? "Share (local mode)" :
+                    label;
   
-  // Debug - log what's in the context
-  console.log("SharingContext in button:", sharingContext);
-  console.log("Data upload status:", { loading, currentDatasetStorageId });
-  
-  // Explicit function for onClick to avoid direct reference issues
+  // Handle share button click
   const handleShareClick = () => {
-    if (isShareDisabled) {
-      // Optionally show a message explaining why sharing is disabled
-      console.log("Cannot share: " + (loading ? "Data is still uploading" : "No data has been uploaded"));
-      // If it's disabled, we don't open the modal.
-      // If it's loading, isShareDisabled is false, so we proceed to open the modal.
-      return; 
-    }
-    
-    // Allow opening the modal even if loading is true
-    if (sharingContext && typeof sharingContext.openSharingModal === 'function') {
-      sharingContext.openSharingModal();
+    // Allow opening the modal:
+    // - If data is still uploading (to show progress)
+    // - If we have a storage ID
+    // - If we have data but no storage ID (try to upload on demand)
+    if (loading || currentDatasetStorageId || hasData) {
+      openSharingModal();
     } else {
-      console.error("openSharingModal is not a function or SharingContext is not properly initialized");
+      console.log("Cannot share: " + (loading ? "Data is still uploading" : "No data has been uploaded"));
     }
   };
   
@@ -102,9 +106,10 @@ const ShareButton = ({ className = "", variant = "primary", size = "md", icon = 
       type="button"
       onClick={handleShareClick}
       className={getButtonClasses()}
-      disabled={isShareDisabled} // Only truly disable if not loading and no ID/error
+      disabled={isShareDisabled} 
       title={loading ? "Data is uploading (click to view progress)" : 
-             isShareDisabled ? "Upload data first or check error" : 
+             isShareDisabled ? "Upload data first" : 
+             !currentDatasetStorageId && hasData ? "Share with local storage mode" :
              "Share dashboard"}
     >
       {icon && (
