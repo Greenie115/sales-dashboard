@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
+import { useFilter } from '../../context/FilterContext';
 import { useTheme } from '../../context/ThemeContext'; // Added ThemeContext import
 import EmptyState from './EmptyState';
 import SummaryTab from './tabs/SummaryTab';
@@ -12,7 +13,7 @@ import FilterPanel from '../filters/FilterPanel';
  * Main content area with tabs and data display
  */
 const MainContent = () => {
-  // Get data from context
+  // Get data from DataContext
   const {
     salesData,
     offerData,
@@ -22,10 +23,14 @@ const MainContent = () => {
     hasData,
     loading,
     error,
-    calculateMetrics,
     activeTab,
     setActiveTab
   } = useData();
+
+  // Get filter-related functions from FilterContext
+  const {
+    calculateMetrics
+  } = useFilter();
 
   // Get dark mode from ThemeContext
   const { darkMode } = useTheme();
@@ -50,7 +55,7 @@ const MainContent = () => {
     <div className="space-y-6">
       {/* Filter Panel - Appears on all tabs */}
       <FilterPanel activeTab={activeTab} />
-      
+
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} shadow rounded-lg`}>
         {/* Tab navigation */}
         <div className={`border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -119,7 +124,7 @@ const MainContent = () => {
                     <span className="mr-2 text-gray-300">•</span>
                   </>
                 )}
-                
+
                 {/* Show brand names if available */}
                 {Array.isArray(brandNames) && brandNames.length > 0 && (
                   <>
@@ -129,7 +134,7 @@ const MainContent = () => {
                     <span className="mr-2 text-gray-300">•</span>
                   </>
                 )}
-                
+
                 {metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0 && (
                   <span>
                     Date range: <span className={`font-medium ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>

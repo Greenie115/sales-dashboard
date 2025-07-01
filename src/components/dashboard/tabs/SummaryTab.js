@@ -1,10 +1,20 @@
 import React, { useMemo } from 'react';
-import { useData } from '../../../context/DataContext';
+import { useData } from '../../../context/DataContext'; // Provides raw salesData
+import { useFilter } from '../../../context/FilterContext'; // Provides filter state AND comparisonMode
 import { useTheme } from '../../../context/ThemeContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import _ from 'lodash';
+import groupBy from 'lodash/groupBy';
+import sortBy from 'lodash/sortBy';
+import uniq from 'lodash/uniq';
+import maxBy from 'lodash/maxBy';
 import { useChartColors } from '../../../utils/chartColors';
-import { useClientData } from '../../../context/ClientDataContext';
+import { useClientData } from '../../../context/ClientDataContext'; // For shared view snapshot
+import {
+  filterSalesData,
+  calculateMetrics,
+  getRetailerDistribution,
+  getProductDistribution
+} from '../../../utils/dataProcessing'; // Import centralized functions
 
 /**
  * SummaryTab component displays the executive summary
@@ -15,29 +25,34 @@ const SummaryTab = ({ isSharedView }) => {
   // Use either the client data context or the regular data context based on the isSharedView prop
   const contextData = useData();
   const clientData = useClientData();
-  const dataContext = isSharedView ? clientData : contextData;
+  const dataContext = isSharedView ? clientData : contextData; // Use snapshot for shared view
   const { darkMode } = useTheme();
+  const { filters: filterState, comparisonMode } = useFilter(); // Get filters AND comparisonMode from FilterContext
   const salesData = dataContext.salesData || [];
-  // Get chart colors for dark mode support
-  const colors = useChartColors();
+  const colors = useChartColors(); // Get chart colors
   
   // Log what data we're working with to debug
   console.log("SummaryTab dataContext:", dataContext);
   
-  // Destructure only what we need from the context
-  const { 
-    getFilteredData, 
-    calculateMetrics,
-    dateRange, 
-    comparisonMode,
-    filteredData: contextFilteredData,
-    metrics: contextMetrics
+  // Destructure necessary raw data and state from DataContext
+  const {
+    salesData: rawSalesData, // Use raw data
+    brandMapping, // Needed for product distribution
+    dateRange, // Still needed? Check FilterContext usage
+    // comparisonMode, // Get from FilterContext
+    filteredData: contextFilteredData, // For shared view snapshot
+    metrics: contextMetrics // For shared view snapshot
   } = dataContext;
   
   // For shared view, prioritize the directly provided data
-  const filteredData = isSharedView && contextFilteredData 
-    ? contextFilteredData 
-    : (getFilteredData ? getFilteredData() : []);
+  // Calculate filtered data using the centralized function for non-shared views
+  const filteredData = useMemo(() => {
+    if (isSharedView && contextFilteredData) {
+      return contextFilteredData; // Use snapshot data for shared view
+    }
+    if (!rawSalesData || !filterState) return [];
+    return filterSalesData(rawSalesData, filterState);
+  }, [isSharedView, contextFilteredData, rawSalesData, filterState]);
   
   // Check if a chart should be shown based on hiddenCharts array
   const shouldShowChart = (chartId) => {
@@ -48,43 +63,47 @@ const SummaryTab = ({ isSharedView }) => {
   };
   
   // Use pre-calculated metrics if available, otherwise calculate them
-  const metrics = isSharedView && contextMetrics 
-    ? contextMetrics 
-    : (calculateMetrics ? calculateMetrics() : null);
+  // Calculate metrics using the centralized function for non-shared views
+  const metrics = useMemo(() => {
+    if (isSharedView && contextMetrics) {
+      return contextMetrics; // Use snapshot metrics for shared view
+    }
+    return calculateMetrics(filteredData);
+  }, [isSharedView, contextMetrics, filteredData]);
   
   // Get comparison metrics
-  const comparisonMetrics = comparisonMode && calculateMetrics ? calculateMetrics(true) : null;
+  // Calculate comparison metrics using centralized functions
+  const comparisonMetrics = useMemo(() => { // Use comparisonMode directly
+    if (!comparisonMode || isSharedView) return null; // No comparison in shared view
+    // Construct comparison filters (assuming FilterContext holds comparison state)
+    const comparisonFilters = {
+      ...filterState, // Start with base filters
+      dateRange: filterState.comparisonDateRange,
+      startDate: filterState.comparisonStartDate,
+      endDate: filterState.comparisonEndDate,
+      selectedMonth: filterState.comparisonMonth,
+      // Ensure product/retailer filters are applied correctly if needed for comparison
+    };
+    const comparisonFilteredData = filterSalesData(rawSalesData, comparisonFilters);
+    return calculateMetrics(comparisonFilteredData);
+  }, [comparisonMode, isSharedView, rawSalesData, filterState]); // Update dependency
   
   // Calculate stats for visualizations
   const stats = useMemo(() => {
     console.log("Calculating stats, filteredData:", filteredData?.length);
     if (!filteredData || filteredData.length === 0) return null;
     
-    // Get top 5 retailers
-    const retailerGroups = _.groupBy(filteredData, 'chain');
-    const topRetailers = Object.entries(retailerGroups)
-      .map(([name, items]) => ({
-        name: name || 'Unknown',
-        value: items.length,
-        percentage: (items.length / filteredData.length) * 100
-      }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
+    // Use imported function for retailer distribution
+    const retailerDistribution = getRetailerDistribution(filteredData);
+    const topRetailers = retailerDistribution.slice(0, 5);
     
-    // Get top 5 products
-    const productGroups = _.groupBy(filteredData, 'product_name');
-    const topProducts = Object.entries(productGroups)
-      .map(([name, items]) => ({
-        name: name || 'Unknown',
-        value: items.length,
-        percentage: (items.length / filteredData.length) * 100
-      }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
+    // Use imported function for product distribution
+    const productDistribution = getProductDistribution(filteredData, brandMapping);
+    const topProducts = productDistribution.slice(0, 5);
     
     // Get day of week distribution
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const dayGroups = _.groupBy(filteredData, 'day_of_week');
+    const dayGroups = groupBy(filteredData, 'day_of_week');
     const dayDistribution = dayNames.map((name, index) => {
       const items = dayGroups[index] || [];
       return {
@@ -95,8 +114,8 @@ const SummaryTab = ({ isSharedView }) => {
     });
     
     // Calculate trend (last 7 days vs previous 7 days)
-    const sortedByDate = _.sortBy(filteredData, 'receipt_date');
-    const dates = _.uniq(sortedByDate.map(item => item.receipt_date));
+    const sortedByDate = sortBy(filteredData, 'receipt_date');
+    const dates = uniq(sortedByDate.map(item => item.receipt_date));
     
     let trend = null;
     
@@ -131,7 +150,7 @@ const SummaryTab = ({ isSharedView }) => {
     }
     
     // Add insight about day of week
-    const bestDay = _.maxBy(dayDistribution, 'value');
+    const bestDay = maxBy(dayDistribution, 'value');
     if (bestDay) {
       insights.push({
         type: 'day',
@@ -163,7 +182,7 @@ const SummaryTab = ({ isSharedView }) => {
       trend,
       insights
     };
-  }, [filteredData]);
+  }, [filteredData, brandMapping]); // Add brandMapping dependency
   
   // Helper function to calculate percentage change
   const calculateChange = (current, previous) => {
@@ -190,7 +209,7 @@ const SummaryTab = ({ isSharedView }) => {
   };
   
   // Handle empty data
-  if (!salesData || salesData.length === 0 || !filteredData || filteredData.length === 0 || !metrics) {
+  if (!rawSalesData || rawSalesData.length === 0 || !filteredData || filteredData.length === 0 || !metrics) { // Check rawSalesData
     console.log("Empty data condition triggered");
     return (
       <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm mb-6 flex items-center justify-center border border-gray-200 dark:border-gray-700">
@@ -227,8 +246,8 @@ const SummaryTab = ({ isSharedView }) => {
               <p className="text-2xl font-bold text-pink-600 dark:text-pink-400">{metrics.totalUnits.toLocaleString()}</p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total units redeemed</p>
             </div>
-          ) : (
-            <div className="flex items-baseline justify-between">
+          ) : ( // If comparisonMode is true
+            <div className="flex items-baseline justify-between flex-wrap"> {/* Added flex-wrap */}
               <div>
                 <p className="text-xl font-bold text-pink-600 dark:text-pink-400">{metrics.totalUnits.toLocaleString()}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Current period</p>
@@ -239,11 +258,11 @@ const SummaryTab = ({ isSharedView }) => {
                     <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                     </svg>
-                  ) : (
+                  ) : ( // This is the 'else' block for the inner ternary
                     <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
                     </svg>
-                  )}
+                  )} {/* Closing parenthesis for the inner ternary */}
                   {Math.abs(calculateChange(metrics.totalUnits, comparisonMetrics.totalUnits)).toFixed(1)}%
                 </div>
               )}
@@ -258,8 +277,8 @@ const SummaryTab = ({ isSharedView }) => {
               <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{metrics.avgRedemptionsPerDay}</p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Units per day</p>
             </div>
-          ) : (
-            <div className="flex items-baseline justify-between">
+          ) : ( // If comparisonMode is true
+            <div className="flex items-baseline justify-between flex-wrap"> {/* Added flex-wrap */}
               <div>
                 <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{metrics.avgRedemptionsPerDay}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Current period</p>

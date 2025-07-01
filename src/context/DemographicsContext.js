@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import _ from 'lodash';
+import uniq from 'lodash/uniq';
+import groupBy from 'lodash/groupBy';
+import orderBy from 'lodash/orderBy';
+import sortBy from 'lodash/sortBy';
 
 // Create the context
 const DemographicsContext = createContext();
@@ -67,14 +70,14 @@ export const DemographicsProvider = ({ children }) => {
     );
 
     // Get unique responses
-    const responses = _.uniq(filteredData.map(item => item[propositionKey])).filter(Boolean);
+    const responses = uniq(filteredData.map(item => item[propositionKey])).filter(Boolean);
     setUniqueResponses(responses);
 
     // Reset selected responses
     setSelectedResponses([]);
 
     // Calculate response stats
-    const groupedByResponse = _.groupBy(filteredData, propositionKey);
+    const groupedByResponse = groupBy(filteredData, propositionKey);
     const responseStats = responses.map(response => {
       const respondents = groupedByResponse[response] || [];
       const totalForResponse = respondents.length;
@@ -87,7 +90,7 @@ export const DemographicsProvider = ({ children }) => {
     });
 
     // Sort by count (highest first)
-    setResponseData(_.orderBy(responseStats, ['total'], ['desc']));
+    setResponseData(orderBy(responseStats, ['total'], ['desc']));
   }, []);
 
   // Function to generate age distribution for selected responses
@@ -97,7 +100,7 @@ export const DemographicsProvider = ({ children }) => {
     const propositionKey = `proposition_${questionNumber}`;
     
     // Get unique age groups
-    const uniqueAgeGroups = _.uniq(
+    const uniqueAgeGroups = uniq(
       data
         .filter(item => item.age_group && item.age_group.trim() !== '')
         .map(item => item.age_group)
@@ -163,7 +166,7 @@ export const DemographicsProvider = ({ children }) => {
     });
     
     // Sort by the defined age group order
-    setAgeDistribution(_.sortBy(ageDistributionData, 'sortOrder'));
+    setAgeDistribution(sortBy(ageDistributionData, 'sortOrder'));
   }, [AGE_GROUP_ORDER]);
 
   // Function to get current question text

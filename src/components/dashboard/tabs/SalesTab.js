@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useData } from '../../../context/DataContext';
+import { useData } from '../../../context/DataContext'; // Provides raw salesData
+import { useFilter } from '../../../context/FilterContext'; // Provides filter state
 import { useTheme } from '../../../context/ThemeContext';
 import { useChartColors } from '../../../utils/chartColors';
+import groupBy from 'lodash/groupBy';
+import {
+  filterSalesData,
+  calculateMetrics,
+  getRetailerDistribution,
+  getProductDistribution
+} from '../../../utils/dataProcessing'; // Import centralized functions
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
@@ -45,42 +53,48 @@ const SalesTab = ({ isSharedView = false }) => {
   
   // Use the appropriate data context based on view mode
   const clientData = useClientData();
-  const dataContext = useData();
-  const contextData = isSharedView ? clientData : dataContext;
+  const dataContext = useData(); // Get raw data context
+  const { filters: filterState } = useFilter(); // Get filter state
+  const contextData = isSharedView ? clientData : dataContext; // Use snapshot for shared view
   
   // Get chart colors
   const colors = useChartColors();
   
-  // Safe destructuring with defaults for ALL required variables
-  const { 
-    getFilteredData = () => [], 
-    calculateMetrics = () => ({}), 
-    getRetailerDistribution = () => [],
-    getProductDistribution = () => [],
+  // Destructure necessary raw data and state from DataContext
+  const {
+    salesData: rawSalesData,
     brandMapping = {},
-    dateRange = 'all',
-    comparisonMode = false,
+    // Get snapshot data for shared view if available
     filteredData: directFilteredData = [],
     metrics: directMetrics = {},
     productDistribution: directProductDistribution = [],
-    retailerDistribution: directRetailerDistribution = [],
-    startDate = '',
-    endDate = ''
+    retailerDistribution: directRetailerDistribution = []
   } = contextData || {};
   
-  // Safely get retailer data from context or calculate it
-  const retailerDataFromContext = isSharedView && directRetailerDistribution.length > 0
-    ? directRetailerDistribution 
-    : (getRetailerDistribution ? getRetailerDistribution() : []);
+  // Calculate filteredData using useMemo
+  const filteredData = useMemo(() => {
+    if (isSharedView && directFilteredData && directFilteredData.length > 0) {
+      return directFilteredData; // Use snapshot data for shared view
+    }
+    if (!rawSalesData || !filterState) return [];
+    return filterSalesData(rawSalesData, filterState);
+  }, [isSharedView, directFilteredData, rawSalesData, filterState]);
   
-  // Safely get filtered data
-  const filteredData = isSharedView && directFilteredData.length > 0
-    ? directFilteredData 
-    : (getFilteredData ? getFilteredData() : []);
+  // Calculate metrics using useMemo
+  const metrics = useMemo(() => {
+    if (isSharedView && directMetrics && Object.keys(directMetrics).length > 0) {
+      return directMetrics; // Use snapshot metrics for shared view
+    }
+    return calculateMetrics(filteredData);
+  }, [isSharedView, directMetrics, filteredData]);
   
-  const metrics = isSharedView && directMetrics 
-    ? directMetrics 
-    : (calculateMetrics ? calculateMetrics() : {});
+  // Calculate retailerData using useMemo
+  const retailerData = useMemo(() => {
+    if (isSharedView && directRetailerDistribution && directRetailerDistribution.length > 0) {
+      return directRetailerDistribution; // Use snapshot data for shared view
+    }
+    return getRetailerDistribution(filteredData);
+  }, [isSharedView, directRetailerDistribution, filteredData]);
 
   // Safely add handlers for date exclusion
   const handleAddExcludedDate = (date) => {
@@ -180,7 +194,7 @@ const SalesTab = ({ isSharedView = false }) => {
           const productItems = filteredData.filter(item => item.product_name === product.name);
           
           // Group by retailer
-          const retailerGroups = _.groupBy(productItems, 'chain');
+          const retailerGroups = groupBy(productItems, 'chain');
           
           // Calculate and sort by count
           const retailerBreakdown = Object.entries(retailerGroups)
@@ -212,65 +226,16 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   };
   
-  // Get retailer distribution - NOW THIS IS THE ONLY DECLARATION OF retailerData
-  const retailerData = useMemo(() => {
-    // If we already have retailer data from context, use it
-    if (retailerDataFromContext && retailerDataFromContext.length > 0) {
-      return retailerDataFromContext;
-    }
-    
-    // Otherwise calculate it
-    if (!filteredData || filteredData.length === 0) return [];
-    
-    const groupedByRetailer = _.groupBy(filteredData, 'chain');
-    const totalUnits = filteredData.length;
-    
-    return Object.entries(groupedByRetailer)
-      .map(([chain, items]) => ({
-        name: chain || 'Unknown',
-        value: items.length,
-        percentage: (items.length / totalUnits) * 100
-      }))
-      .sort((a, b) => b.value - a.value);
-  }, [filteredData, retailerDataFromContext]);
+  // retailerData is now calculated above using useMemo
   
   // Get product distribution
+  // Calculate productDistribution using useMemo
   const productDistribution = useMemo(() => {
-    if (!filteredData || filteredData.length === 0) return [];
-    
-    try {
-      const groupedByProduct = _.groupBy(filteredData, 'product_name');
-      const totalUnits = filteredData.length;
-      
-      return Object.entries(groupedByProduct)
-        .map(([product, items]) => {
-          // Use the mapping to get display name if available
-          const productInfo = brandMapping[product] || { displayName: product };
-          let displayName = productInfo.displayName || product;
-          
-          // Fallback: If display name is still the full product name, trim it
-          if (displayName === product) {
-            const words = displayName.split(' ');
-            if (words.length >= 3) {
-              const wordsToRemove = words.length >= 5 ? 2 : 1;
-              displayName = words.slice(wordsToRemove).join(' ');
-            }
-          }
-          
-          return {
-            name: product,
-            displayName,
-            brandName: productInfo.brandName || '',
-            count: items.length,
-            percentage: (items.length / totalUnits) * 100
-          };
-        })
-        .sort((a, b) => b.count - a.count);
-    } catch (error) {
-      console.error("Error getting product distribution:", error);
-      return [];
+    if (isSharedView && directProductDistribution && directProductDistribution.length > 0) {
+      return directProductDistribution; // Use snapshot data for shared view
     }
-  }, [filteredData, brandMapping]);
+    return getProductDistribution(filteredData, brandMapping);
+  }, [isSharedView, directProductDistribution, filteredData, brandMapping]);
   
   // Get redemptions over time with improved time handling
   const redemptionsOverTime = useMemo(() => {
@@ -302,21 +267,22 @@ const SalesTab = ({ isSharedView = false }) => {
       const dateMap = {};
       
       // Ensure we have valid start and end dates
-      let minDate, maxDate;
       
-      if (dateRange === 'custom' && startDate && endDate) {
-        minDate = new Date(startDate);
-        maxDate = new Date(endDate);
-      } else {
-        // Use the full range from the data
-        const dates = filteredData
-          .filter(item => item.receipt_date)
-          .map(item => new Date(item.receipt_date))
-          .filter(date => !isNaN(date.getTime()));
-        
-        minDate = new Date(Math.min(...dates));
-        maxDate = new Date(Math.max(...dates));
+      // Determine date range based on filter context or data range
+      let minDateStr, maxDateStr;
+      if (filterState.dateRange === 'custom' && filterState.startDate && filterState.endDate) {
+          minDateStr = filterState.startDate;
+          maxDateStr = filterState.endDate;
+      } else if (metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0) {
+          // Fallback to data range if not custom
+          minDateStr = metrics.uniqueDates[0];
+          maxDateStr = metrics.uniqueDates[metrics.uniqueDates.length - 1];
       }
+
+      if (!minDateStr || !maxDateStr) return []; // Cannot proceed without a date range
+
+      const minDate = new Date(minDateStr);
+      const maxDate = new Date(maxDateStr);
       
       // Create date range
       if (!isNaN(minDate.getTime()) && !isNaN(maxDate.getTime())) {
@@ -378,7 +344,7 @@ const SalesTab = ({ isSharedView = false }) => {
       console.error("Error generating redemptions over time:", error);
       return [];
     }
-  }, [filteredData, redemptionTimeframe, dateRange, startDate, endDate]);
+  }, [filteredData, redemptionTimeframe, filterState, metrics]); // Depend on filterState and metrics
   
   // Calculate trend line
   const trendLineData = useMemo(() => {

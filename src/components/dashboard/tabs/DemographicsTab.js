@@ -3,7 +3,6 @@ import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext'; // ← Add this import
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { useClientData } from '../../../context/ClientDataContext';
-import _ from 'lodash';
 
 // Custom colors for light and dark mode
 const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];

@@ -7,7 +7,7 @@ import {
   Pie, Cell, BarChart, Bar, Area, ComposedChart
 } from 'recharts';
 import { useClientData } from '../../../context/ClientDataContext';
-import _ from 'lodash';
+import groupBy from 'lodash/groupBy';
 
 // Custom colors for light and dark mode
 const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
@@ -261,13 +261,13 @@ const OffersTab = ({ isSharedView }) => {
     }
     
     try {
-      const offerGroups = _.groupBy(filteredOfferData, 'offer_name');
+      const offerGroups = groupBy(filteredOfferData, 'offer_name');
       let adjustedData = [];
       
       Object.entries(offerGroups).forEach(([offerName, offerItems]) => {
         if (!offerItems.length || !offerName) return;
         
-        const itemsByDate = _.groupBy(offerItems, item => {
+        const itemsByDate = groupBy(offerItems, item => {
           try {
             // Check if created_at exists and is valid
             if (!item.created_at) {
@@ -329,7 +329,7 @@ const OffersTab = ({ isSharedView }) => {
     const adjustedData = exclusionAdjustedData;
     if (!adjustedData.length) return [];
     try {
-      const genderGroups = _.groupBy(adjustedData.filter(item => item.gender), 'gender');
+      const genderGroups = groupBy(adjustedData.filter(item => item.gender), 'gender');
       return Object.entries(genderGroups).map(([gender, items]) => ({
         name: gender,
         value: items.length,
@@ -346,7 +346,7 @@ const OffersTab = ({ isSharedView }) => {
     const adjustedData = exclusionAdjustedData;
     if (!adjustedData.length) return [];
     try {
-      const ageGroups = _.groupBy(adjustedData.filter(item => item.age_group), 'age_group');
+      const ageGroups = groupBy(adjustedData.filter(item => item.age_group), 'age_group');
       return Object.entries(ageGroups).map(([ageGroup, items]) => ({
         name: ageGroup,
         value: items.length,
@@ -362,7 +362,7 @@ const OffersTab = ({ isSharedView }) => {
   const rankData = useMemo(() => {
     if (!exclusionAdjustedData.length) return [];
     try {
-      const rankGroups = _.groupBy(
+      const rankGroups = groupBy(
         exclusionAdjustedData.filter(item => item.rank_for_viewer != null),
         'rank_for_viewer'
       );
@@ -383,7 +383,7 @@ const OffersTab = ({ isSharedView }) => {
   const offerDistribution = useMemo(() => {
     if (!exclusionAdjustedData.length) return [];
     try {
-      const offerGroups = _.groupBy(exclusionAdjustedData, 'offer_name');
+      const offerGroups = groupBy(exclusionAdjustedData, 'offer_name');
       return Object.entries(offerGroups)
         .map(([offerName, items]) => ({
           name: offerName || 'Unknown',
@@ -440,7 +440,7 @@ const OffersTab = ({ isSharedView }) => {
       console.log("Valid parsed dates:", mappedData.length);
 
       // Hour distribution
-      const hourGroups = _.groupBy(mappedData, 'hour');
+      const hourGroups = groupBy(mappedData, 'hour');
       const hourData = Array.from({ length: 24 }, (_, i) => ({
         name: i.toString(),
         value: hourGroups[i] ? hourGroups[i].length : 0
@@ -448,14 +448,14 @@ const OffersTab = ({ isSharedView }) => {
 
       // Day distribution
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const dayGroups = _.groupBy(mappedData, 'day');
+      const dayGroups = groupBy(mappedData, 'day');
       const dayData = Array.from({ length: 7 }, (_, i) => ({
         name: dayNames[i],
         value: dayGroups[i] ? dayGroups[i].length : 0
       }));
 
       // Time trend
-      const hitsByDate = _.groupBy(mappedData, 'date');
+      const hitsByDate = groupBy(mappedData, 'date');
       console.log("Dates with hits:", Object.keys(hitsByDate).length);
       
       const trendData = Object.keys(hitsByDate).length > 0 
@@ -501,7 +501,7 @@ const OffersTab = ({ isSharedView }) => {
       };
     }
     try {
-      const hitsByDate = _.groupBy(exclusionAdjustedData, item => {
+      const hitsByDate = groupBy(exclusionAdjustedData, item => {
         try {
           const date = new Date(item.created_at);
           return date.toISOString().split('T')[0];
@@ -516,10 +516,10 @@ const OffersTab = ({ isSharedView }) => {
       const averageHitsPerDay = periodDays > 0 ? (totalHits / periodDays).toFixed(2) : 0;
       const hitsPerOffer = {};
       if (!selectedOffers.includes('all')) {
-        const offerGroups = _.groupBy(exclusionAdjustedData, 'offer_name');
+        const offerGroups = groupBy(exclusionAdjustedData, 'offer_name');
         selectedOffers.forEach(offer => {
           const offerItems = offerGroups[offer] || [];
-          const offerHitsByDate = _.groupBy(offerItems, item => {
+          const offerHitsByDate = groupBy(offerItems, item => {
             try {
               const date = new Date(item.created_at);
               return date.toISOString().split('T')[0];

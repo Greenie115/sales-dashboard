@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSharing } from '../../context/SharingContext';
-import { useData } from '../../context/DataContext';
+import { useData } from '../../context/DataContext'; // Provides clientName, brandMapping
+import { useFilter } from '../../context/FilterContext'; // Provides filterState
 import { useTheme } from '../../context/ThemeContext';
 import SharedDashboardPreview from './SharedDashboardPreview';
 import SharedDashboardsManager from './SharedDashboardsManager';
@@ -10,22 +11,12 @@ import ClientNameEditor from '../dashboard/ClientNameEditor';
 const SharingModal = () => {
   const { darkMode } = useTheme();
   const {
-    // Get data context for brand information
-    salesData, 
-    brandNames, 
+    // Get metadata from DataContext
     clientName,
-    brandMapping,
-    getFilteredData,
-    calculateMetrics,
-    getRetailerDistribution,
-    getProductDistribution,
-    selectedProducts,
-    selectedRetailers,
-    dateRange,
-    startDate,
-    endDate,
-    selectedMonth
   } = useData();
+
+  // Get filter context
+  const { } = useFilter();
 
   // Get sharing context functions
   const {
@@ -48,69 +39,14 @@ const SharingModal = () => {
   const [activeView, setActiveView] = useState('create');
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [inlinePreview, setInlinePreview] = useState(false);
-  const [fallbackMode, setFallbackMode] = useState(false);
+  const [inlinePreview] = useState(false); // Keep for inline preview toggle
+  // fallbackMode state removed
+  // Client name is now stored in shareConfig
   const [datePickerValue, setDatePickerValue] = useState('');
 
-  // Create a fallback link using Base64 encoding
-  const generateFallbackLink = () => {
-    try {
-      // Create a copy of the current sharing configuration
-      const configToShare = { ...shareConfig };
-  
-      // Ensure we have an active tab that's in the allowed tabs
-      if (!configToShare.allowedTabs.includes(configToShare.activeTab)) {
-        configToShare.activeTab = configToShare.allowedTabs[0];
-      }
+  // generateFallbackLink function removed
 
-      // Add metadata
-      configToShare.metadata = {
-        createdAt: new Date().toISOString(),
-        brandNames: brandNames || [],
-        clientName: clientName || 'Client',
-        datasetSize: Array.isArray(salesData) ? salesData.length : 0,
-      };
-  
-      // IMPORTANT: Add precomputed data for the client view
-      configToShare.precomputedData = {
-        filteredData: getFilteredData ? getFilteredData(configToShare.filters) : [],
-        metrics: calculateMetrics ? calculateMetrics() : null,
-        retailerData: getRetailerDistribution ? getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? getProductDistribution() : [],
-        brandMapping: brandMapping || {},
-        brandNames: brandNames || [],
-        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-        salesData: salesData ? salesData.slice(0, 1000) : [] // Include a subset of the data
-      };
-  
-      console.log("Generating share link with config:", {
-        activeTab: configToShare.activeTab,
-        allowedTabs: configToShare.allowedTabs
-      });
-  
-      // Generate an ID using Base64 encoding
-      const shareId = btoa(JSON.stringify(configToShare)).replace(/=/g, '');
-  
-      // Create the shareable URL with hash for HashRouter
-      const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/#/shared/${shareId}`;
-  
-      setShareableLink(shareUrl);
-      return shareUrl;
-    } catch (error) {
-      console.error("Error generating fallback link:", error);
-      return "";
-    }
-  };
-
-
-  // Toggle fallback mode
-  const toggleFallbackMode = () => {
-    setFallbackMode(!fallbackMode);
-    // Clear existing link when toggling mode
-    setShareableLink('');
-  };
-
+  // toggleFallbackMode function removed
   // Copy the share URL to clipboard
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareableLink)
@@ -125,47 +61,8 @@ const SharingModal = () => {
       return () => clearTimeout(timer);
     }
   }, [copySuccess]);
-  
-  const getEnhancedPreviewData = () => {
-    // Get the base preview data from the context
-    const previewData = getPreviewData();
-    
-    // Add metadata if it doesn't exist
-    if (!previewData.metadata) {
-      previewData.metadata = {
-        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-      };
-    } else if (!previewData.metadata.clientName) {
-      // Ensure client name is set in metadata
-      previewData.metadata.clientName = clientName || 
-        (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
-    }
-    
-    // Add precomputed data if it doesn't exist
-    if (!previewData.precomputedData) {
-      previewData.precomputedData = {
-        filteredData: getFilteredData ? 
-          getFilteredData(previewData.filters) : [],
-        metrics: calculateMetrics ? 
-          calculateMetrics() : null,
-        retailerData: getRetailerDistribution ? 
-          getRetailerDistribution() : [],
-        productDistribution: getProductDistribution ? 
-          getProductDistribution() : [],
-        salesData: salesData ? 
-          salesData.slice(0, 1000) : [],
-        brandNames: brandNames || [],
-        clientName: clientName || (brandNames?.length > 0 ? brandNames.join(', ') : 'Client'),
-        brandMapping: brandMapping || {}
-      };
-    } else if (!previewData.precomputedData.clientName) {
-      // Ensure client name is set in precomputed data
-      previewData.precomputedData.clientName = clientName || 
-        (brandNames?.length > 0 ? brandNames.join(', ') : 'Client');
-    }
-    
-    return previewData;
-  };
+
+  // getEnhancedPreviewData function removed
   // Handle generating share link
   const handleGenerateLink = async () => {
     // Ensure we have at least one tab selected
@@ -173,21 +70,47 @@ const SharingModal = () => {
       alert("Please select at least one tab to share.");
       return;
     }
-    
+
+    // Client ID is now handled by the SharingContext
+
     setIsGeneratingLink(true);
-    
+    setShareableLink(''); // Clear previous link
+
     try {
-      if (fallbackMode) {
-        generateFallbackLink();
-      } else {
-        await generateShareableLink();
+      // Use the generateShareableLink function from SharingContext
+      // This will handle all the data processing and API calls
+      const url = await generateShareableLink();
+
+      if (!url) {
+        throw new Error('Failed to generate share link.');
       }
+
+      // Success message
+      const successMessage = document.createElement('div');
+      successMessage.className = `fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50 animate-fade-in-out`;
+      successMessage.textContent = 'Share link generated successfully!';
+      document.body.appendChild(successMessage);
+
+      setTimeout(() => {
+        document.body.removeChild(successMessage);
+      }, 3000);
+
     } catch (error) {
-      console.error("Error generating link:", error);
-      // If normal generation fails, try fallback mode
-      if (!fallbackMode) {
-        setFallbackMode(true);
-        generateFallbackLink();
+      console.error("Error generating share link:", error);
+
+      // Don't use alert as it's disruptive - use a more user-friendly approach
+      const errorDiv = document.getElementById('share-error-message');
+      if (errorDiv) {
+        errorDiv.textContent = `Failed to generate share link: ${error.message}`;
+        errorDiv.style.display = 'block';
+
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+          errorDiv.style.display = 'none';
+        }, 5000);
+      } else {
+        // Fallback to console if the error div doesn't exist
+        console.error(`Failed to generate share link: ${error.message}`);
       }
     } finally {
       setIsGeneratingLink(false);
@@ -205,7 +128,7 @@ const SharingModal = () => {
       // Make sure active tab is valid
       setShareActiveTab(shareConfig.allowedTabs[0]);
     }
-    
+
     // Toggle to preview mode
     setIsPreviewMode(true);
   };
@@ -215,19 +138,21 @@ const SharingModal = () => {
     if (tabConfig.allowedTabs?.length) {
       setShareAllowedTabs(tabConfig.allowedTabs);
     }
-    
+
     if (tabConfig.activeTab && shareConfig.allowedTabs.includes(tabConfig.activeTab)) {
       setShareActiveTab(tabConfig.activeTab);
     }
   };
 
   // Helper function to get display name without brand prefix
+  // Commented out as it's not currently used
+  /*
   const getProductDisplayName = (product) => {
     // Use the brand mapping if available
     if (brandMapping && brandMapping[product]) {
       return brandMapping[product].displayName || product;
     }
-    
+
     // Fallback: Remove the brand prefix (first word or two)
     const words = product.split(' ');
     if (words.length >= 3) {
@@ -235,30 +160,33 @@ const SharingModal = () => {
       const wordsToRemove = words.length >= 5 ? 2 : 1;
       return words.slice(wordsToRemove).join(' ');
     }
-    
+
     return product;
   };
+  */
 
   // Handle adding a custom excluded date
   const handleAddExcludedDate = () => {
     if (!datePickerValue) return;
-    
+
     const updatedConfig = {
       ...shareConfig,
       customExcludedDates: [...(shareConfig.customExcludedDates || []), datePickerValue]
     };
-    
+
     updateShareConfig(updatedConfig);
     setDatePickerValue('');
   };
 
+  // Commented out as it's not currently used
+  /*
   const handleToggleHiddenChart = (chartId) => {
     const updatedConfig = { ...shareConfig };
-    
+
     if (!updatedConfig.hiddenCharts) {
       updatedConfig.hiddenCharts = [];
     }
-    
+
     if (updatedConfig.hiddenCharts.includes(chartId)) {
       // Remove from hidden charts
       updatedConfig.hiddenCharts = updatedConfig.hiddenCharts.filter(id => id !== chartId);
@@ -266,9 +194,10 @@ const SharingModal = () => {
       // Add to hidden charts
       updatedConfig.hiddenCharts = [...updatedConfig.hiddenCharts, chartId];
     }
-    
+
     updateShareConfig(updatedConfig);
   };
+  */
 
   // Handle removing a custom excluded date
   const handleRemoveExcludedDate = (date) => {
@@ -276,7 +205,7 @@ const SharingModal = () => {
       ...shareConfig,
       customExcludedDates: (shareConfig.customExcludedDates || []).filter(d => d !== date)
     };
-    
+
     updateShareConfig(updatedConfig);
   };
 
@@ -285,13 +214,14 @@ const SharingModal = () => {
 
   // If in full preview mode, render the preview
   if (isPreviewMode) {
-    return <SharedDashboardPreview 
-      config={getEnhancedPreviewData()} 
-      onClose={() => setIsPreviewMode(false)} 
+    // Adjust preview if needed, potentially passing snapshot data directly
+    return <SharedDashboardPreview
+      config={getPreviewData()} // Use data directly from context for now
+      onClose={() => setIsPreviewMode(false)}
     />;
   }
 
-  
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className={`relative w-full max-w-4xl rounded-lg shadow-xl overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
@@ -302,15 +232,15 @@ const SharingModal = () => {
               Share Dashboard
             </h2>
           </div>
-          
+
           {/* Tab navigation for Create/Manage/Debug */}
           <div className="flex items-center space-x-4">
             <div className="flex border rounded-md overflow-hidden">
               <button
                 onClick={() => setActiveView('create')}
                 className={`px-4 py-2 text-sm ${
-                  activeView === 'create' 
-                    ? `bg-pink-600 text-white` 
+                  activeView === 'create'
+                    ? `bg-pink-600 text-white`
                     : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
                 }`}
               >
@@ -319,16 +249,16 @@ const SharingModal = () => {
               <button
                 onClick={() => setActiveView('manage')}
                 className={`px-4 py-2 text-sm ${
-                  activeView === 'manage' 
-                    ? `bg-pink-600 text-white` 
+                  activeView === 'manage'
+                    ? `bg-pink-600 text-white`
                     : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
                 }`}
               >
                 Manage Shares
               </button>
             </div>
-            
-            <button 
+
+            <button
               onClick={toggleShareModal}
               className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
             >
@@ -338,7 +268,7 @@ const SharingModal = () => {
             </button>
           </div>
         </div>
-        
+
         {/* Create New Share View */}
         {activeView === 'create' && (
           <div className="flex flex-col md:flex-row">
@@ -346,38 +276,11 @@ const SharingModal = () => {
             <div className={`w-full ${inlinePreview ? 'md:w-1/2 border-r dark:border-gray-700' : 'md:w-full'}`}>
               {/* Body */}
               <div className={`px-6 py-4 max-h-[70vh] overflow-y-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                {/* Fallback Mode Notice */}
-                {fallbackMode && (
-                  <div className={`mb-4 p-3 rounded-lg ${darkMode ? 'bg-amber-900/20 border-amber-800/30' : 'bg-amber-50 border-amber-200'} border`}>
-                    <div className="flex items-start">
-                      <svg className="h-5 w-5 text-amber-400 mr-2 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <div>
-                        <h3 className={`text-sm font-medium ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
-                          Using Fallback Mode
-                        </h3>
-                        <p className={`mt-1 text-sm ${darkMode ? 'text-amber-200' : 'text-amber-700'}`}>
-                          Fallback mode encodes dashboard information directly in the URL without storing in Supabase.
-                          To use database storage, go to the Debug tab to troubleshoot connection issues.
-                        </p>
-                        <button 
-                          onClick={toggleFallbackMode}
-                          className={`mt-2 px-3 py-1 text-xs rounded-md ${
-                            darkMode ? 'bg-amber-800/50 text-amber-200 hover:bg-amber-800' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
-                          }`}
-                        >
-                          Try Using Supabase
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
+                {/* Fallback Mode UI completely removed */}
                 <div className="space-y-6">
                   {/* Tab Selection */}
                   <div>
-                    <ShareConfigTabSelector 
+                    <ShareConfigTabSelector
                       allowedTabs={shareConfig.allowedTabs || ['summary']}
                       activeTab={shareConfig.activeTab || 'summary'}
                       onChange={handleTabConfigChange}
@@ -393,47 +296,57 @@ const SharingModal = () => {
                       This name will be displayed in the client dashboard header.
                     </p>
                   </div>
-                  
-                  {/* Data Filters */}
+
+                  {/* Client Selection */}
                   <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Data Filters</h3>
-                      <button
-                        onClick={saveCurrentFilters}
-                        className={`text-xs py-1 px-2 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                      >
-                        Use Current Filters
-                      </button>
-                    </div>
-                    <div className={`rounded-lg border p-3 mb-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                      <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Clients will view the dashboard with the following filters applied:
-                      </p>
-                      <div className="mt-2 space-y-2">
-                        <div className="text-sm">
-                          <span className="font-medium">Products:</span> {shareConfig.filters?.selectedProducts?.includes('all') 
-                            ? 'All Products' 
-                            : (shareConfig.filters?.selectedProducts?.map(p => getProductDisplayName(p)).join(', ') || 'All Products')}
-                        </div>
-                        <div className="text-sm">
-                          <span className="font-medium">Retailers:</span> {shareConfig.filters?.selectedRetailers?.includes('all') 
-                            ? 'All Retailers' 
-                            : (shareConfig.filters?.selectedRetailers?.join(', ') || 'All Retailers')}
-                        </div>
-                        <div className="text-sm">
-                          <span className="font-medium">Date Range:</span> {shareConfig.filters?.dateRange === 'custom' 
-                            ? `${shareConfig.filters?.startDate} to ${shareConfig.filters?.endDate}` 
-                            : (shareConfig.filters?.dateRange === 'month' 
-                              ? shareConfig.filters?.selectedMonth 
-                              : (shareConfig.filters?.dateRange || 'All Time'))}
-                        </div>
-                      </div>
-                    </div>
-                    <p className={`text-xs italic ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      Clients won't be able to change these filters.
+                    <label htmlFor="client-id-input" className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                      Client Name:
+                    </label>
+                    <input
+                      id="client-id-input"
+                      type="text"
+                      value={shareConfig.clientName || clientName || ''}
+                      onChange={(e) => updateShareConfig({ clientName: e.target.value })}
+                      placeholder="Enter Client Name"
+                      className={`mt-1 block w-full px-3 py-2 text-sm rounded-md shadow-sm ${
+                        darkMode
+                          ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500 placeholder-gray-400'
+                          : 'border-gray-300 bg-white text-gray-900 focus:ring-pink-500 focus:border-pink-500 placeholder-gray-400'
+                      }`}
+                    />
+                     <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      The name of the client who will access this dashboard.
                     </p>
                   </div>
-                  
+
+                  {/* Data Filters (Display Only) */}
+                   <div>
+                     <div className="flex justify-between items-center mb-2">
+                       <h3 className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Data Filters Applied</h3>
+                       <button
+                         onClick={saveCurrentFilters} // This function should update shareConfig.filters
+                         className={`text-xs py-1 px-2 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                       >
+                         Use Current Dashboard Filters
+                       </button>
+                     </div>
+                     <div className={`rounded-lg border p-3 mb-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                       <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                         The shared view will be created with these filters:
+                       </p>
+                       {/* Display filters from shareConfig.filters */}
+                       <div className="mt-2 space-y-1 text-xs">
+                         <div><span className="font-medium">Products:</span> {shareConfig.filters?.selectedProducts?.join(', ') || 'All'}</div>
+                         <div><span className="font-medium">Retailers:</span> {shareConfig.filters?.selectedRetailers?.join(', ') || 'All'}</div>
+                         <div><span className="font-medium">Date Range:</span> {shareConfig.filters?.dateRange === 'custom' ? `${shareConfig.filters?.startDate} to ${shareConfig.filters?.endDate}` : shareConfig.filters?.dateRange || 'All Time'}</div>
+                         {shareConfig.filters?.dateRange === 'month' && <div><span className="font-medium">Month:</span> {shareConfig.filters?.selectedMonth}</div>}
+                       </div>
+                     </div>
+                     <p className={`text-xs italic ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                       Clients view a snapshot and cannot change filters.
+                     </p>
+                   </div>
+
                   {/* Display Options */}
                   <div>
                     <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Display Options</h3>
@@ -486,10 +399,10 @@ const SharingModal = () => {
                             const chart = 'retailer-distribution';
                             // Create a new hiddenCharts array if it doesn't exist
                             const currentHiddenCharts = shareConfig.hiddenCharts || [];
-                            const updatedCharts = e.target.checked 
-                              ? [...currentHiddenCharts, chart] 
+                            const updatedCharts = e.target.checked
+                              ? [...currentHiddenCharts, chart]
                               : currentHiddenCharts.filter(c => c !== chart);
-                            
+
                             updateShareConfig({ hiddenCharts: updatedCharts });
                             console.log("Updated hidden charts:", updatedCharts);
                           }}
@@ -497,7 +410,7 @@ const SharingModal = () => {
                         />
                         <span className="ml-2">Hide retailer distribution chart</span>
                       </label>
-                      
+
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
@@ -505,17 +418,17 @@ const SharingModal = () => {
                           onChange={(e) => {
                             const chart = 'product-distribution';
                             const currentHiddenCharts = shareConfig.hiddenCharts || [];
-                            const updatedCharts = e.target.checked 
-                              ? [...currentHiddenCharts, chart] 
+                            const updatedCharts = e.target.checked
+                              ? [...currentHiddenCharts, chart]
                               : currentHiddenCharts.filter(c => c !== chart);
-                            
+
                             updateShareConfig({ hiddenCharts: updatedCharts });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide product distribution chart</span>
                       </label>
-                      
+
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
@@ -523,17 +436,17 @@ const SharingModal = () => {
                           onChange={(e) => {
                             const chart = 'time-trend';
                             const currentHiddenCharts = shareConfig.hiddenCharts || [];
-                            const updatedCharts = e.target.checked 
-                              ? [...currentHiddenCharts, chart] 
+                            const updatedCharts = e.target.checked
+                              ? [...currentHiddenCharts, chart]
                               : currentHiddenCharts.filter(c => c !== chart);
-                            
+
                             updateShareConfig({ hiddenCharts: updatedCharts });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide time trend chart</span>
                       </label>
-                      
+
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
@@ -541,17 +454,17 @@ const SharingModal = () => {
                           onChange={(e) => {
                             const chart = 'demographics-charts';
                             const currentHiddenCharts = shareConfig.hiddenCharts || [];
-                            const updatedCharts = e.target.checked 
-                              ? [...currentHiddenCharts, chart] 
+                            const updatedCharts = e.target.checked
+                              ? [...currentHiddenCharts, chart]
                               : currentHiddenCharts.filter(c => c !== chart);
-                            
+
                             updateShareConfig({ hiddenCharts: updatedCharts });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <span className="ml-2">Hide demographic breakdown charts</span>
                       </label>
-                      
+
                       <label className="inline-flex items-center">
                         <input
                           type="checkbox"
@@ -559,10 +472,10 @@ const SharingModal = () => {
                           onChange={(e) => {
                             const chart = 'day-distribution';
                             const currentHiddenCharts = shareConfig.hiddenCharts || [];
-                            const updatedCharts = e.target.checked 
-                              ? [...currentHiddenCharts, chart] 
+                            const updatedCharts = e.target.checked
+                              ? [...currentHiddenCharts, chart]
                               : currentHiddenCharts.filter(c => c !== chart);
-                            
+
                             updateShareConfig({ hiddenCharts: updatedCharts });
                           }}
                           className="form-checkbox h-4 w-4 text-pink-600 rounded focus:ring-pink-500"
@@ -582,8 +495,8 @@ const SharingModal = () => {
                           value={datePickerValue}
                           onChange={(e) => setDatePickerValue(e.target.value)}
                           className={`w-full px-3 py-2 border ${
-                            darkMode 
-                              ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                            darkMode
+                              ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500'
                               : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
                           } rounded-md text-sm focus:outline-none`}
                         />
@@ -600,10 +513,10 @@ const SharingModal = () => {
                         Add
                       </button>
                     </div>
-                    
+
                     {/* Display excluded dates */}
                     <div className={`mt-2 ${
-                      shareConfig.customExcludedDates.length > 0 
+                      shareConfig.customExcludedDates.length > 0
                         ? `${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'} p-3 rounded-lg border`
                         : ''
                     }`}>
@@ -648,8 +561,8 @@ const SharingModal = () => {
                             value={datePickerValue}
                             onChange={(e) => setDatePickerValue(e.target.value)}
                             className={`w-full px-3 py-2 border ${
-                              darkMode 
-                                ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                              darkMode
+                                ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500'
                                 : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
                             } rounded-md text-sm focus:outline-none`}
                           />
@@ -666,10 +579,10 @@ const SharingModal = () => {
                           Add
                         </button>
                       </div>
-                      
+
                       {/* Display excluded dates */}
                       <div className={`mt-2 ${
-                        shareConfig.customExcludedDates.length > 0 
+                        shareConfig.customExcludedDates.length > 0
                           ? `${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'} p-3 rounded-lg border`
                           : ''
                       }`}>
@@ -703,7 +616,7 @@ const SharingModal = () => {
                         )}
                       </div>
                     </div>
-                  
+
                   {/* Client Note */}
                   <div>
                     <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Client Note</h3>
@@ -714,14 +627,14 @@ const SharingModal = () => {
                         updateShareConfig({ clientNote: e.target.value });
                       }}
                       className={`w-full px-3 py-2 border ${
-                        darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                        darkMode
+                          ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500'
                           : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
                       } rounded-md text-sm focus:outline-none`}
                       rows={3}
                     />
                   </div>
-                  
+
                   {/* Expiry Date */}
                   <div>
                     <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Expiry Date</h3>
@@ -733,8 +646,8 @@ const SharingModal = () => {
                       }}
                       min={new Date().toISOString().split('T')[0]}
                       className={`w-full px-3 py-2 border ${
-                        darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500' 
+                        darkMode
+                          ? 'bg-gray-700 border-gray-600 text-white focus:ring-pink-500 focus:border-pink-500'
                           : 'border-gray-300 text-gray-900 focus:ring-pink-500 focus:border-pink-500'
                       } rounded-md text-sm focus:outline-none`}
                     />
@@ -745,7 +658,7 @@ const SharingModal = () => {
                 </div>
               </div>
             </div>
-            
+
             {/* Right section - inline preview */}
             {inlinePreview && (
               <div className="w-full md:w-1/2 max-h-[70vh] overflow-hidden relative">
@@ -754,7 +667,7 @@ const SharingModal = () => {
                     <div className={`px-4 py-3 border-b ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} flex justify-between items-center`}>
                       <div className="flex items-center">
                         {shareConfig.branding.showLogo && (
-                          <div 
+                          <div
                             className="h-6 w-6 rounded-full mr-2 flex items-center justify-center"
                             style={{ backgroundColor: shareConfig.branding.primaryColor }}
                           >
@@ -780,14 +693,22 @@ const SharingModal = () => {
             )}
           </div>
         )}
-        
+
         {/* Manage Existing Shares View */}
         {activeView === 'manage' && (
           <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
             <SharedDashboardsManager />
           </div>
         )}
-          
+
+        {/* Info message */}
+        <div className="px-6 py-3 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-sm rounded-md mx-6 mb-4">
+          <p><strong>Note:</strong> This app is using a mock Supabase client that stores data in your browser's localStorage. Shared dashboards will only be accessible on this device.</p>
+        </div>
+
+        {/* Error message */}
+        <div id="share-error-message" className="hidden px-6 py-3 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 text-sm rounded-md mx-6 mb-4"></div>
+
         {/* Footer with Actions */}
         <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-between items-center`}>
           <div className="flex items-center space-x-2">
@@ -809,7 +730,7 @@ const SharingModal = () => {
               </>
             )}
           </div>
-          
+
           {activeView === 'create' && (
             <div className="flex items-center space-x-3">
               {!shareableLink ? (
@@ -836,7 +757,7 @@ const SharingModal = () => {
                       readOnly
                       value={shareableLink}
                       className={`
-                        w-64 px-3 py-2 pr-10 rounded-md border text-sm 
+                        w-64 px-3 py-2 pr-10 rounded-md border text-sm
                         ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900'}
                       `}
                     />

@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState } from 'react';
-import _ from 'lodash'; // Add missing lodash import
 import { saveAs } from 'file-saver';
 
 // Create the context

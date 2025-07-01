@@ -18,13 +18,13 @@ const Header = () => {
     salesData,
     offerData,
     hasData,
-    loading,
-    error,
-    setLoading,
+    dataLoading, // Correct state name
+    dataError,   // Correct state name
+    setDataLoading, // Correct setter name
     setSalesData,
     setOfferData,
     setHasOfferData,
-    setError,
+    setDataError, // Correct setter name
     setBrandMapping,
     setBrandNames,
     setActiveTab
@@ -33,13 +33,13 @@ const Header = () => {
   // Define our own file processing logic since handleFileUpload is not working
   const processFile = (file) => {
     if (!file) {
-      setError('No file selected');
+      setDataError('No file selected');
       return;
     }
     
-    setLoading(true);
+    setDataLoading(true);
     setProcessingFile(true);
-    setError('');
+    setDataError('');
     
     // Check if we're dealing with sales or offer data
     const isOfferData = file.name.toLowerCase().includes('hits_offer');
@@ -61,7 +61,7 @@ const Header = () => {
                 );
                 
                 if (validOfferData.length === 0) {
-                  setError('No valid offer data found. Please ensure your CSV has the correct format.');
+                  setDataError('No valid offer data found. Please ensure your CSV has the correct format.');
                 } else {
                   // Process dates for offer data
                   const processedOfferData = validOfferData.map(row => {
@@ -96,7 +96,7 @@ const Header = () => {
                 );
                 
                 if (validData.length === 0) {
-                  setError('No valid sales data found. Please ensure your CSV has the correct format.');
+                  setDataError('No valid sales data found. Please ensure your CSV has the correct format.');
                 } else {
                   // Process dates and add month field
                   const processedData = validData.map(row => {
@@ -122,31 +122,31 @@ const Header = () => {
                 }
               }
             } else {
-              setError('No data found in file');
+              setDataError('No data found in file');
             }
             
-            setLoading(false);
+            setDataLoading(false);
             setProcessingFile(false);
           },
           error: (error) => {
             console.error("CSV parsing error:", error);
-            setError('Error parsing file: ' + error.message);
-            setLoading(false);
+            setDataError('Error parsing file: ' + error.message);
+            setDataLoading(false);
             setProcessingFile(false);
           }
         });
       } catch (e) {
         console.error("Error in file upload handler:", e);
-        setError('Error processing file: ' + e.message);
-        setLoading(false);
+        setDataError('Error processing file: ' + e.message);
+        setDataLoading(false);
         setProcessingFile(false);
       }
     };
     
     reader.onerror = (e) => {
       console.error("File read error:", e);
-      setError('Error reading file');
-      setLoading(false);
+      setDataError('Error reading file');
+      setDataLoading(false);
       setProcessingFile(false);
     };
     
@@ -222,7 +222,7 @@ const Header = () => {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                {processingFile || loading ? 'Loading...' : 'Upload CSV'}
+                {processingFile || dataLoading ? 'Loading...' : 'Upload CSV'}
                 <input 
                   type="file" 
                   className="hidden" 

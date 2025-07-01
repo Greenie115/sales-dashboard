@@ -1,6 +1,8 @@
 // src/utils/dataProcessing.js
 import { identifyBrandPrefixes, extractBrandNames } from './brandDetection';
-import _ from 'lodash';
+import uniq from 'lodash/uniq';
+import groupBy from 'lodash/groupBy';
+import orderBy from 'lodash/orderBy';
 
 /**
  * Process raw data to add derived fields and structured information
@@ -37,7 +39,7 @@ export const calculateMetrics = (data, isComparison = false) => {
   if (!data || data.length === 0) return null;
   
   // Get unique dates to calculate date range and average per day
-  const uniqueDates = _.uniq(data.map(item => item.receipt_date)).sort();
+  const uniqueDates = uniq(data.map(item => item.receipt_date)).sort();
   const daysInRange = uniqueDates.length;
   
   // Get total monetary value if available
@@ -63,7 +65,7 @@ export const calculateMetrics = (data, isComparison = false) => {
 export const getRetailerDistribution = (data) => {
   if (!data || data.length === 0) return [];
   
-  const groupedByRetailer = _.groupBy(data, 'chain');
+  const groupedByRetailer = groupBy(data, 'chain');
   const totalUnits = data.length;
   
   return Object.entries(groupedByRetailer)
@@ -81,7 +83,7 @@ export const getRetailerDistribution = (data) => {
 export const getProductDistribution = (data, brandMapping = {}) => {
   if (!data || data.length === 0) return [];
   
-  const groupedByProduct = _.groupBy(data, 'product_name');
+  const groupedByProduct = groupBy(data, 'product_name');
   const totalUnits = data.length;
   
   return Object.entries(groupedByProduct)
@@ -124,17 +126,17 @@ export const getRedemptionsOverTime = (data, timeframe = 'daily') => {
   switch(timeframe) {
     case 'hourly':
       // Group by hour of day
-      groupedData = _.groupBy(data, 'hour_of_day');
+      groupedData = groupBy(data, 'hour_of_day');
       format = hour => `${hour}:00`;
       break;
     case 'daily':
       // Group by date
-      groupedData = _.groupBy(data, 'receipt_date');
+      groupedData = groupBy(data, 'receipt_date');
       format = date => date;
       break;
     case 'weekly':
       // Group by week (using the first day of the week)
-      groupedData = _.groupBy(data, item => {
+      groupedData = groupBy(data, item => {
         const date = new Date(item.receipt_date);
         const dayOfWeek = date.getDay();
         const diff = date.getDate() - dayOfWeek; // adjust to get first day of week (Sunday)
@@ -151,7 +153,7 @@ export const getRedemptionsOverTime = (data, timeframe = 'daily') => {
     case 'monthly':
     default:
       // Group by month
-      groupedData = _.groupBy(data, 'month');
+      groupedData = groupBy(data, 'month');
       format = month => month;
   }
   
@@ -241,7 +243,7 @@ export const analyzeBrands = (data) => {
   
   try {
     // Extract unique product names
-    const uniqueProducts = _.uniq(data.map(item => item.product_name)).filter(Boolean);
+    const uniqueProducts = uniq(data.map(item => item.product_name)).filter(Boolean);
     
     // Generate brand mapping
     const brandMapping = identifyBrandPrefixes(uniqueProducts);
@@ -263,8 +265,8 @@ export const createProductRetailerMatrix = (data, usePercentages = false) => {
   if (!data || data.length === 0) return null;
   
   // Get unique products and retailers
-  const uniqueProducts = _.uniq(data.map(item => item.product_name)).filter(Boolean);
-  const uniqueRetailers = _.uniq(data.map(item => item.chain)).filter(Boolean);
+  const uniqueProducts = uniq(data.map(item => item.product_name)).filter(Boolean);
+  const uniqueRetailers = uniq(data.map(item => item.chain)).filter(Boolean);
   
   // Initialize the data structure
   const matrix = {
@@ -337,4 +339,52 @@ export const createProductRetailerMatrix = (data, usePercentages = false) => {
   matrix.retailers = matrix.retailers.slice(0, 5);
   
   return matrix;
+};
+/**
+ * Filters sales data based on provided criteria.
+ */
+export const filterSalesData = (data, filters) => {
+  if (!data || !Array.isArray(data)) return [];
+  if (!filters) return data; // Return all data if no filters are provided
+
+  const {
+    selectedProducts = ['all'],
+    selectedRetailers = ['all'],
+    dateRange = 'all',
+    startDate = '',
+    endDate = '',
+    selectedMonth = '',
+    // Add textSearch later if needed
+    // textSearch = ''
+  } = filters;
+
+  return data.filter(item => {
+    if (!item) return false;
+
+    // Product filter
+    const productMatch = selectedProducts.includes('all') ||
+                         (item.product_name && selectedProducts.includes(item.product_name));
+
+    // Retailer filter
+    const retailerMatch = selectedRetailers.includes('all') ||
+                          (item.chain && selectedRetailers.includes(item.chain));
+
+    // Date filter
+    let dateMatch = true;
+    if (dateRange === 'month' && selectedMonth && item.month) {
+      dateMatch = item.month === selectedMonth;
+    } else if (dateRange === 'custom' && startDate && endDate && item.receipt_date) {
+      // Ensure date comparison is robust (e.g., comparing date objects or ensuring consistent string formats)
+      // Assuming YYYY-MM-DD format for comparison
+      dateMatch = item.receipt_date >= startDate && item.receipt_date <= endDate;
+    }
+    
+    // Text search filter (placeholder - implement actual logic if needed)
+    // const textMatch = !textSearch ||
+    //                   (item.product_name && item.product_name.toLowerCase().includes(textSearch.toLowerCase())) ||
+    //                   (item.chain && item.chain.toLowerCase().includes(textSearch.toLowerCase()));
+
+    // Combine all filters
+    return productMatch && retailerMatch && dateMatch; // && textMatch;
+  });
 };

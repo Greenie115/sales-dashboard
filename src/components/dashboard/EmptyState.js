@@ -2,109 +2,153 @@
 import React, { useRef, useState } from 'react';
 import { useData } from '../../context/DataContext';
 import Papa from 'papaparse';
+import { validateCSV, cleanCSVData, detectDataType } from '../../utils/csvValidation';
+import { autoTransformData } from '../../utils/dataTransformation';
+import ValidationReport from '../validation/ValidationReport';
 
 const EmptyState = () => {
   const fileInputRef = useRef(null);
-  const { setLoading, setSalesData, setOfferData, setHasOfferData, setError } = useData();
+  // Corrected destructuring using setDataLoading and setDataError
+  const { setDataLoading, setSalesData, setOfferData, setHasOfferData, setDataError } = useData();
   const [processingFile, setProcessingFile] = useState(false);
+  const [validationResult, setValidationResult] = useState(null);
+  const [parsedData, setParsedData] = useState(null);
+  const [fileName, setFileName] = useState('');
 
-  // Implement our own file handling logic since handleFileUpload is not working
+  // Parse and validate CSV file
   const processFile = (file) => {
     if (!file) {
-      setError('No file selected');
+      setDataError('No file selected');
       return;
     }
     
-    setLoading(true);
     setProcessingFile(true);
-    setError('');
-    
-    // Check if we're dealing with sales or offer data
-    const isOfferData = file.name.toLowerCase().includes('hits_offer');
+    setDataError('');
+    setFileName(file.name);
     
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         Papa.parse(e.target.result, {
           header: true,
-          dynamicTyping: true,
-          skipEmptyLines: true,
+          dynamicTyping: false, // Keep as strings for validation
+          skipEmptyLines: false, // Let validation handle empty lines
           complete: (results) => {
-            
-            if (results.data && results.data.length > 0) {
-              if (isOfferData) {
-                // Process offer data
-                const validOfferData = results.data.filter(row => 
-                  row && row.hit_id !== undefined
-                );
-                
-                if (validOfferData.length === 0) {
-                  setError('No valid offer data found. Please ensure your CSV has the correct format.');
-                } else {
-                  setOfferData(validOfferData);
-                  setHasOfferData(true);
-                }
-              } else {
-                // Process sales data
-                const validData = results.data.filter(row => 
-                  row && 
-                  row.receipt_date && 
-                  row.product_name &&
-                  row.chain
-                );
-                
-                if (validData.length === 0) {
-                  setError('No valid sales data found. Please ensure your CSV has the correct format.');
-                } else {
-                  // Process dates and add month field
-                  const processedData = validData.map(item => {
-                    try {
-                      const date = new Date(item.receipt_date);
-                      return {
-                        ...item,
-                        receipt_date: date.toISOString().split('T')[0],
-                        month: date.toISOString().slice(0, 7), // YYYY-MM format
-                        day_of_week: date.getDay(), // 0 = Sunday, 6 = Saturday
-                        hour_of_day: date.getHours() // 0-23
-                      };
-                    } catch (e) {
-                      return item;
-                    }
-                  });
-                  
-                  setSalesData(processedData);
-                }
-              }
-            } else {
-              setError('No data found in file');
+            if (results.errors && results.errors.length > 0) {
+              console.warn('CSV parsing warnings:', results.errors);
             }
             
-            setLoading(false);
+            if (results.data && results.data.length > 0) {
+              // Detect data type and validate
+              const dataType = detectDataType(Object.keys(results.data[0]));
+              const validation = validateCSV(results.data, dataType);
+              
+              // Store parsed data and validation results
+              setParsedData({
+                data: results.data,
+                dataType: dataType,
+                fileName: file.name
+              });
+              setValidationResult(validation);
+            } else {
+              setDataError('No data found in file');
+            }
+            
             setProcessingFile(false);
           },
           error: (error) => {
             console.error("CSV parsing error:", error);
-            setError('Error parsing file: ' + error.message);
-            setLoading(false);
+            setDataError('Error parsing file: ' + error.message);
             setProcessingFile(false);
           }
         });
       } catch (e) {
         console.error("Error in file upload handler:", e);
-        setError('Error processing file: ' + e.message);
-        setLoading(false);
+        setDataError('Error processing file: ' + e.message);
         setProcessingFile(false);
       }
     };
     
-    reader.onerror = (e) => {
-      console.error("File read error:", e);
-      setError('Error reading file');
-      setLoading(false);
+    reader.onerror = () => {
+      setDataError('Error reading file');
       setProcessingFile(false);
     };
     
     reader.readAsText(file);
+  };
+
+  // Handle validation acceptance
+  const handleValidationAccept = () => {
+    if (!parsedData || !validationResult) return;
+    
+    setDataLoading(true);
+    setProcessingFile(true);
+    
+    try {
+      // Clean the data based on validation results
+      const cleanedData = cleanCSVData(parsedData.data, validationResult);
+      
+      // Apply data transformation pipeline
+      const transformationResult = autoTransformData(cleanedData, parsedData.dataType);
+      const { transformedData, report, detectedType } = transformationResult;
+      
+      // Log transformation report for debugging
+      if (report.stats.transformedValues > 0) {
+        console.log('Data transformation applied:', report);
+      }
+      
+      // Determine if this is offer data
+      const isOfferData = detectedType === 'offers' || 
+                         parsedData.dataType === 'offers' || 
+                         parsedData.fileName.toLowerCase().includes('hits_offer') ||
+                         parsedData.fileName.toLowerCase().includes('offer');
+      
+      if (isOfferData) {
+        setOfferData(transformedData);
+        setHasOfferData(true);
+      } else {
+        // Process dates and add derived fields for sales data
+        const processedData = transformedData.map(item => {
+          try {
+            const date = new Date(item.receipt_date);
+            if (!isNaN(date.getTime())) {
+              return {
+                ...item,
+                receipt_date: date.toISOString().split('T')[0],
+                month: date.toISOString().slice(0, 7),
+                day_of_week: date.getDay(),
+                hour_of_day: date.getHours()
+              };
+            }
+            return item;
+          } catch (e) {
+            return item;
+          }
+        });
+        
+        setSalesData(processedData);
+      }
+      
+      // Reset validation state
+      setValidationResult(null);
+      setParsedData(null);
+      setFileName('');
+      
+    } catch (error) {
+      console.error('Error processing validated data:', error);
+      setDataError('Error processing data: ' + error.message);
+    } finally {
+      setDataLoading(false);
+      setProcessingFile(false);
+    }
+  };
+
+  // Handle validation rejection
+  const handleValidationReject = () => {
+    setValidationResult(null);
+    setParsedData(null);
+    setFileName('');
+    setDataError('');
   };
 
   // Handle file selection
@@ -114,6 +158,28 @@ const EmptyState = () => {
       processFile(file);
     }
   };
+
+  // Show validation report if we have validation results
+  if (validationResult) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Validating: {fileName}
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Please review the validation results below before proceeding.
+          </p>
+        </div>
+        <ValidationReport
+          validationResult={validationResult}
+          onAccept={handleValidationAccept}
+          onReject={handleValidationReject}
+          isProcessing={processingFile}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-12">
@@ -156,7 +222,7 @@ const EmptyState = () => {
                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" 
               />
             </svg>
-            {processingFile ? 'Loading...' : 'Upload CSV'}
+            {processingFile ? 'Processing...' : 'Upload CSV'}
           </button>
           <input 
             type="file" 
@@ -168,7 +234,8 @@ const EmptyState = () => {
         </div>
         <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
           For sales analysis, upload a file with transaction data.<br />
-          For offer insights, upload a file with offer engagement data.
+          For offer insights, upload a file with offer engagement data.<br />
+          <span className="font-medium">Files will be validated before import.</span>
         </p>
       </div>
     </div>

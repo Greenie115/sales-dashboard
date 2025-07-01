@@ -1,7 +1,7 @@
 // src/components/dashboard/export/ExportButton.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
-import { exportToCSV, exportToPDF } from '../../../utils/exportUtils';
+import { exportData } from '../../../utils/lazyExportUtils';
 
 const ExportButton = ({ activeTab, tabData }) => {
   const { 
@@ -46,25 +46,21 @@ const ExportButton = ({ activeTab, tabData }) => {
   };
   
   // Handle export action
-  const handleExport = (type) => {
+  const handleExport = async (type) => {
     setIsExporting(true);
     
     try {
       const fileName = createFileName();
       
-      // Export data based on the selected format
-      if (type === 'csv') {
-        exportToCSV(tabData, activeTab, fileName);
-      } else if (type === 'pdf') {
-        exportToPDF(tabData, activeTab, fileName);
-      }
+      // Export data based on the selected format using lazy loading
+      await exportData(type, tabData, activeTab, fileName);
       
       setIsExporting(false);
       setShowOptions(false);
     } catch (error) {
       console.error(`Error exporting to ${type.toUpperCase()}:`, error);
       setIsExporting(false);
-      alert(`An error occurred while exporting to ${type.toUpperCase()}`);
+      alert(`An error occurred while exporting to ${type.toUpperCase()}: ${error.message}`);
     }
   };
   
