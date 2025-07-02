@@ -7,6 +7,8 @@ import ShareButton from '../sharing/ShareButton';
 import Papa from 'papaparse';
 import logo from '../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg'
 import { useClientData } from '../../context/ClientDataContext';
+import { validateCSVWithCorrections } from '../../utils/enhancedCsvValidation';
+import DataCorrectionModal from '../validation/DataCorrectionModal';
 
 const Header = () => {
   const { clientName } = useClientData();
@@ -14,6 +16,9 @@ const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
   const [processingFile, setProcessingFile] = useState(false);
+  const [validationResult, setValidationResult] = useState(null);
+  const [originalCsvData, setOriginalCsvData] = useState(null);
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   
   // Get data context
   const { 
@@ -32,7 +37,7 @@ const Header = () => {
     setActiveTab
   } = useData();
   
-  // Define our own file processing logic since handleFileUpload is not working
+  // Enhanced file processing with validation and correction
   const processFile = (file) => {
     if (!file) {
       setDataError('No file selected');
@@ -42,9 +47,12 @@ const Header = () => {
     setDataLoading(true);
     setProcessingFile(true);
     setDataError('');
+    setValidationResult(null);
+    setOriginalCsvData(null);
     
     // Check if we're dealing with sales or offer data
     const isOfferData = file.name.toLowerCase().includes('hits_offer');
+    const dataType = isOfferData ? 'offers' : 'sales';
     
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -56,72 +64,26 @@ const Header = () => {
           complete: (results) => {
             
             if (results.data && results.data.length > 0) {
-              if (isOfferData) {
-                // Process offer data
-                const validOfferData = results.data.filter(row => 
-                  row && row.hit_id !== undefined
-                );
-                
-                if (validOfferData.length === 0) {
-                  setDataError('No valid offer data found. Please ensure your CSV has the correct format.');
+              // Store original data for correction workflow
+              setOriginalCsvData(results.data);
+              
+              // Run enhanced validation
+              const validation = validateCSVWithCorrections(results.data, dataType);
+              setValidationResult(validation);
+              
+              // If validation passes or has correctable issues, proceed
+              if (validation.isValid || validation.stats.correctableIssues > 0) {
+                if (validation.isValid) {
+                  // Data is valid, process directly
+                  processValidatedData(results.data, dataType);
                 } else {
-                  // Process dates for offer data
-                  const processedOfferData = validOfferData.map(row => {
-                    if (row.created_at) {
-                      try {
-                        const date = new Date(row.created_at);
-                        return {
-                          ...row,
-                          created_at: !isNaN(date) ? date.toISOString() : row.created_at
-                        };
-                      } catch (e) {
-                        return row;
-                      }
-                    }
-                    return row;
-                  });
-                  
-                  setOfferData(processedOfferData);
-                  setHasOfferData(true);
-                  
-                  // Set active tab to offers
-                  setActiveTab('offers');
+                  // Show correction modal for fixable issues
+                  setShowCorrectionModal(true);
                 }
               } else {
-                // Process sales data
-                const validData = results.data.filter(row => 
-                  row && 
-                  row.receipt_date && 
-                  row.product_name &&
-                  row.chain &&
-                  !isNaN(new Date(row.receipt_date).getTime())
-                );
-                
-                if (validData.length === 0) {
-                  setDataError('No valid sales data found. Please ensure your CSV has the correct format.');
-                } else {
-                  // Process dates and add month field
-                  const processedData = validData.map(row => {
-                    try {
-                      const date = new Date(row.receipt_date);
-                      return {
-                        ...row,
-                        receipt_date: date.toISOString().split('T')[0],
-                        month: date.toISOString().slice(0, 7), // YYYY-MM format
-                        day_of_week: date.getDay(), // 0 = Sunday, 6 = Saturday
-                        hour_of_day: date.getHours() // 0-23
-                      };
-                    } catch (e) {
-                      console.error("Error processing row:", row, e);
-                      // Return the original row if date processing fails
-                      return row;
-                    }
-                  })
-                  setSalesData(processedData);
-                  
-                  // Set active tab to summary
-                  setActiveTab('summary');
-                }
+                // Critical errors that can't be fixed
+                const criticalErrors = validation.errors.filter(e => !e.correction);
+                setDataError(`Critical data issues found: ${criticalErrors.map(e => e.message).join('; ')}`);
               }
             } else {
               setDataError('No data found in file');
@@ -153,6 +115,108 @@ const Header = () => {
     };
     
     reader.readAsText(file);
+  };
+
+  // Process validated/corrected data
+  const processValidatedData = (data, dataType) => {
+    if (dataType === 'offers') {
+      // Process offer data
+      const processedOfferData = data.map(row => {
+        if (row.created_at) {
+          try {
+            const date = new Date(row.created_at);
+            return {
+              ...row,
+              created_at: !isNaN(date) ? date.toISOString() : row.created_at
+            };
+          } catch (e) {
+            return row;
+          }
+        }
+        return row;
+      });
+      
+      setOfferData(processedOfferData);
+      setHasOfferData(true);
+      setActiveTab('offers');
+    } else {
+      // Process sales data with enhanced date processing
+      const processedData = data.map(row => {
+        try {
+          const date = new Date(row.receipt_date);
+          return {
+            ...row,
+            receipt_date: date.toISOString().split('T')[0],
+            month: date.toISOString().slice(0, 7), // YYYY-MM format
+            day_of_week: date.getDay(), // 0 = Sunday, 6 = Saturday
+            hour_of_day: date.getHours() // 0-23
+          };
+        } catch (e) {
+          console.error("Error processing row:", row, e);
+          return row;
+        }
+      });
+      
+      setSalesData(processedData);
+      setActiveTab('summary');
+      
+      // Auto-detect and set brand mapping
+      const productNames = processedData.map(row => row.product_name).filter(Boolean);
+      const detectedBrands = autoDetectBrands(productNames);
+      setBrandMapping(detectedBrands);
+      setBrandNames(Object.keys(detectedBrands));
+    }
+  };
+
+  // Auto-detect brand names from product names
+  const autoDetectBrands = (productNames) => {
+    const brandMap = {};
+    const brandCounts = {};
+    
+    productNames.forEach(productName => {
+      if (!productName) return;
+      
+      // Extract potential brand (first word, normalized)
+      const words = productName.toLowerCase().trim().split(/\s+/);
+      const potentialBrand = words[0];
+      
+      if (potentialBrand && potentialBrand.length > 1) {
+        brandCounts[potentialBrand] = (brandCounts[potentialBrand] || 0) + 1;
+      }
+    });
+    
+    // Only include brands that appear multiple times
+    Object.entries(brandCounts).forEach(([brand, count]) => {
+      if (count >= 2) {
+        brandMap[brand] = brand.charAt(0).toUpperCase() + brand.slice(1);
+      }
+    });
+    
+    return brandMap;
+  };
+
+  // Handle correction modal responses
+  const handleAcceptCorrectedData = (correctedData, appliedCorrections) => {
+    const dataType = originalCsvData && originalCsvData.some(row => row.hit_id) ? 'offers' : 'sales';
+    processValidatedData(correctedData, dataType);
+    setShowCorrectionModal(false);
+    setValidationResult(null);
+    setOriginalCsvData(null);
+  };
+
+  const handleRejectCorrections = () => {
+    // Process original data despite validation issues
+    const dataType = originalCsvData && originalCsvData.some(row => row.hit_id) ? 'offers' : 'sales';
+    processValidatedData(originalCsvData, dataType);
+    setShowCorrectionModal(false);
+    setValidationResult(null);
+    setOriginalCsvData(null);
+  };
+
+  const handleCloseCorrectionModal = () => {
+    setShowCorrectionModal(false);
+    setValidationResult(null);
+    setOriginalCsvData(null);
   };
   
   // Handle file selection
@@ -255,6 +319,18 @@ const Header = () => {
           </div>
         </div>
       </div>
+      
+      {/* Data Correction Modal */}
+      {showCorrectionModal && validationResult && originalCsvData && (
+        <DataCorrectionModal
+          isOpen={showCorrectionModal}
+          onClose={handleCloseCorrectionModal}
+          validationResult={validationResult}
+          originalData={originalCsvData}
+          onAcceptCorrectedData={handleAcceptCorrectedData}
+          onRejectCorrections={handleRejectCorrections}
+        />
+      )}
     </header>
   );
 };
