@@ -155,6 +155,38 @@ const SharedDashboardView = () => {
     // Effect depends on auth status and shareId
   }, [shareId, authLoading, isAuthenticated]); // Removed navigate dependency
 
+  // Check for incomplete data *after* loading/error/expiry checks.
+  const isDataIncomplete = !loading && !error && !isExpired && (!clientData.dataSnapshot || !clientData.filterParams);
+
+  // This useEffect now runs unconditionally, but the setError call inside depends on isDataIncomplete.
+  useEffect(() => {
+    if (isDataIncomplete) {
+       console.error("Snapshot data is missing after successful load attempt", clientData);
+       setError("Shared dashboard data is incomplete or missing.");
+    }
+    // This effect should run when isDataIncomplete changes.
+  }, [isDataIncomplete]);
+
+  // Construct the data object needed by ClientDataProvider using useMemo.
+  // This hook is now called unconditionally.
+  const dataForProvider = useMemo(() => {
+    // Internal logic handles data readiness.
+    if (clientData.dataSnapshot && clientData.filterParams) {
+      const snapshotMetrics = calculateMetrics(clientData.dataSnapshot);
+      return {
+        filteredData: clientData.dataSnapshot,
+        filters: clientData.filterParams,
+        metrics: snapshotMetrics,
+        isSharedView: true,
+        // Add other derived data/config as needed
+      };
+    }
+    return null; // Return null if data isn't ready
+  }, [clientData.dataSnapshot, clientData.filterParams]); // Dependencies remain the same
+
+  // Check if data is ready for rendering using the memoized value.
+  const hasData = !!dataForProvider?.filteredData?.length;
+
   // Handle tab selection
   const handleTabChange = (tab) => {
     console.log("Changing active tab to:", tab);
@@ -214,40 +246,6 @@ const SharedDashboardView = () => {
       </div>
     );
   }
-
-  // Removed !shareConfig check. Error state handles loading failures.
-
-  // Check for incomplete data *after* loading/error/expiry checks.
-  const isDataIncomplete = !loading && !error && !isExpired && (!clientData.dataSnapshot || !clientData.filterParams);
-
-  // This useEffect now runs unconditionally, but the setError call inside depends on isDataIncomplete.
-  useEffect(() => {
-    if (isDataIncomplete) {
-       console.error("Snapshot data is missing after successful load attempt", clientData);
-       setError("Shared dashboard data is incomplete or missing.");
-    }
-    // This effect should run when isDataIncomplete changes.
-  }, [isDataIncomplete]);
-
-  // Construct the data object needed by ClientDataProvider using useMemo.
-  // This hook is now called unconditionally.
-  const dataForProvider = useMemo(() => {
-    // Internal logic handles data readiness.
-    if (clientData.dataSnapshot && clientData.filterParams) {
-      const snapshotMetrics = calculateMetrics(clientData.dataSnapshot);
-      return {
-        filteredData: clientData.dataSnapshot,
-        filters: clientData.filterParams,
-        metrics: snapshotMetrics,
-        isSharedView: true,
-        // Add other derived data/config as needed
-      };
-    }
-    return null; // Return null if data isn't ready
-  }, [clientData.dataSnapshot, clientData.filterParams]); // Dependencies remain the same
-
-  // Check if data is ready for rendering using the memoized value.
-  const hasData = !!dataForProvider?.filteredData?.length;
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>

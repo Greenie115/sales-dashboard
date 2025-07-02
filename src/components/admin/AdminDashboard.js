@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
-import { useSharingContext } from '../../context/SharingContext';
+import { useSharing } from '../../context/SharingContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useChartColors } from '../../utils/chartColors';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 
 const AdminDashboard = () => {
-  const { darkMode } = useTheme();
   const colors = useChartColors();
-  const { salesData, brandMapping } = useData();
-  const { shares } = useSharingContext();
+  const { salesData } = useData();
+  const { sharedDashboards } = useSharing();
   
   const [systemMetrics, setSystemMetrics] = useState({
     uptime: 0,
@@ -76,12 +75,12 @@ const AdminDashboard = () => {
 
   // Sharing analytics  
   const sharingAnalytics = useMemo(() => {
-    if (!shares || shares.length === 0) return null;
+    if (!sharedDashboards || sharedDashboards.length === 0) return null;
 
-    const activeShares = shares.filter(share => new Date(share.expiresAt) > new Date()).length;
-    const expiredShares = shares.length - activeShares;
+    const activeShares = sharedDashboards.filter(share => new Date(share.expiresAt) > new Date()).length;
+    const expiredShares = sharedDashboards.length - activeShares;
     
-    const sharingByType = shares.reduce((acc, share) => {
+    const sharingByType = sharedDashboards.reduce((acc, share) => {
       const config = share.config || {};
       const type = config.hideValues && config.hideRetailers ? 'Anonymous' : 
                    config.hideRetailers ? 'Hidden Retailers' :
@@ -96,12 +95,12 @@ const AdminDashboard = () => {
     }));
 
     return {
-      totalShares: shares.length,
+      totalShares: sharedDashboards.length,
       activeShares,
       expiredShares,
       sharingTypeChart
     };
-  }, [shares]);
+  }, [sharedDashboards]);
 
   // Performance metrics
   const performanceData = useMemo(() => {
