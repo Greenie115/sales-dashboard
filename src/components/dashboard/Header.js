@@ -1,5 +1,6 @@
 // src/components/dashboard/Header.js
 import React, { useState, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import ThemeToggle from '../ThemeToggle';
 import ShareButton from '../sharing/ShareButton';
@@ -9,6 +10,7 @@ import { useClientData } from '../../context/ClientDataContext';
 
 const Header = () => {
   const { clientName } = useClientData();
+  const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
   const [processingFile, setProcessingFile] = useState(false);
@@ -212,6 +214,24 @@ const Header = () => {
                 <ShareButton />
               </div>
             )}
+            
+            {/* Admin link */}
+            <div className="mr-2">
+              <Link 
+                to={location.pathname === '/admin' ? '/' : '/admin'}
+                className={`px-3 py-2 rounded-md text-sm font-medium flex items-center transition-colors ${
+                  location.pathname === '/admin' 
+                    ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900' 
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                {location.pathname === '/admin' ? 'Dashboard' : 'Admin'}
+              </Link>
+            </div>
             
             {/* Upload button */}
             <div className="mr-2">

@@ -14,8 +14,9 @@ import SharingModal from './components/sharing/SharingModal';
 import ErrorBoundary from './components/ErrorBoundary';
 // import ActiveTabDebugger from './components/debug/ActiveTabDebugger';
 
-// Lazy load the SharedDashboardView to improve performance
+// Lazy load components to improve performance
 const SharedDashboardView = lazy(() => import('./components/sharing/SharedDashboardView'));
+const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard'));
 
 // Loading fallback for lazy-loaded components
 const LoadingFallback = () => (
@@ -85,6 +86,27 @@ function App() {
                             <ErrorBoundary>
                               <SharedDashboardView />
                             </ErrorBoundary>
+                          </Suspense>
+                        } />
+                        
+                        {/* Admin dashboard route */}
+                        <Route path="/admin" element={
+                          <Suspense fallback={<LoadingFallback />}>
+                            <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+                              <ErrorBoundary>
+                                <Header />
+                              </ErrorBoundary>
+                              <main className="flex-grow">
+                                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                                  <ErrorBoundary>
+                                    <AdminDashboard />
+                                  </ErrorBoundary>
+                                </div>
+                              </main>
+                              <ErrorBoundary>
+                                <Footer />
+                              </ErrorBoundary>
+                            </div>
                           </Suspense>
                         } />
                         

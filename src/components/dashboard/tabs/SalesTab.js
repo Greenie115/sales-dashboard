@@ -4,6 +4,7 @@ import { useFilter } from '../../../context/FilterContext'; // Provides filter s
 import { useTheme } from '../../../context/ThemeContext';
 import { useChartColors } from '../../../utils/chartColors';
 import groupBy from 'lodash/groupBy';
+import HeatmapChart from '../../charts/HeatmapChart';
 import {
   filterSalesData,
   calculateMetrics,
@@ -345,6 +346,55 @@ const SalesTab = ({ isSharedView = false }) => {
       return [];
     }
   }, [filteredData, redemptionTimeframe, filterState, metrics]); // Depend on filterState and metrics
+  
+  // Calculate heatmap data for day of week vs hour patterns
+  const heatmapData = useMemo(() => {
+    if (!filteredData || filteredData.length === 0) return [];
+    
+    try {
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0') + ':00');
+      
+      // Initialize data structure
+      const heatmapMap = new Map();
+      
+      // Process each sale record
+      filteredData.forEach(item => {
+        if (!item.receipt_date) return;
+        
+        try {
+          const date = new Date(item.receipt_date);
+          if (isNaN(date.getTime())) return;
+          
+          const dayOfWeek = dayNames[date.getDay()];
+          const hour = date.getHours().toString().padStart(2, '0') + ':00';
+          
+          const key = `${dayOfWeek}-${hour}`;
+          heatmapMap.set(key, (heatmapMap.get(key) || 0) + 1);
+        } catch (error) {
+          console.error("Error processing heatmap date:", error);
+        }
+      });
+      
+      // Convert to array format for heatmap component
+      const result = [];
+      dayNames.forEach(day => {
+        hours.forEach(hour => {
+          const key = `${day}-${hour}`;
+          result.push({
+            x: hour,
+            y: day,
+            value: heatmapMap.get(key) || 0
+          });
+        });
+      });
+      
+      return result;
+    } catch (error) {
+      console.error("Error calculating heatmap data:", error);
+      return [];
+    }
+  }, [filteredData]);
   
   // Calculate trend line
   const trendLineData = useMemo(() => {
@@ -862,6 +912,38 @@ const SalesTab = ({ isSharedView = false }) => {
       ) : (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-8 flex justify-center items-center h-64">
           <p className="text-gray-500 dark:text-gray-400">No time series data available</p>
+        </div>
+      )}
+
+      {/* Sales Patterns Heatmap */}
+      {heatmapData && heatmapData.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-8">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              Sales Patterns by Day & Hour
+            </h3>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Total transactions: {heatmapData.reduce((sum, item) => sum + item.value, 0).toLocaleString()}
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <HeatmapChart
+              data={heatmapData}
+              title=""
+              xAxisLabel="Hour of Day"
+              yAxisLabel="Day of Week"
+              valueLabel="Sales Count"
+              cellSize={35}
+              showLabels={true}
+              showTooltip={true}
+            />
+          </div>
+          
+          <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+            <p>This heatmap shows sales distribution across different days of the week and hours of the day.</p>
+            <p>Darker colors indicate higher sales volume for that time period.</p>
+          </div>
         </div>
       )}
     </div>
