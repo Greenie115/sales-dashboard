@@ -52,8 +52,8 @@ export const optimizeDataForSharing = (data, options = {}) => {
     
     // Hide monetary values if requested
     if (hideTotals) {
-      if (result.receipt_total !== undefined) {
-        result.receipt_total = null;
+      if (result.receipt_amount !== undefined) {
+        result.receipt_amount = null;
       }
       if (result.value !== undefined) {
         result.value = null;

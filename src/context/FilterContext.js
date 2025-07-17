@@ -45,12 +45,12 @@ export const FilterProvider = ({ children }) => {
       setEndDate(maxDate);
 
       // Initialize comparison dates too, for one month before the primary period
-      const min = new Date(minDate);
-      const max = new Date(maxDate);
+      const minDateObj = new Date(minDate);
+      const maxDateObj = new Date(maxDate);
 
       // Calculate a comparable previous period (e.g., previous month)
-      const diffDays = Math.ceil((max - min) / (1000 * 60 * 60 * 24));
-      const compEndDate = new Date(min);
+      const diffDays = Math.ceil((maxDateObj - minDateObj) / (1000 * 60 * 60 * 24));
+      const compEndDate = new Date(minDateObj);
       compEndDate.setDate(compEndDate.getDate() - 1);
 
       const compStartDate = new Date(compEndDate);

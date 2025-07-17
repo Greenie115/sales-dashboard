@@ -2,20 +2,23 @@
 import React, { useRef, useState } from 'react';
 import { useData } from '../../context/DataContext';
 import Papa from 'papaparse';
-import { validateCSV, cleanCSVData, detectDataType } from '../../utils/csvValidation';
-import { autoTransformData } from '../../utils/dataTransformation';
-import ValidationReport from '../validation/ValidationReport';
 
 const EmptyState = () => {
   const fileInputRef = useRef(null);
   // Corrected destructuring using setDataLoading and setDataError
-  const { setDataLoading, setSalesData, setOfferData, setHasOfferData, setDataError } = useData();
+  const { 
+    setDataLoading, 
+    setSalesData, 
+    setOfferData, 
+    setHasOfferData, 
+    setDataError,
+    setBrandMapping,
+    setBrandNames,
+    setActiveTab
+  } = useData();
   const [processingFile, setProcessingFile] = useState(false);
-  const [validationResult, setValidationResult] = useState(null);
-  const [parsedData, setParsedData] = useState(null);
-  const [fileName, setFileName] = useState('');
 
-  // Parse and validate CSV file
+  // Enhanced file processing with validation and correction
   const processFile = (file) => {
     if (!file) {
       setDataError('No file selected');
@@ -24,32 +27,26 @@ const EmptyState = () => {
     
     setProcessingFile(true);
     setDataError('');
-    setFileName(file.name);
+    
+    // Check if we're dealing with sales or offer data
+    const isOfferData = file.name.toLowerCase().includes('hits_offer');
+    const dataType = isOfferData ? 'offers' : 'sales';
     
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         Papa.parse(e.target.result, {
           header: true,
-          dynamicTyping: false, // Keep as strings for validation
-          skipEmptyLines: false, // Let validation handle empty lines
+          dynamicTyping: true,
+          skipEmptyLines: true,
           complete: (results) => {
             if (results.errors && results.errors.length > 0) {
               console.warn('CSV parsing warnings:', results.errors);
             }
             
             if (results.data && results.data.length > 0) {
-              // Detect data type and validate
-              const dataType = detectDataType(Object.keys(results.data[0]));
-              const validation = validateCSV(results.data, dataType);
-              
-              // Store parsed data and validation results
-              setParsedData({
-                data: results.data,
-                dataType: dataType,
-                fileName: file.name
-              });
-              setValidationResult(validation);
+              // Process data directly without validation
+              processValidatedData(results.data, dataType);
             } else {
               setDataError('No data found in file');
             }
@@ -77,79 +74,109 @@ const EmptyState = () => {
     reader.readAsText(file);
   };
 
-  // Handle validation acceptance
-  const handleValidationAccept = () => {
-    if (!parsedData || !validationResult) return;
-    
+  // Process data with automatic cleaning
+  const processValidatedData = (data, dataType) => {
+    // Remove completely empty rows
+    const cleanedData = data.filter(row => {
+      if (!row || typeof row !== 'object') return false;
+      // Check if row has any non-empty values
+      return Object.values(row).some(value => 
+        value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
+      );
+    });
     setDataLoading(true);
-    setProcessingFile(true);
     
-    try {
-      // Clean the data based on validation results
-      const cleanedData = cleanCSVData(parsedData.data, validationResult);
-      
-      // Apply data transformation pipeline
-      const transformationResult = autoTransformData(cleanedData, parsedData.dataType);
-      const { transformedData, report, detectedType } = transformationResult;
-      
-      // Log transformation report for debugging
-      if (report.stats.transformedValues > 0) {
-        console.log('Data transformation applied:', report);
-      }
-      
-      // Determine if this is offer data
-      const isOfferData = detectedType === 'offers' || 
-                         parsedData.dataType === 'offers' || 
-                         parsedData.fileName.toLowerCase().includes('hits_offer') ||
-                         parsedData.fileName.toLowerCase().includes('offer');
-      
-      if (isOfferData) {
-        setOfferData(transformedData);
-        setHasOfferData(true);
-      } else {
-        // Process dates and add derived fields for sales data
-        const processedData = transformedData.map(item => {
+    if (dataType === 'offers') {
+      // Process offer data
+      const processedOfferData = cleanedData.map(row => {
+        if (row.created_at) {
           try {
-            const date = new Date(item.receipt_date);
-            if (!isNaN(date.getTime())) {
-              return {
-                ...item,
-                receipt_date: date.toISOString().split('T')[0],
-                month: date.toISOString().slice(0, 7),
-                day_of_week: date.getDay(),
-                hour_of_day: date.getHours()
-              };
-            }
-            return item;
+            const date = new Date(row.created_at);
+            return {
+              ...row,
+              created_at: !isNaN(date) ? date.toISOString() : row.created_at
+            };
           } catch (e) {
-            return item;
+            return row;
           }
-        });
-        
-        setSalesData(processedData);
-      }
+        }
+        return row;
+      });
       
-      // Reset validation state
-      setValidationResult(null);
-      setParsedData(null);
-      setFileName('');
+      setOfferData(processedOfferData);
+      setHasOfferData(true);
+      setActiveTab('offers');
+    } else {
+      // Process sales data with enhanced date processing and validation
+      const processedData = cleanedData.map(row => {
+        try {
+          if (!row.receipt_date) return row;
+          
+          const date = new Date(row.receipt_date);
+          
+          // Validate date is reasonable (not before 1990 or after current date + 1 year)
+          const minDate = new Date('1990-01-01');
+          const maxDate = new Date();
+          maxDate.setFullYear(maxDate.getFullYear() + 1);
+          
+          if (isNaN(date.getTime()) || date < minDate || date > maxDate) {
+            console.warn('Invalid date detected:', row.receipt_date, 'in row:', row);
+            return row; // Keep original row if date is invalid
+          }
+          
+          return {
+            ...row,
+            receipt_date: date.toISOString().split('T')[0],
+            month: date.toISOString().slice(0, 7), // YYYY-MM format
+            day_of_week: date.getDay(), // 0 = Sunday, 6 = Saturday
+            hour_of_day: date.getHours() // 0-23
+          };
+        } catch (e) {
+          console.error("Error processing row:", row, e);
+          return row;
+        }
+      });
       
-    } catch (error) {
-      console.error('Error processing validated data:', error);
-      setDataError('Error processing data: ' + error.message);
-    } finally {
-      setDataLoading(false);
-      setProcessingFile(false);
+      setSalesData(processedData);
+      setActiveTab('summary');
+      
+      // Auto-detect and set brand mapping
+      const productNames = processedData.map(row => row.product_name).filter(Boolean);
+      const detectedBrands = autoDetectBrands(productNames);
+      setBrandMapping(detectedBrands);
+      setBrandNames(Object.keys(detectedBrands));
     }
+    
+    setDataLoading(false);
   };
 
-  // Handle validation rejection
-  const handleValidationReject = () => {
-    setValidationResult(null);
-    setParsedData(null);
-    setFileName('');
-    setDataError('');
+  // Auto-detect brand names from product names
+  const autoDetectBrands = (productNames) => {
+    const brandMap = {};
+    const brandCounts = {};
+    
+    productNames.forEach(productName => {
+      if (!productName) return;
+      
+      // Extract potential brand (first word, normalized)
+      const words = productName.toLowerCase().trim().split(/\s+/);
+      const potentialBrand = words[0];
+      
+      if (potentialBrand && potentialBrand.length > 1) {
+        brandCounts[potentialBrand] = (brandCounts[potentialBrand] || 0) + 1;
+      }
+    });
+    
+    // Only include brands that appear multiple times
+    Object.entries(brandCounts).forEach(([brand, count]) => {
+      if (count >= 2) {
+        brandMap[brand] = brand.charAt(0).toUpperCase() + brand.slice(1);
+      }
+    });
+    
+    return brandMap;
   };
+
 
   // Handle file selection
   const handleFileChange = (e) => {
@@ -159,27 +186,6 @@ const EmptyState = () => {
     }
   };
 
-  // Show validation report if we have validation results
-  if (validationResult) {
-    return (
-      <div className="space-y-6">
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            Validating: {fileName}
-          </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Please review the validation results below before proceeding.
-          </p>
-        </div>
-        <ValidationReport
-          validationResult={validationResult}
-          onAccept={handleValidationAccept}
-          onReject={handleValidationReject}
-          isProcessing={processingFile}
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-12">
@@ -235,7 +241,7 @@ const EmptyState = () => {
         <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
           For sales analysis, upload a file with transaction data.<br />
           For offer insights, upload a file with offer engagement data.<br />
-          <span className="font-medium">Files will be validated before import.</span>
+          <span className="font-medium">Files will be processed automatically.</span>
         </p>
       </div>
     </div>

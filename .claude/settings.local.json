@@ -7,7 +7,11 @@
       "Bash(npm run build:*)",
       "Bash(npm install:*)",
       "Bash(npm run deploy:*)",
-      "Bash(git config:*)"
+      "Bash(git config:*)",
+      "Bash(rm:*)",
+      "Bash(npm start)",
+      "Bash(PORT=3001 npm start)",
+      "Bash(node:*)"
     ],
     "deny": []
   }

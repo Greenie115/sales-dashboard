@@ -3,8 +3,8 @@ import { useData } from '../../../context/DataContext'; // Provides raw salesDat
 import { useFilter } from '../../../context/FilterContext'; // Provides filter state
 import { useTheme } from '../../../context/ThemeContext';
 import { useChartColors } from '../../../utils/chartColors';
+import { formatCurrency } from '../../../utils/formatUtils';
 import groupBy from 'lodash/groupBy';
-import HeatmapChart from '../../charts/HeatmapChart';
 import {
   filterSalesData,
   calculateMetrics,
@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { useClientData } from '../../../context/ClientDataContext';
 import DateExclusionPanel from '../../filters/DateExclusionPanel';
+import ChartErrorBoundary from '../../common/ChartErrorBoundary';
 import _ from 'lodash';
 
 // Custom tooltip component
@@ -31,7 +32,7 @@ const CustomTooltip = ({ active, payload, label }) => {
         {payload.map((entry, index) => (
           <p key={index} className="text-sm text-gray-600 dark:text-gray-400">
             <span className="inline-block w-3 h-3 mr-1 rounded-full" style={{ backgroundColor: entry.color }}></span>
-            {entry.name}: {entry.value.toLocaleString()}
+            {entry.name}: {typeof entry.value === 'number' && entry.name?.toLowerCase().includes('revenue') ? formatCurrency(entry.value, 'table') : entry.value.toLocaleString()}
           </p>
         ))}
       </div>
@@ -55,7 +56,8 @@ const SalesTab = ({ isSharedView = false }) => {
   // Use the appropriate data context based on view mode
   const clientData = useClientData();
   const dataContext = useData(); // Get raw data context
-  const { filters: filterState } = useFilter(); // Get filter state
+  const filterContext = useFilter(); // Get filter context
+  const filterState = filterContext?.filters || {}; // Safe access to filters
   const contextData = isSharedView ? clientData : dataContext; // Use snapshot for shared view
   
   // Get chart colors
@@ -74,27 +76,48 @@ const SalesTab = ({ isSharedView = false }) => {
   
   // Calculate filteredData using useMemo
   const filteredData = useMemo(() => {
-    if (isSharedView && directFilteredData && directFilteredData.length > 0) {
-      return directFilteredData; // Use snapshot data for shared view
+    try {
+      if (isSharedView && directFilteredData && Array.isArray(directFilteredData) && directFilteredData.length > 0) {
+        return directFilteredData; // Use snapshot data for shared view
+      }
+      if (!rawSalesData || !Array.isArray(rawSalesData) || !filterState) return [];
+      return filterSalesData(rawSalesData, filterState);
+    } catch (error) {
+      console.error('Error filtering sales data:', error);
+      return [];
     }
-    if (!rawSalesData || !filterState) return [];
-    return filterSalesData(rawSalesData, filterState);
   }, [isSharedView, directFilteredData, rawSalesData, filterState]);
   
   // Calculate metrics using useMemo
   const metrics = useMemo(() => {
-    if (isSharedView && directMetrics && Object.keys(directMetrics).length > 0) {
-      return directMetrics; // Use snapshot metrics for shared view
+    try {
+      if (isSharedView && directMetrics && typeof directMetrics === 'object' && Object.keys(directMetrics).length > 0) {
+        return directMetrics; // Use snapshot metrics for shared view
+      }
+      if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
+        return null;
+      }
+      return calculateMetrics(filteredData);
+    } catch (error) {
+      console.error('Error calculating metrics:', error);
+      return null;
     }
-    return calculateMetrics(filteredData);
   }, [isSharedView, directMetrics, filteredData]);
   
   // Calculate retailerData using useMemo
   const retailerData = useMemo(() => {
-    if (isSharedView && directRetailerDistribution && directRetailerDistribution.length > 0) {
-      return directRetailerDistribution; // Use snapshot data for shared view
+    try {
+      if (isSharedView && directRetailerDistribution && Array.isArray(directRetailerDistribution) && directRetailerDistribution.length > 0) {
+        return directRetailerDistribution; // Use snapshot data for shared view
+      }
+      if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
+        return [];
+      }
+      return getRetailerDistribution(filteredData);
+    } catch (error) {
+      console.error('Error calculating retailer distribution:', error);
+      return [];
     }
-    return getRetailerDistribution(filteredData);
   }, [isSharedView, directRetailerDistribution, filteredData]);
 
   // Safely add handlers for date exclusion
@@ -232,194 +255,199 @@ const SalesTab = ({ isSharedView = false }) => {
   // Get product distribution
   // Calculate productDistribution using useMemo
   const productDistribution = useMemo(() => {
-    if (isSharedView && directProductDistribution && directProductDistribution.length > 0) {
-      return directProductDistribution; // Use snapshot data for shared view
+    try {
+      if (isSharedView && directProductDistribution && Array.isArray(directProductDistribution) && directProductDistribution.length > 0) {
+        return directProductDistribution; // Use snapshot data for shared view
+      }
+      if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
+        return [];
+      }
+      return getProductDistribution(filteredData, brandMapping || {});
+    } catch (error) {
+      console.error('Error calculating product distribution:', error);
+      return [];
     }
-    return getProductDistribution(filteredData, brandMapping);
   }, [isSharedView, directProductDistribution, filteredData, brandMapping]);
   
   // Get redemptions over time with improved time handling
   const redemptionsOverTime = useMemo(() => {
-    if (!filteredData || filteredData.length === 0) return [];
-    
     try {
-      // Prepare date formatter
+      if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) return [];
+      
+      // Prepare date formatter with safety checks
       const formatDate = (date) => {
-        switch(redemptionTimeframe) {
-          case 'hourly':
-            return `${date.getHours()}:00`;
-          case 'daily':
-            return date.toISOString().split('T')[0];
-          case 'weekly':
-            // Get week start (Sunday)
-            const weekStart = new Date(date);
-            weekStart.setDate(date.getDate() - date.getDay());
-            const weekEnd = new Date(weekStart);
-            weekEnd.setDate(weekStart.getDate() + 6);
-            return `${weekStart.toISOString().split('T')[0]} - ${weekEnd.toISOString().split('T')[0]}`;
-          case 'monthly':
-            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          default:
-            return date.toISOString().split('T')[0];
+        try {
+          if (!date || isNaN(date.getTime())) return null;
+          
+          switch(redemptionTimeframe) {
+            case 'hourly':
+              return `${date.getHours()}:00`;
+            case 'daily':
+              return date.toISOString().split('T')[0];
+            case 'weekly':
+              // Get week start (Sunday)
+              const weekStart = new Date(date);
+              weekStart.setDate(date.getDate() - date.getDay());
+              const weekEnd = new Date(weekStart);
+              weekEnd.setDate(weekStart.getDate() + 6);
+              return `${weekStart.toISOString().split('T')[0]} - ${weekEnd.toISOString().split('T')[0]}`;
+            case 'monthly':
+              return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            default:
+              return date.toISOString().split('T')[0];
+          }
+        } catch (error) {
+          console.error("Error formatting date:", error);
+          return null;
         }
       };
       
       // Generate all dates in range for the selected timeframe
       const dateMap = {};
       
-      // Ensure we have valid start and end dates
-      
-      // Determine date range based on filter context or data range
+      // Determine date range based on filter context or data range with safety checks
       let minDateStr, maxDateStr;
-      if (filterState.dateRange === 'custom' && filterState.startDate && filterState.endDate) {
+      if (filterState && filterState.dateRange === 'custom' && filterState.startDate && filterState.endDate) {
           minDateStr = filterState.startDate;
           maxDateStr = filterState.endDate;
-      } else if (metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0) {
+      } else if (metrics && metrics.uniqueDates && Array.isArray(metrics.uniqueDates) && metrics.uniqueDates.length > 0) {
           // Fallback to data range if not custom
           minDateStr = metrics.uniqueDates[0];
           maxDateStr = metrics.uniqueDates[metrics.uniqueDates.length - 1];
       }
 
-      if (!minDateStr || !maxDateStr) return []; // Cannot proceed without a date range
+      if (!minDateStr || !maxDateStr) {
+        // Fallback: extract dates from data directly
+        const dates = filteredData
+          .map(item => item.receipt_date)
+          .filter(date => date && typeof date === 'string')
+          .sort();
+        
+        if (dates.length === 0) return [];
+        
+        minDateStr = dates[0];
+        maxDateStr = dates[dates.length - 1];
+      }
 
       const minDate = new Date(minDateStr);
       const maxDate = new Date(maxDateStr);
       
-      // Create date range
-      if (!isNaN(minDate.getTime()) && !isNaN(maxDate.getTime())) {
-        const currentDate = new Date(minDate);
-        while (currentDate <= maxDate) {
-          const key = formatDate(currentDate);
+      // Validate dates
+      if (isNaN(minDate.getTime()) || isNaN(maxDate.getTime())) {
+        console.warn("Invalid date range for redemptions over time");
+        return [];
+      }
+      
+      // Create date range with safety limits
+      const currentDate = new Date(minDate);
+      let iterations = 0;
+      const maxIterations = 1000; // Prevent infinite loops
+      
+      while (currentDate <= maxDate && iterations < maxIterations) {
+        const key = formatDate(currentDate);
+        if (key) {
           dateMap[key] = 0;
-          
-          // Increment based on timeframe
-          switch(redemptionTimeframe) {
-            case 'hourly':
-              currentDate.setHours(currentDate.getHours() + 1);
-              break;
-            case 'daily':
-              currentDate.setDate(currentDate.getDate() + 1);
-              break;
-            case 'weekly':
-              currentDate.setDate(currentDate.getDate() + 7);
-              break;
-            case 'monthly':
-              currentDate.setMonth(currentDate.getMonth() + 1);
-              break;
-            default:
-              currentDate.setDate(currentDate.getDate() + 1);
-          }
         }
+        
+        // Increment based on timeframe
+        switch(redemptionTimeframe) {
+          case 'hourly':
+            currentDate.setHours(currentDate.getHours() + 1);
+            break;
+          case 'daily':
+            currentDate.setDate(currentDate.getDate() + 1);
+            break;
+          case 'weekly':
+            currentDate.setDate(currentDate.getDate() + 7);
+            break;
+          case 'monthly':
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            break;
+          default:
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+        iterations++;
       }
       
       // Count redemptions for each time period
       filteredData.forEach(item => {
-        if (!item.receipt_date) return;
+        if (!item || !item.receipt_date) return;
         
         try {
           const date = new Date(item.receipt_date);
           if (isNaN(date.getTime())) return;
           
           const key = formatDate(date);
-          if (dateMap[key] !== undefined) {
+          if (key && dateMap[key] !== undefined) {
             dateMap[key] += 1;
           }
         } catch (error) {
-          console.error("Error processing date:", error);
+          console.error("Error processing item date:", error);
         }
       });
       
       // Convert to array format for charts
-      const result = Object.entries(dateMap).map(([name, count]) => ({ name, count }));
+      const result = Object.entries(dateMap)
+        .map(([name, count]) => ({ name, count }))
+        .filter(item => item.name); // Remove invalid entries
       
-      // Sort by date
+      // Sort by date with error handling
       return result.sort((a, b) => {
-        // For hourly data, sort by hour number
-        if (redemptionTimeframe === 'hourly') {
-          return parseInt(a.name) - parseInt(b.name);
+        try {
+          // For hourly data, sort by hour number
+          if (redemptionTimeframe === 'hourly') {
+            const hourA = parseInt(a.name.split(':')[0]);
+            const hourB = parseInt(b.name.split(':')[0]);
+            return hourA - hourB;
+          }
+          // For other formats, sort by string comparison
+          return a.name.localeCompare(b.name);
+        } catch (error) {
+          console.error("Error sorting redemptions data:", error);
+          return 0;
         }
-        // For other formats, sort by string comparison
-        return a.name.localeCompare(b.name);
       });
     } catch (error) {
       console.error("Error generating redemptions over time:", error);
       return [];
     }
-  }, [filteredData, redemptionTimeframe, filterState, metrics]); // Depend on filterState and metrics
+  }, [filteredData, redemptionTimeframe, filterState, metrics]);
   
-  // Calculate heatmap data for day of week vs hour patterns
-  const heatmapData = useMemo(() => {
-    if (!filteredData || filteredData.length === 0) return [];
-    
-    try {
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0') + ':00');
-      
-      // Initialize data structure
-      const heatmapMap = new Map();
-      
-      // Process each sale record
-      filteredData.forEach(item => {
-        if (!item.receipt_date) return;
-        
-        try {
-          const date = new Date(item.receipt_date);
-          if (isNaN(date.getTime())) return;
-          
-          const dayOfWeek = dayNames[date.getDay()];
-          const hour = date.getHours().toString().padStart(2, '0') + ':00';
-          
-          const key = `${dayOfWeek}-${hour}`;
-          heatmapMap.set(key, (heatmapMap.get(key) || 0) + 1);
-        } catch (error) {
-          console.error("Error processing heatmap date:", error);
-        }
-      });
-      
-      // Convert to array format for heatmap component
-      const result = [];
-      dayNames.forEach(day => {
-        hours.forEach(hour => {
-          const key = `${day}-${hour}`;
-          result.push({
-            x: hour,
-            y: day,
-            value: heatmapMap.get(key) || 0
-          });
-        });
-      });
-      
-      return result;
-    } catch (error) {
-      console.error("Error calculating heatmap data:", error);
-      return [];
-    }
-  }, [filteredData]);
   
   // Calculate trend line
   const trendLineData = useMemo(() => {
-    if (!redemptionsOverTime || redemptionsOverTime.length < 7) return [];
-    
     try {
+      if (!redemptionsOverTime || !Array.isArray(redemptionsOverTime) || redemptionsOverTime.length < 7) return [];
+      
       const result = [];
       const window = 7; // 7-day moving average
       
       for (let i = 0; i < redemptionsOverTime.length; i++) {
+        const currentItem = redemptionsOverTime[i];
+        if (!currentItem || typeof currentItem.count !== 'number') continue;
+        
         if (i < window - 1) {
           // Not enough data points yet for the window
           result.push({
-            name: redemptionsOverTime[i].name,
+            name: currentItem.name,
             trend: null
           });
         } else {
           // Calculate average of last 'window' points
           let sum = 0;
+          let validPoints = 0;
+          
           for (let j = 0; j < window; j++) {
-            sum += redemptionsOverTime[i - j].count;
+            const pastItem = redemptionsOverTime[i - j];
+            if (pastItem && typeof pastItem.count === 'number') {
+              sum += pastItem.count;
+              validPoints++;
+            }
           }
+          
           result.push({
-            name: redemptionsOverTime[i].name,
-            trend: sum / window
+            name: currentItem.name,
+            trend: validPoints > 0 ? sum / validPoints : null
           });
         }
       }
@@ -449,7 +477,9 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   };
 
-  const filteredRedemptionsData = applyDateExclusions(redemptionsOverTime);
+  const filteredRedemptionsData = useMemo(() => {
+    return applyDateExclusions(redemptionsOverTime);
+  }, [redemptionsOverTime, excludedDates]);
   
   // Handle empty data
   if (!filteredData || filteredData.length === 0 || !metrics) {
@@ -544,51 +574,102 @@ const SalesTab = ({ isSharedView = false }) => {
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+      {/* Financial Metrics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+        {/* Total Revenue */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
           <div className="flex items-start">
-            <div className="w-12 h-12 rounded-lg bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center mr-4">
-              <svg className="w-6 h-6 text-pink-600 dark:text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mr-3">
+              <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Total Revenue</h3>
+              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                {formatCurrency(metrics?.totalRevenue || 0, 'whole')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Total Transactions */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+          <div className="flex items-start">
+            <div className="w-10 h-10 rounded-lg bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center mr-3">
+              <svg className="w-5 h-5 text-pink-600 dark:text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
               </svg>
             </div>
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Total Redemptions</h3>
-              <p className="text-3xl font-bold text-pink-600 dark:text-pink-400">{metrics?.totalUnits.toLocaleString()}</p>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Total Transactions</h3>
+              <p className="text-xl font-bold text-pink-600 dark:text-pink-400">{(metrics?.totalUnits || 0).toLocaleString()}</p>
             </div>
           </div>
         </div>
-        
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+
+        {/* Average Transaction Value */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
           <div className="flex items-start">
-            <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mr-4">
-              <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mr-3">
+              <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
             </div>
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Average Per Day</h3>
-              <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{metrics?.avgRedemptionsPerDay}</p>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Avg Transaction</h3>
+              <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                {formatCurrency(metrics?.avgTransactionValue || 0, 'precise')}
+              </p>
             </div>
           </div>
         </div>
-        
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+
+        {/* Unique Customers */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
           <div className="flex items-start">
-            <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center mr-4">
-              <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mr-3">
+              <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Unique Customers</h3>
+              <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{(metrics?.uniqueCustomers || 0).toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Revenue Per Customer */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+          <div className="flex items-start">
+            <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center mr-3">
+              <svg className="w-5 h-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Revenue/Customer</h3>
+              <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
+                {formatCurrency(metrics?.avgRevenuePerCustomer || 0, 'precise')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Daily Average Revenue */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+          <div className="flex items-start">
+            <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center mr-3">
+              <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Date Range</h3>
-              <p className="text-md font-medium text-green-600 dark:text-green-400">
-                {metrics && metrics.uniqueDates && metrics.uniqueDates.length > 0 ? 
-                  `${formatDate(metrics.uniqueDates[0])} to ${formatDate(metrics.uniqueDates[metrics.uniqueDates.length - 1])}` :
-                  "No date range"
-                }
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Daily Revenue</h3>
+              <p className="text-xl font-bold text-green-600 dark:text-green-400">
+                {formatCurrency(metrics?.avgRevenuePerDay || 0, 'whole')}
               </p>
-              <p className="text-gray-600 dark:text-gray-400 text-sm">{metrics.daysInRange} days</p>
             </div>
           </div>
         </div>
@@ -608,77 +689,85 @@ const SalesTab = ({ isSharedView = false }) => {
           </div>
           
           <div className="h-96">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={retailerData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={120}
-                  innerRadius={60}
-                  paddingAngle={2}
-                  onMouseEnter={(data, index) => setActiveRetailer(index)}
-                  onMouseLeave={() => setActiveRetailer(null)}
-                  label={({ name, percent }) => 
-                    percent > 0.05 ? `${name}: ${(percent * 100).toFixed(1)}%` : ''
-                  }
-                  labelLine={false}
-                >
-                  {retailerData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={colors.colorPalette[index % colors.colorPalette.length]}
-                      stroke={darkMode ? "#374151" : "#fff"}
-                      strokeWidth={1}
-                      style={{
-                        opacity: activeRetailer === null || activeRetailer === index ? 1 : 0.6,
-                        filter: activeRetailer === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
-                        transition: 'opacity 300ms, filter 300ms'
-                      }}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  layout="vertical"
-                  align="right"
-                  verticalAlign="middle"
-                  wrapperStyle={{ paddingLeft: '30px' }}
-                  iconType="circle"
-                  onMouseEnter={(data, index) => setActiveRetailer(index)}
-                  onMouseLeave={() => setActiveRetailer(null)}
-                  formatter={(value, entry, index) => (
-                    <span className={`text-sm ${activeRetailer === index ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
-                      {value}
-                    </span>
-                  )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            <ChartErrorBoundary>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={Array.isArray(retailerData) ? retailerData : []}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={120}
+                    innerRadius={60}
+                    paddingAngle={2}
+                    onMouseEnter={(data, index) => setActiveRetailer(index)}
+                    onMouseLeave={() => setActiveRetailer(null)}
+                    label={({ name, percent }) => 
+                      percent > 0.05 ? `${name}: ${(percent * 100).toFixed(1)}%` : ''
+                    }
+                    labelLine={false}
+                  >
+                    {Array.isArray(retailerData) && retailerData.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={colors.colorPalette[index % colors.colorPalette.length]}
+                        stroke={darkMode ? "#374151" : "#fff"}
+                        strokeWidth={1}
+                        style={{
+                          opacity: activeRetailer === null || activeRetailer === index ? 1 : 0.6,
+                          filter: activeRetailer === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
+                          transition: 'opacity 300ms, filter 300ms'
+                        }}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend
+                    layout="vertical"
+                    align="right"
+                    verticalAlign="middle"
+                    wrapperStyle={{ paddingLeft: '30px' }}
+                    iconType="circle"
+                    onMouseEnter={(data, index) => setActiveRetailer(index)}
+                    onMouseLeave={() => setActiveRetailer(null)}
+                    formatter={(value, entry, index) => (
+                      <span className={`text-sm ${activeRetailer === index ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
+                        {value}
+                      </span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartErrorBoundary>
           </div>
           
           <div className="mt-4 overflow-auto max-h-64">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Retailer</th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Units</th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Percentage</th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Retailer</th>
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Revenue</th>
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Units</th>
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Avg Value</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {retailerData.map((retailer, index) => (
+                {Array.isArray(retailerData) && retailerData.map((retailer, index) => (
                   <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: colors.colorPalette[index % colors.colorPalette.length] }}></div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">{retailer.name}</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">{retailer.name || 'Unknown'}</div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">{retailer.value.toLocaleString()}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">{retailer.percentage.toFixed(1)}%</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">
+                      {formatCurrency(retailer.revenue || 0, 'table')}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">{(retailer.value || 0).toLocaleString()}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">
+                      {formatCurrency(retailer.avgTransactionValue || 0, 'table')}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -700,58 +789,60 @@ const SalesTab = ({ isSharedView = false }) => {
           {productDistribution && productDistribution.length > 0 ? (
             <>
               <div className="h-96">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={productDistribution.slice(0, 10).map(item => ({
-                        ...item,
-                        name: item.displayName
-                      }))}
-                      dataKey="count"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={120}
-                      innerRadius={60}
-                      paddingAngle={2}
-                      onMouseEnter={(data, index) => setActiveProduct(index)}
-                      onMouseLeave={() => setActiveProduct(null)}
-                      label={({ name, percent }) => 
-                        percent > 0.05 ? `${name.length > 15 ? name.substring(0, 15) + '...' : name}: ${(percent * 100).toFixed(1)}%` : ''
-                      }
-                      labelLine={false}
-                    >
-                      {productDistribution.slice(0, 10).map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={colors.colorPalette[index % colors.colorPalette.length]}
-                          stroke={darkMode ? "#374151" : "#fff"}
-                          strokeWidth={1}
-                          style={{
-                            opacity: activeProduct === null || activeProduct === index ? 1 : 0.6,
-                            filter: activeProduct === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
-                            transition: 'opacity 300ms, filter 300ms'
-                          }}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend
-                      layout="vertical"
-                      align="right"
-                      verticalAlign="middle"
-                      wrapperStyle={{ paddingLeft: '30px' }}
-                      iconType="circle"
-                      onMouseEnter={(data, index) => setActiveProduct(index)}
-                      onMouseLeave={() => setActiveProduct(null)}
-                      formatter={(value, entry, index) => (
-                        <span className={`text-sm ${activeProduct === index ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
-                          {value.length > 20 ? value.substring(0, 20) + '...' : value}
-                        </span>
-                      )}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                <ChartErrorBoundary>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={Array.isArray(productDistribution) ? productDistribution.slice(0, 10).map(item => ({
+                          ...item,
+                          name: item.displayName || item.name || 'Unknown'
+                        })) : []}
+                        dataKey="count"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={120}
+                        innerRadius={60}
+                        paddingAngle={2}
+                        onMouseEnter={(data, index) => setActiveProduct(index)}
+                        onMouseLeave={() => setActiveProduct(null)}
+                        label={({ name, percent }) => 
+                          percent > 0.05 ? `${name && name.length > 15 ? name.substring(0, 15) + '...' : name}: ${(percent * 100).toFixed(1)}%` : ''
+                        }
+                        labelLine={false}
+                      >
+                        {Array.isArray(productDistribution) && productDistribution.slice(0, 10).map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={colors.colorPalette[index % colors.colorPalette.length]}
+                            stroke={darkMode ? "#374151" : "#fff"}
+                            strokeWidth={1}
+                            style={{
+                              opacity: activeProduct === null || activeProduct === index ? 1 : 0.6,
+                              filter: activeProduct === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
+                              transition: 'opacity 300ms, filter 300ms'
+                            }}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend
+                        layout="vertical"
+                        align="right"
+                        verticalAlign="middle"
+                        wrapperStyle={{ paddingLeft: '30px' }}
+                        iconType="circle"
+                        onMouseEnter={(data, index) => setActiveProduct(index)}
+                        onMouseLeave={() => setActiveProduct(null)}
+                        formatter={(value, entry, index) => (
+                          <span className={`text-sm ${activeProduct === index ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
+                            {value && value.length > 20 ? value.substring(0, 20) + '...' : value}
+                          </span>
+                        )}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </ChartErrorBoundary>
               </div>
               
               <div className="mt-4 overflow-auto max-h-64">
@@ -827,11 +918,12 @@ const SalesTab = ({ isSharedView = false }) => {
           </div>
           
           <div className="h-96">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={Array.isArray(redemptionsOverTime) ? applyDateExclusions(redemptionsOverTime) : []}
-                margin={{ top: 10, right: 30, left: 0, bottom: 30 }}
-              >
+            <ChartErrorBoundary>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={Array.isArray(filteredRedemptionsData) ? filteredRedemptionsData : []}
+                  margin={{ top: 10, right: 30, left: 0, bottom: 30 }}
+                >
                 <defs>
                   <linearGradient id="colorRedemptions" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={colors.primary} stopOpacity={0.8}/>
@@ -870,11 +962,10 @@ const SalesTab = ({ isSharedView = false }) => {
                   dot={{ stroke: colors.primary, strokeWidth: 2, r: 4, fill: colors.tooltipBg }}
                   activeDot={{ stroke: colors.primary, strokeWidth: 2, r: 6, fill: colors.tooltipBg }}
                 />
-                {showTrendLine && trendLineData && Array.isArray(trendLineData) && trendLineData.some(item => item && item.trend !== null) && (
+                {showTrendLine && Array.isArray(trendLineData) && trendLineData.length > 0 && trendLineData.some(item => item && typeof item.trend === 'number') && (
                   <Line
                     type="monotone"
                     dataKey="trend"
-                    data={trendLineData}
                     name="Trend (7-day MA)"
                     stroke={colors.secondary}
                     strokeWidth={2}
@@ -884,6 +975,7 @@ const SalesTab = ({ isSharedView = false }) => {
                 )}
               </ComposedChart>
             </ResponsiveContainer>
+            </ChartErrorBoundary>
           </div>
           
           {/* Excluded dates notice */}
@@ -895,9 +987,11 @@ const SalesTab = ({ isSharedView = false }) => {
 
           <div className="mt-6">
             <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
-              <div>Total points: {redemptionsOverTime.length}</div>
+              <div>Total points: {Array.isArray(redemptionsOverTime) ? redemptionsOverTime.length : 0}</div>
               <div>
-                Average: {(redemptionsOverTime.reduce((sum, item) => sum + item.count, 0) / redemptionsOverTime.length).toFixed(1)} redemptions/{redemptionTimeframe}
+                Average: {Array.isArray(redemptionsOverTime) && redemptionsOverTime.length > 0 
+                  ? (redemptionsOverTime.reduce((sum, item) => sum + (item?.count || 0), 0) / redemptionsOverTime.length).toFixed(1)
+                  : '0.0'} redemptions/{redemptionTimeframe}
               </div>
             </div>
           </div>
@@ -915,37 +1009,6 @@ const SalesTab = ({ isSharedView = false }) => {
         </div>
       )}
 
-      {/* Sales Patterns Heatmap */}
-      {heatmapData && heatmapData.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-8">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-              Sales Patterns by Day & Hour
-            </h3>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              Total transactions: {heatmapData.reduce((sum, item) => sum + item.value, 0).toLocaleString()}
-            </div>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <HeatmapChart
-              data={heatmapData}
-              title=""
-              xAxisLabel="Hour of Day"
-              yAxisLabel="Day of Week"
-              valueLabel="Sales Count"
-              cellSize={35}
-              showLabels={true}
-              showTooltip={true}
-            />
-          </div>
-          
-          <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-            <p>This heatmap shows sales distribution across different days of the week and hours of the day.</p>
-            <p>Darker colors indicate higher sales volume for that time period.</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

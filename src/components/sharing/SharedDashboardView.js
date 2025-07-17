@@ -40,13 +40,19 @@ const SharedDashboardView = () => {
   useEffect(() => {
     const checkAuth = async () => {
       setAuthLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setIsAuthenticated(true);
-      } else {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+          // For development/demo mode, we'll allow viewing without authentication
+          // In production, you might want to require authentication
+          console.log('No active session found, but allowing shared dashboard access');
+        }
+      } catch (error) {
+        console.error('Error checking auth session:', error);
         setIsAuthenticated(false);
-        // Optional: Redirect to login immediately if not authenticated
-        // navigate('/login'); // Or your login route
       }
       setAuthLoading(false);
     };
@@ -141,16 +147,11 @@ const SharedDashboardView = () => {
       }
     };
 
-    // Only fetch data if authentication is complete and successful
+    // Only fetch data if authentication check is complete
     if (!authLoading) {
-      if (isAuthenticated) {
-        fetchSharedData(); // Call the async function here
-      } else {
-        // If not authenticated, stop loading and set an error message
-        setLoading(false);
-        setError("Authentication required to view this dashboard.");
-        console.log("User not authenticated, cannot load shared view.");
-      }
+      // For shared dashboards, we allow viewing without authentication
+      // This is the typical pattern for shared/public dashboards
+      fetchSharedData(); // Call the async function here
     }
     // Effect depends on auth status and shareId
   }, [shareId, authLoading, isAuthenticated]); // Removed navigate dependency

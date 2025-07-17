@@ -11,12 +11,30 @@ export const processData = (rawData) => {
   if (!rawData || rawData.length === 0) return [];
   
   try {
-    // Process dates and add derived fields
-    return rawData.map(item => {
+    // First, remove completely empty rows
+    const cleanedData = rawData.filter(row => {
+      if (!row || typeof row !== 'object') return false;
+      // Check if row has any non-empty values
+      return Object.values(row).some(value => 
+        value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
+      );
+    });
+    
+    // Process dates and add derived fields with enhanced validation
+    return cleanedData.map(item => {
       if (!item.receipt_date) return item;
       
       const date = new Date(item.receipt_date);
-      if (isNaN(date.getTime())) return item;
+      
+      // Validate date is reasonable (not before 1990 or after current date + 1 year)
+      const minDate = new Date('1990-01-01');
+      const maxDate = new Date();
+      maxDate.setFullYear(maxDate.getFullYear() + 1);
+      
+      if (isNaN(date.getTime()) || date < minDate || date > maxDate) {
+        console.warn('Invalid date detected and filtered out:', item.receipt_date, 'in row:', item);
+        return null; // Mark for removal
+      }
       
       return {
         ...item,
@@ -25,7 +43,7 @@ export const processData = (rawData) => {
         day_of_week: date.getDay(), // 0 = Sunday, 6 = Saturday
         hour_of_day: date.getHours() // 0-23
       };
-    });
+    }).filter(item => item !== null); // Remove invalid date entries
   } catch (error) {
     console.error('Error processing data:', error);
     return rawData;
@@ -33,7 +51,7 @@ export const processData = (rawData) => {
 };
 
 /**
- * Calculate metrics for the given data
+ * Calculate comprehensive metrics for the given data including financial metrics
  */
 export const calculateMetrics = (data, isComparison = false) => {
   if (!data || data.length === 0) return null;
@@ -42,39 +60,94 @@ export const calculateMetrics = (data, isComparison = false) => {
   const uniqueDates = uniq(data.map(item => item.receipt_date)).sort();
   const daysInRange = uniqueDates.length;
   
-  // Get total monetary value if available
-  const totalValue = data.reduce((sum, item) => {
-    return sum + (item.receipt_total || 0);
+  // Financial calculations
+  const totalRevenue = data.reduce((sum, item) => {
+    return sum + (parseFloat(item.receipt_amount) || 0);
   }, 0);
   
-  // Calculate average per day
+  // Rebate/savings analytics
+  const totalRebates = data.reduce((sum, item) => {
+    return sum + (parseFloat(item.amount) || 0);
+  }, 0);
+  
+  // Customer analytics
+  const uniqueCustomers = uniq(data.map(item => item.user_id)).filter(Boolean);
+  const customerCount = uniqueCustomers.length;
+  
+  // Transaction analytics
   const avgPerDay = daysInRange > 0 ? data.length / daysInRange : 0;
+  const avgTransactionValue = data.length > 0 ? totalRevenue / data.length : 0;
+  const avgRevenuePerDay = daysInRange > 0 ? totalRevenue / daysInRange : 0;
+  const avgRevenuePerCustomer = customerCount > 0 ? totalRevenue / customerCount : 0;
+  const avgTransactionsPerCustomer = customerCount > 0 ? data.length / customerCount : 0;
+  const avgRebatePerTransaction = data.length > 0 ? totalRebates / data.length : 0;
+  const savingsRate = totalRevenue > 0 ? (totalRebates / totalRevenue) * 100 : 0;
+  
+  // Calculate customer frequency distribution
+  const customerFrequency = {};
+  data.forEach(item => {
+    if (item.user_id) {
+      customerFrequency[item.user_id] = (customerFrequency[item.user_id] || 0) + 1;
+    }
+  });
+  
+  const frequencyDistribution = Object.values(customerFrequency);
+  const maxFrequency = Math.max(...frequencyDistribution, 0);
+  const avgFrequency = frequencyDistribution.length > 0 ? 
+    frequencyDistribution.reduce((a, b) => a + b, 0) / frequencyDistribution.length : 0;
   
   return {
+    // Basic metrics
     totalUnits: data.length,
     uniqueDates: uniqueDates,
     daysInRange: daysInRange,
-    totalValue: totalValue,
-    avgRedemptionsPerDay: avgPerDay.toFixed(1)
+    avgRedemptionsPerDay: avgPerDay.toFixed(1),
+    
+    // Financial metrics
+    totalRevenue: totalRevenue,
+    avgTransactionValue: avgTransactionValue,
+    avgRevenuePerDay: avgRevenuePerDay,
+    avgRevenuePerCustomer: avgRevenuePerCustomer,
+    
+    // Customer metrics
+    uniqueCustomers: customerCount,
+    avgTransactionsPerCustomer: avgTransactionsPerCustomer,
+    maxCustomerFrequency: maxFrequency,
+    avgCustomerFrequency: avgFrequency,
+    
+    // Rebate/savings metrics
+    totalRebates: totalRebates,
+    avgRebatePerTransaction: avgRebatePerTransaction,
+    savingsRate: savingsRate,
+    
+    // Legacy support
+    totalValue: totalRevenue
   };
 };
 
 /**
- * Get retailer distribution from data
+ * Get retailer distribution from data with financial metrics
  */
 export const getRetailerDistribution = (data) => {
   if (!data || data.length === 0) return [];
   
   const groupedByRetailer = groupBy(data, 'chain');
   const totalUnits = data.length;
+  const totalRevenue = data.reduce((sum, item) => sum + (parseFloat(item.receipt_amount) || 0), 0);
   
   return Object.entries(groupedByRetailer)
-    .map(([chain, items]) => ({
-      name: chain || 'Unknown',
-      value: items.length,
-      percentage: (items.length / totalUnits) * 100
-    }))
-    .sort((a, b) => b.value - a.value);
+    .map(([chain, items]) => {
+      const chainRevenue = items.reduce((sum, item) => sum + (parseFloat(item.receipt_amount) || 0), 0);
+      return {
+        name: chain || 'Unknown',
+        value: items.length,
+        percentage: (items.length / totalUnits) * 100,
+        revenue: chainRevenue,
+        revenuePercentage: totalRevenue > 0 ? (chainRevenue / totalRevenue) * 100 : 0,
+        avgTransactionValue: items.length > 0 ? chainRevenue / items.length : 0
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue);
 };
 
 /**
@@ -108,7 +181,7 @@ export const getProductDistribution = (data, brandMapping = {}) => {
         brandName: productInfo.brandName || '', // Store the brand name if needed
         count: items.length,
         percentage: (items.length / totalUnits) * 100,
-        value: items.reduce((sum, item) => sum + (item.receipt_total || 0), 0)
+        value: items.reduce((sum, item) => sum + (item.receipt_amount || 0), 0)
       };
     })
     .sort((a, b) => b.count - a.count);
@@ -161,12 +234,12 @@ export const getRedemptionsOverTime = (data, timeframe = 'daily') => {
   let result = Object.entries(groupedData)
     .map(([key, items]) => {
       // Calculate average value per receipt if available
-      const avgValue = items.reduce((sum, item) => sum + (item.receipt_total || 0), 0) / items.length;
+      const avgValue = items.reduce((sum, item) => sum + (item.receipt_amount || 0), 0) / items.length;
       
       return {
         name: format(key),
         count: items.length,
-        value: items.reduce((sum, item) => sum + (item.receipt_total || 0), 0),
+        value: items.reduce((sum, item) => sum + (item.receipt_amount || 0), 0),
         avgValue: isNaN(avgValue) ? 0 : avgValue.toFixed(2)
       };
     });
@@ -387,4 +460,195 @@ export const filterSalesData = (data, filters) => {
     // Combine all filters
     return productMatch && retailerMatch && dateMatch; // && textMatch;
   });
+};
+
+/**
+ * Get revenue over time based on selected timeframe
+ */
+export const getRevenueOverTime = (data, timeframe = 'daily') => {
+  if (!data || data.length === 0) return [];
+  
+  let groupedData;
+  let format;
+  
+  switch(timeframe) {
+    case 'hourly':
+      groupedData = groupBy(data, 'hour_of_day');
+      format = hour => `${hour}:00`;
+      break;
+    case 'daily':
+      groupedData = groupBy(data, 'receipt_date');
+      format = date => date;
+      break;
+    case 'weekly':
+      groupedData = groupBy(data, item => {
+        const date = new Date(item.receipt_date);
+        const dayOfWeek = date.getDay();
+        const diff = date.getDate() - dayOfWeek;
+        const firstDay = new Date(date.setDate(diff));
+        return firstDay.toISOString().split('T')[0];
+      });
+      format = date => {
+        const startDate = new Date(date);
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + 6);
+        return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+      };
+      break;
+    case 'monthly':
+    default:
+      groupedData = groupBy(data, 'month');
+      format = month => month;
+  }
+  
+  let result = Object.entries(groupedData)
+    .map(([key, items]) => {
+      const revenue = items.reduce((sum, item) => sum + (parseFloat(item.receipt_amount) || 0), 0);
+      const avgTransactionValue = items.length > 0 ? revenue / items.length : 0;
+      
+      return {
+        name: format(key),
+        revenue: revenue,
+        transactions: items.length,
+        avgTransactionValue: avgTransactionValue
+      };
+    });
+  
+  // Sort by the appropriate key
+  if (timeframe === 'hourly') {
+    result = result.sort((a, b) => parseInt(a.name) - parseInt(b.name));
+  } else {
+    result = result.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  
+  return result;
+};
+
+/**
+ * Get customer analytics including frequency and lifetime value
+ */
+export const getCustomerAnalytics = (data) => {
+  if (!data || data.length === 0) return null;
+  
+  const customerData = {};
+  
+  // Group transactions by customer
+  data.forEach(item => {
+    if (!item.user_id) return;
+    
+    if (!customerData[item.user_id]) {
+      customerData[item.user_id] = {
+        transactions: 0,
+        totalSpent: 0,
+        firstPurchase: item.receipt_date,
+        lastPurchase: item.receipt_date,
+        products: new Set()
+      };
+    }
+    
+    const customer = customerData[item.user_id];
+    customer.transactions++;
+    customer.totalSpent += parseFloat(item.receipt_amount) || 0;
+    customer.products.add(item.product_name);
+    
+    if (item.receipt_date < customer.firstPurchase) {
+      customer.firstPurchase = item.receipt_date;
+    }
+    if (item.receipt_date > customer.lastPurchase) {
+      customer.lastPurchase = item.receipt_date;
+    }
+  });
+  
+  const customers = Object.values(customerData);
+  const totalCustomers = customers.length;
+  
+  if (totalCustomers === 0) return null;
+  
+  // Calculate segments
+  const oneTimeCustomers = customers.filter(c => c.transactions === 1).length;
+  const repeatCustomers = totalCustomers - oneTimeCustomers;
+  const highValueCustomers = customers.filter(c => c.totalSpent > 100).length; // Threshold can be adjusted
+  
+  // Customer lifetime value
+  const totalRevenue = customers.reduce((sum, c) => sum + c.totalSpent, 0);
+  const avgLifetimeValue = totalRevenue / totalCustomers;
+  
+  // Frequency distribution
+  const frequencyBuckets = {
+    '1': 0,
+    '2-3': 0,
+    '4-6': 0,
+    '7-10': 0,
+    '11+': 0
+  };
+  
+  customers.forEach(customer => {
+    const freq = customer.transactions;
+    if (freq === 1) frequencyBuckets['1']++;
+    else if (freq <= 3) frequencyBuckets['2-3']++;
+    else if (freq <= 6) frequencyBuckets['4-6']++;
+    else if (freq <= 10) frequencyBuckets['7-10']++;
+    else frequencyBuckets['11+']++;
+  });
+  
+  return {
+    totalCustomers,
+    oneTimeCustomers,
+    repeatCustomers,
+    highValueCustomers,
+    avgLifetimeValue,
+    repeatCustomerRate: (repeatCustomers / totalCustomers) * 100,
+    highValueCustomerRate: (highValueCustomers / totalCustomers) * 100,
+    frequencyDistribution: frequencyBuckets,
+    avgTransactionsPerCustomer: data.length / totalCustomers,
+    topCustomers: customers
+      .sort((a, b) => b.totalSpent - a.totalSpent)
+      .slice(0, 10)
+      .map(c => ({
+        ...c,
+        productCount: c.products.size
+      }))
+  };
+};
+
+/**
+ * Get product performance with financial metrics
+ */
+export const getProductPerformance = (data, brandMapping = {}) => {
+  if (!data || data.length === 0) return [];
+  
+  const groupedByProduct = groupBy(data, 'product_name');
+  const totalRevenue = data.reduce((sum, item) => sum + (parseFloat(item.receipt_amount) || 0), 0);
+  
+  return Object.entries(groupedByProduct)
+    .map(([product, items]) => {
+      const productInfo = brandMapping[product] || { displayName: product };
+      let displayName = productInfo.displayName || product;
+      
+      if (displayName === product) {
+        const words = displayName.split(' ');
+        if (words.length >= 3) {
+          const wordsToRemove = words.length >= 5 ? 2 : 1;
+          displayName = words.slice(wordsToRemove).join(' ');
+        }
+      }
+      
+      const revenue = items.reduce((sum, item) => sum + (parseFloat(item.receipt_amount) || 0), 0);
+      const avgTransactionValue = items.length > 0 ? revenue / items.length : 0;
+      const uniqueCustomers = uniq(items.map(item => item.user_id)).filter(Boolean).length;
+      
+      return {
+        name: product,
+        displayName: displayName,
+        brandName: productInfo.brandName || '',
+        transactions: items.length,
+        revenue: revenue,
+        percentage: (items.length / data.length) * 100,
+        revenuePercentage: totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0,
+        avgTransactionValue: avgTransactionValue,
+        uniqueCustomers: uniqueCustomers,
+        revenuePerCustomer: uniqueCustomers > 0 ? revenue / uniqueCustomers : 0
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue);
 };

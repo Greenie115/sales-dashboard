@@ -36,12 +36,12 @@ export const COLUMN_MAPPINGS = {
     'outlet': 'chain',
     
     // Amount field variations
-    'amount': 'receipt_total',
-    'total': 'receipt_total',
-    'price': 'receipt_total',
-    'value': 'receipt_total',
-    'cost': 'receipt_total',
-    'spend': 'receipt_total',
+    'amount': 'receipt_amount',
+    'total': 'receipt_amount',
+    'price': 'receipt_amount',
+    'value': 'receipt_amount',
+    'cost': 'receipt_amount',
+    'spend': 'receipt_amount',
     
     // User field variations
     'customer_id': 'user_id',
@@ -236,7 +236,7 @@ export const TRANSFORMATION_RULES = {
     columnMappings: COLUMN_MAPPINGS.sales,
     transformations: {
       'receipt_date': VALUE_TRANSFORMERS.standardizeDate,
-      'receipt_total': VALUE_TRANSFORMERS.cleanNumeric,
+      'receipt_amount': VALUE_TRANSFORMERS.cleanNumeric,
       'product_name': VALUE_TRANSFORMERS.cleanText,
       'chain': VALUE_TRANSFORMERS.cleanText
     },

@@ -7,8 +7,6 @@ import ShareButton from '../sharing/ShareButton';
 import Papa from 'papaparse';
 import logo from '../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg'
 import { useClientData } from '../../context/ClientDataContext';
-import { validateCSVWithCorrections } from '../../utils/enhancedCsvValidation';
-import DataCorrectionModal from '../validation/DataCorrectionModal';
 
 const Header = () => {
   const { clientName } = useClientData();
@@ -16,9 +14,6 @@ const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
   const [processingFile, setProcessingFile] = useState(false);
-  const [validationResult, setValidationResult] = useState(null);
-  const [originalCsvData, setOriginalCsvData] = useState(null);
-  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   
   // Get data context
   const { 
@@ -47,8 +42,6 @@ const Header = () => {
     setDataLoading(true);
     setProcessingFile(true);
     setDataError('');
-    setValidationResult(null);
-    setOriginalCsvData(null);
     
     // Check if we're dealing with sales or offer data
     const isOfferData = file.name.toLowerCase().includes('hits_offer');
@@ -64,27 +57,8 @@ const Header = () => {
           complete: (results) => {
             
             if (results.data && results.data.length > 0) {
-              // Store original data for correction workflow
-              setOriginalCsvData(results.data);
-              
-              // Run enhanced validation
-              const validation = validateCSVWithCorrections(results.data, dataType);
-              setValidationResult(validation);
-              
-              // If validation passes or has correctable issues, proceed
-              if (validation.isValid || validation.stats.correctableIssues > 0) {
-                if (validation.isValid) {
-                  // Data is valid, process directly
-                  processValidatedData(results.data, dataType);
-                } else {
-                  // Show correction modal for fixable issues
-                  setShowCorrectionModal(true);
-                }
-              } else {
-                // Critical errors that can't be fixed
-                const criticalErrors = validation.errors.filter(e => !e.correction);
-                setDataError(`Critical data issues found: ${criticalErrors.map(e => e.message).join('; ')}`);
-              }
+              // Process data directly without validation
+              processValidatedData(results.data, dataType);
             } else {
               setDataError('No data found in file');
             }
@@ -117,11 +91,19 @@ const Header = () => {
     reader.readAsText(file);
   };
 
-  // Process validated/corrected data
+  // Process data with automatic cleaning
   const processValidatedData = (data, dataType) => {
+    // Remove completely empty rows
+    const cleanedData = data.filter(row => {
+      if (!row || typeof row !== 'object') return false;
+      // Check if row has any non-empty values
+      return Object.values(row).some(value => 
+        value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
+      );
+    });
     if (dataType === 'offers') {
       // Process offer data
-      const processedOfferData = data.map(row => {
+      const processedOfferData = cleanedData.map(row => {
         if (row.created_at) {
           try {
             const date = new Date(row.created_at);
@@ -140,10 +122,23 @@ const Header = () => {
       setHasOfferData(true);
       setActiveTab('offers');
     } else {
-      // Process sales data with enhanced date processing
-      const processedData = data.map(row => {
+      // Process sales data with enhanced date processing and validation
+      const processedData = cleanedData.map(row => {
         try {
+          if (!row.receipt_date) return row;
+          
           const date = new Date(row.receipt_date);
+          
+          // Validate date is reasonable (not before 1990 or after current date + 1 year)
+          const minDate = new Date('1990-01-01');
+          const maxDate = new Date();
+          maxDate.setFullYear(maxDate.getFullYear() + 1);
+          
+          if (isNaN(date.getTime()) || date < minDate || date > maxDate) {
+            console.warn('Invalid date detected:', row.receipt_date, 'in row:', row);
+            return row; // Keep original row if date is invalid
+          }
+          
           return {
             ...row,
             receipt_date: date.toISOString().split('T')[0],
@@ -195,29 +190,6 @@ const Header = () => {
     return brandMap;
   };
 
-  // Handle correction modal responses
-  const handleAcceptCorrectedData = (correctedData, appliedCorrections) => {
-    const dataType = originalCsvData && originalCsvData.some(row => row.hit_id) ? 'offers' : 'sales';
-    processValidatedData(correctedData, dataType);
-    setShowCorrectionModal(false);
-    setValidationResult(null);
-    setOriginalCsvData(null);
-  };
-
-  const handleRejectCorrections = () => {
-    // Process original data despite validation issues
-    const dataType = originalCsvData && originalCsvData.some(row => row.hit_id) ? 'offers' : 'sales';
-    processValidatedData(originalCsvData, dataType);
-    setShowCorrectionModal(false);
-    setValidationResult(null);
-    setOriginalCsvData(null);
-  };
-
-  const handleCloseCorrectionModal = () => {
-    setShowCorrectionModal(false);
-    setValidationResult(null);
-    setOriginalCsvData(null);
-  };
   
   // Handle file selection
   const handleFileChange = (e) => {
@@ -320,17 +292,6 @@ const Header = () => {
         </div>
       </div>
       
-      {/* Data Correction Modal */}
-      {showCorrectionModal && validationResult && originalCsvData && (
-        <DataCorrectionModal
-          isOpen={showCorrectionModal}
-          onClose={handleCloseCorrectionModal}
-          validationResult={validationResult}
-          originalData={originalCsvData}
-          onAcceptCorrectedData={handleAcceptCorrectedData}
-          onRejectCorrections={handleRejectCorrections}
-        />
-      )}
     </header>
   );
 };

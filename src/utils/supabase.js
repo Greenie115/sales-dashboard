@@ -277,6 +277,67 @@ const hybridSupabaseClient = {
         }
       }
       return { data: { user: null }, error: null };
+    },
+    getSession: async () => {
+      if (isSupabaseAvailable && realSupabaseClient) {
+        try {
+          return await realSupabaseClient.auth.getSession();
+        } catch (error) {
+          console.warn('Supabase auth session error:', error);
+        }
+      }
+      return { data: { session: null }, error: null };
+    },
+    signIn: async (credentials) => {
+      if (isSupabaseAvailable && realSupabaseClient) {
+        try {
+          return await realSupabaseClient.auth.signInWithPassword(credentials);
+        } catch (error) {
+          console.warn('Supabase sign in error:', error);
+        }
+      }
+      return { data: { user: null, session: null }, error: { message: 'Authentication not available' } };
+    },
+    signOut: async () => {
+      if (isSupabaseAvailable && realSupabaseClient) {
+        try {
+          return await realSupabaseClient.auth.signOut();
+        } catch (error) {
+          console.warn('Supabase sign out error:', error);
+        }
+      }
+      return { error: null };
+    },
+    onAuthStateChange: (callback) => {
+      if (isSupabaseAvailable && realSupabaseClient) {
+        try {
+          return realSupabaseClient.auth.onAuthStateChange(callback);
+        } catch (error) {
+          console.warn('Supabase auth state change error:', error);
+        }
+      }
+      // Return a mock subscription for fallback
+      return { data: { subscription: { unsubscribe: () => {} } } };
+    },
+    signInWithPassword: async (credentials) => {
+      if (isSupabaseAvailable && realSupabaseClient) {
+        try {
+          return await realSupabaseClient.auth.signInWithPassword(credentials);
+        } catch (error) {
+          console.warn('Supabase sign in with password error:', error);
+        }
+      }
+      return { data: { user: null, session: null }, error: { message: 'Authentication not available' } };
+    },
+    signUp: async (credentials) => {
+      if (isSupabaseAvailable && realSupabaseClient) {
+        try {
+          return await realSupabaseClient.auth.signUp(credentials);
+        } catch (error) {
+          console.warn('Supabase sign up error:', error);
+        }
+      }
+      return { data: { user: null, session: null }, error: { message: 'Authentication not available' } };
     }
   }
 };
