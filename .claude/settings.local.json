@@ -11,7 +11,9 @@
       "Bash(rm:*)",
       "Bash(npm start)",
       "Bash(PORT=3001 npm start)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm run lint:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }

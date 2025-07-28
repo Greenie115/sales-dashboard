@@ -652,3 +652,145 @@ export const getProductPerformance = (data, brandMapping = {}) => {
     })
     .sort((a, b) => b.revenue - a.revenue);
 };
+
+/**
+ * Calculate product ratings from the data
+ */
+export const calculateProductRatings = (data, brandMapping = {}) => {
+  if (!data || data.length === 0) return [];
+  
+  const groupedByProduct = groupBy(data, 'product_name');
+  
+  return Object.entries(groupedByProduct)
+    .map(([product, items]) => {
+      const productInfo = brandMapping[product] || { displayName: product };
+      let displayName = productInfo.displayName || product;
+      
+      if (displayName === product) {
+        const words = displayName.split(' ');
+        if (words.length >= 3) {
+          const wordsToRemove = words.length >= 5 ? 2 : 1;
+          displayName = words.slice(wordsToRemove).join(' ');
+        }
+      }
+      
+      // Filter items that have ratings
+      const itemsWithRatings = items.filter(item => 
+        item.rating && !isNaN(parseFloat(item.rating)) && parseFloat(item.rating) > 0
+      );
+      
+      let avgRating = null;
+      let ratingDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      
+      if (itemsWithRatings.length > 0) {
+        const totalRating = itemsWithRatings.reduce((sum, item) => 
+          sum + parseFloat(item.rating), 0
+        );
+        avgRating = totalRating / itemsWithRatings.length;
+        
+        // Calculate rating distribution
+        itemsWithRatings.forEach(item => {
+          const rating = Math.round(parseFloat(item.rating));
+          if (rating >= 1 && rating <= 5) {
+            ratingDistribution[rating]++;
+          }
+        });
+      }
+      
+      return {
+        name: product,
+        displayName: displayName,
+        brandName: productInfo.brandName || '',
+        totalResponses: items.length,
+        ratingResponses: itemsWithRatings.length,
+        avgRating: avgRating,
+        ratingDistribution: ratingDistribution,
+        hasRatingData: itemsWithRatings.length > 0
+      };
+    })
+    .filter(item => item.hasRatingData) // Only include products with rating data
+    .sort((a, b) => b.avgRating - a.avgRating);
+};
+
+/**
+ * Calculate repurchase intent for products from question_07
+ */
+export const calculateRepurchaseIntent = (data, brandMapping = {}) => {
+  if (!data || data.length === 0) return [];
+  
+  const groupedByProduct = groupBy(data, 'product_name');
+  
+  return Object.entries(groupedByProduct)
+    .map(([product, items]) => {
+      const productInfo = brandMapping[product] || { displayName: product };
+      let displayName = productInfo.displayName || product;
+      
+      if (displayName === product) {
+        const words = displayName.split(' ');
+        if (words.length >= 3) {
+          const wordsToRemove = words.length >= 5 ? 2 : 1;
+          displayName = words.slice(wordsToRemove).join(' ');
+        }
+      }
+      
+      // Filter items that have repurchase intent responses (question_07)
+      const itemsWithRepurchase = items.filter(item => 
+        item.question_07 && typeof item.question_07 === 'string' && 
+        item.question_07.toLowerCase().includes('would you purchase')
+      );
+      
+      if (itemsWithRepurchase.length === 0) {
+        return null; // No repurchase data for this product
+      }
+      
+      // Count responses for each answer type
+      const responseCounts = {
+        'yes_definitely': 0,
+        'yes_why_not': 0,
+        'dont_know': 0,
+        'no': 0,
+        'other': 0
+      };
+      
+      itemsWithRepurchase.forEach(item => {
+        // Check proposition_07 for the actual answer
+        const answer = item.proposition_07 ? item.proposition_07.toLowerCase() : '';
+        
+        if (answer.includes('yes, definitely') || answer.includes('yes definitely')) {
+          responseCounts.yes_definitely++;
+        } else if (answer.includes('yes, why not') || answer.includes('yes why not')) {
+          responseCounts.yes_why_not++;
+        } else if (answer.includes('don\'t know') || answer.includes('dont know') || answer.includes('i don\'t know')) {
+          responseCounts.dont_know++;
+        } else if (answer.includes('no')) {
+          responseCounts.no++;
+        } else if (answer.trim() !== '') {
+          responseCounts.other++;
+        }
+      });
+      
+      const totalResponses = itemsWithRepurchase.length;
+      const positiveResponses = responseCounts.yes_definitely + responseCounts.yes_why_not;
+      const repurchaseIntentRate = totalResponses > 0 ? (positiveResponses / totalResponses) * 100 : 0;
+      
+      return {
+        name: product,
+        displayName: displayName,
+        brandName: productInfo.brandName || '',
+        totalResponses: items.length,
+        repurchaseResponses: totalResponses,
+        repurchaseIntentRate: repurchaseIntentRate,
+        responseCounts: responseCounts,
+        responsePercentages: {
+          yes_definitely: totalResponses > 0 ? (responseCounts.yes_definitely / totalResponses) * 100 : 0,
+          yes_why_not: totalResponses > 0 ? (responseCounts.yes_why_not / totalResponses) * 100 : 0,
+          dont_know: totalResponses > 0 ? (responseCounts.dont_know / totalResponses) * 100 : 0,
+          no: totalResponses > 0 ? (responseCounts.no / totalResponses) * 100 : 0,
+          other: totalResponses > 0 ? (responseCounts.other / totalResponses) * 100 : 0
+        },
+        hasRepurchaseData: totalResponses > 0
+      };
+    })
+    .filter(item => item !== null && item.hasRepurchaseData) // Only include products with repurchase data
+    .sort((a, b) => b.repurchaseIntentRate - a.repurchaseIntentRate);
+};

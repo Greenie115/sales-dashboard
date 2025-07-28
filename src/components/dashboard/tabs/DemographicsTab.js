@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useData } from '../../../context/DataContext';
+import { useFilter } from '../../../context/FilterContext';
 import { useTheme } from '../../../context/ThemeContext'; // ← Add this import
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { useClientData } from '../../../context/ClientDataContext';
+import { calculateProductRatings, calculateRepurchaseIntent, filterSalesData } from '../../../utils/dataProcessing';
+import StarRating from '../../common/StarRating';
+import ExportButton from '../export/ExportButton';
 
 // Custom colors for light and dark mode
 const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
@@ -40,13 +44,38 @@ const DemographicsTab = ({ isSharedView }) => {
   // Get data from either ClientDataContext or DataContext
   const clientData = useClientData();
   const dataContext = useData();
+  const filterContext = useFilter(); // Get filter context
   const contextData = isSharedView ? clientData : dataContext;
   const { 
     salesData,
-    filteredData: directFilteredData
+    filteredData: directFilteredData,
+    brandMapping = {}
   } = contextData;
   
   const { darkMode } = useTheme();
+  
+  // Calculate filteredData using useMemo to respect filters
+  const filteredData = useMemo(() => {
+    try {
+      if (isSharedView && directFilteredData && Array.isArray(directFilteredData) && directFilteredData.length > 0) {
+        return directFilteredData; // Use snapshot data for shared view
+      }
+      
+      // For non-shared view, apply filters to raw salesData
+      if (!salesData || !Array.isArray(salesData) || salesData.length === 0) {
+        return [];
+      }
+      
+      if (!filterContext) {
+        return salesData; // If no filter context, return raw data
+      }
+      
+      return filterSalesData(salesData, filterContext);
+    } catch (error) {
+      console.error('Error filtering demographics data:', error);
+      return salesData || [];
+    }
+  }, [isSharedView, directFilteredData, salesData, filterContext]);
   
   // Use direct data in shared view
   // const dataToUse = isSharedView && directFilteredData ? directFilteredData : salesData;
@@ -67,12 +96,27 @@ const DemographicsTab = ({ isSharedView }) => {
   const [selectedResponses, setSelectedResponses] = useState([]);
   const [questions, setQuestions] = useState([]);
   
+  // Product ratings and repurchase intent state
+  const [productRatings, setProductRatings] = useState([]);
+  const [repurchaseIntent, setRepurchaseIntent] = useState([]);
+  const [showProductInsights, setShowProductInsights] = useState(false);
+  
+  // Export data state
+  const [exportData, setExportData] = useState(null);
+  
+  // Product-specific demographics state
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [productDemographics, setProductDemographics] = useState({
+    gender: [],
+    age: []
+  });
+  
   
   // Extract questions from data
   useEffect(() => {
-    if (salesData && salesData.length > 0) {
+    if (filteredData && filteredData.length > 0) {
       // Check what fields are in the data
-      const sampleRow = salesData[0];
+      const sampleRow = filteredData[0];
       
       // Look for question fields
       const questionFields = [];
@@ -97,7 +141,7 @@ const DemographicsTab = ({ isSharedView }) => {
         let questionText = `Question ${parseInt(field.number)}`;
         
         // Find the first row with a non-empty question text
-        for (const row of salesData) {
+        for (const row of filteredData) {
           if (row[field.questionKey] && typeof row[field.questionKey] === 'string' && row[field.questionKey].trim() !== '') {
             questionText = row[field.questionKey];
             break;
@@ -105,7 +149,7 @@ const DemographicsTab = ({ isSharedView }) => {
         }
         
         // Only add if there are propositions for this question
-        const hasPropositions = salesData.some(row => 
+        const hasPropositions = filteredData.some(row => 
           row[field.propKey] && 
           typeof row[field.propKey] === 'string' && 
           row[field.propKey].trim() !== ''
@@ -122,7 +166,34 @@ const DemographicsTab = ({ isSharedView }) => {
       setQuestions(extractedQuestions);
       setAvailableQuestions(extractedQuestions.map(q => q.number));
     }
-  }, [salesData]);
+  }, [filteredData]);
+
+  // Calculate product ratings and repurchase intent when data changes
+  useEffect(() => {
+    if (filteredData && filteredData.length > 0) {
+      try {
+        // Calculate product ratings
+        const ratings = calculateProductRatings(filteredData, brandMapping);
+        setProductRatings(ratings);
+        
+        // Calculate repurchase intent
+        const repurchase = calculateRepurchaseIntent(filteredData, brandMapping);
+        setRepurchaseIntent(repurchase);
+        
+        // Show product insights section if we have either ratings or repurchase data
+        setShowProductInsights(ratings.length > 0 || repurchase.length > 0);
+      } catch (error) {
+        console.error('Error calculating product insights:', error);
+        setProductRatings([]);
+        setRepurchaseIntent([]);
+        setShowProductInsights(false);
+      }
+    } else {
+      setProductRatings([]);
+      setRepurchaseIntent([]);
+      setShowProductInsights(false);
+    }
+  }, [filteredData, brandMapping]);
 
   // Set up mounted ref for cleanup
   useEffect(() => {
@@ -139,7 +210,7 @@ const DemographicsTab = ({ isSharedView }) => {
   if (!isMounted.current) return;
   
   // Only process if we have selected responses and survey data
-  if (selectedResponses.length > 0 && salesData && salesData.length > 0) {
+  if (selectedResponses.length > 0 && filteredData && filteredData.length > 0) {
     // Set processing flag to true
     setIsProcessingDemographics(true);
     
@@ -155,7 +226,7 @@ const DemographicsTab = ({ isSharedView }) => {
         
         // Filter survey data for rows containing ANY of the selected responses
         // Modified to check if any of the selected responses are present in each comma-separated response
-        const filteredData = salesData.filter(row => {
+        const filteredSurveyData = filteredData.filter(row => {
           const responseStr = row[propKey];
           if (!responseStr) return false;
           
@@ -168,7 +239,7 @@ const DemographicsTab = ({ isSharedView }) => {
         
         // Gender breakdown
         const genderCounts = {};
-        filteredData.forEach(row => {
+        filteredSurveyData.forEach(row => {
           const gender = row.gender || 'Not Specified';
           genderCounts[gender] = (genderCounts[gender] || 0) + 1;
         });
@@ -184,7 +255,7 @@ const DemographicsTab = ({ isSharedView }) => {
       
         // Age breakdown
         const ageCounts = {};
-        filteredData.forEach(row => {
+        filteredSurveyData.forEach(row => {
           // Log a sample row to debug data structure
           if (!window.loggedSampleRow) {
             window.loggedSampleRow = true;
@@ -255,7 +326,7 @@ const DemographicsTab = ({ isSharedView }) => {
     setResponseByAge([]);
     setIsProcessingDemographics(false);
   }
-}, [selectedResponses, salesData, selectedQuestionNumber]);
+}, [selectedResponses, filteredData, selectedQuestionNumber]);
 
   // Handle user changing the selected question
   const handleQuestionChange = (e) => {
@@ -277,7 +348,7 @@ const DemographicsTab = ({ isSharedView }) => {
   };
 
   const analyzeResponses = (questionNum) => {
-    if (!salesData || salesData.length === 0) {
+    if (!filteredData || filteredData.length === 0) {
       return;
     }
     
@@ -285,7 +356,7 @@ const DemographicsTab = ({ isSharedView }) => {
     const propKey = `proposition_${questionNum}`;
     
     // Check if the proposition field exists in the data
-    const propExists = salesData.some(row => row[propKey] !== undefined);
+    const propExists = filteredData.some(row => row[propKey] !== undefined);
     
     if (!propExists) {
       setResponseData([]);
@@ -293,7 +364,7 @@ const DemographicsTab = ({ isSharedView }) => {
     }
     
     // Filter responses that have non-empty propositions
-    const responses = salesData.filter(row => 
+    const responses = filteredData.filter(row => 
       row[propKey] !== undefined && 
       row[propKey] !== null && 
       row[propKey] !== '');
@@ -353,53 +424,129 @@ const DemographicsTab = ({ isSharedView }) => {
     }
   };
 
-  // Export data to CSV
-  const exportToCSV = () => {
-    if (selectedQuestionNumber && responseData.length > 0) {
-      // Create CSV content
-      let csvContent = 'Response,Count,Percentage\n';
-      
-      responseData.forEach(item => {
-        csvContent += `"${item.fullResponse}",${item.count},${item.percentage}%\n`;
-      });
-      
-      // Add gender breakdown if available
-      if (selectedResponses.length > 0 && responseByGender.length > 0) {
-        csvContent += '\nGender Breakdown\n';
-        csvContent += 'Gender,Count,Percentage\n';
-        
-        const total = responseByGender.reduce((sum, item) => sum + item.value, 0);
-        responseByGender.forEach(item => {
-          const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
-          csvContent += `"${item.name}",${item.value},${percentage}%\n`;
-        });
-      }
-      
-      // Add age breakdown if available
-      if (selectedResponses.length > 0 && responseByAge.length > 0) {
-        csvContent += '\nAge Breakdown\n';
-        csvContent += 'Age Group,Count,Percentage\n';
-        
-        const total = responseByAge.reduce((sum, item) => sum + item.value, 0);
-        responseByAge.forEach(item => {
-          const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
-          csvContent += `"${item.name}",${item.value},${percentage}%\n`;
-        });
-      }
-      
-      // Create download link
-      const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `Question_${selectedQuestionNumber}_Responses.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+  // Calculate demographics for a specific product
+  const calculateProductDemographics = (productName) => {
+    if (!filteredData || filteredData.length === 0 || !productName) {
+      return { gender: [], age: [] };
     }
+
+    // Filter data for the selected product
+    const productData = filteredData.filter(row => row.product_name === productName);
+
+    if (productData.length === 0) {
+      return { gender: [], age: [] };
+    }
+
+    // Gender breakdown
+    const genderCounts = {};
+    productData.forEach(row => {
+      const gender = row.gender || 'Not Specified';
+      genderCounts[gender] = (genderCounts[gender] || 0) + 1;
+    });
+
+    const totalGender = Object.values(genderCounts).reduce((sum, count) => sum + count, 0);
+    const genderData = Object.entries(genderCounts).map(([name, value]) => ({
+      name,
+      value,
+      total: totalGender,
+      percentage: totalGender > 0 ? ((value / totalGender) * 100).toFixed(1) : "0.0"
+    }));
+
+    // Age breakdown
+    const ageCounts = {};
+    productData.forEach(row => {
+      const age = row.age_group || 'Not Specified';
+      let ageGroup = age;
+      
+      // If the age is a number, convert it to a group
+      if (age && !isNaN(age)) {
+        const ageNum = parseInt(age, 10);
+        if (ageNum < 18) ageGroup = 'Under 18';
+        else if (ageNum < 25) ageGroup = '16-24';
+        else if (ageNum < 35) ageGroup = '25-34';
+        else if (ageNum < 45) ageGroup = '35-44';
+        else if (ageNum < 55) ageGroup = '45-54';
+        else if (ageNum < 65) ageGroup = '55-64';
+        else ageGroup = '65+';
+      }
+      
+      ageCounts[ageGroup] = (ageCounts[ageGroup] || 0) + 1;
+    });
+    
+    const totalAge = Object.values(ageCounts).reduce((sum, count) => sum + count, 0);
+    const ageData = Object.entries(ageCounts).map(([name, value]) => ({
+      name,
+      value,
+      total: totalAge,
+      percentage: totalAge > 0 ? ((value / totalAge) * 100).toFixed(1) : "0.0"
+    }));
+    
+    // Sort age groups in logical order
+    ageData.sort((a, b) => {
+      const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
+      const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
+      
+      if (aIndex !== -1 && bIndex !== -1) {
+        return aIndex - bIndex;
+      }
+      
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      
+      return a.name.localeCompare(b.name);
+    });
+
+    return { gender: genderData, age: ageData };
   };
+
+  // Handle product click
+  const handleProductClick = (product) => {
+    const productName = product.name || product.displayName;
+    setSelectedProduct(productName);
+    const demographics = calculateProductDemographics(productName);
+    setProductDemographics(demographics);
+  };
+
+  // Clear product selection
+  const clearProductSelection = () => {
+    setSelectedProduct(null);
+    setProductDemographics({ gender: [], age: [] });
+  };
+
+  // Prepare export data whenever the relevant data changes
+  useEffect(() => {
+    if (selectedQuestionNumber && responseData.length > 0) {
+      const data = {
+        responses: responseData,
+        genderBreakdown: responseByGender,
+        ageBreakdown: responseByAge,
+        selectedResponses: selectedResponses,
+        questionNumber: selectedQuestionNumber,
+        questionText: questionText,
+        productRatings: productRatings,
+        repurchaseIntent: repurchaseIntent
+      };
+      setExportData(data);
+    } else if (showProductInsights && (productRatings.length > 0 || repurchaseIntent.length > 0)) {
+      // If no question is selected but we have product insights, export those
+      const data = {
+        productRatings: productRatings,
+        repurchaseIntent: repurchaseIntent,
+        responses: [],
+        genderBreakdown: [],
+        ageBreakdown: [],
+        selectedResponses: [],
+        questionNumber: null,
+        questionText: ''
+      };
+      setExportData(data);
+    } else {
+      setExportData(null);
+    }
+  }, [selectedQuestionNumber, responseData, responseByGender, responseByAge, selectedResponses, questionText, productRatings, repurchaseIntent, showProductInsights]);
   
   // If no data or no questions, show empty state
-  if (!salesData || salesData.length === 0 || availableQuestions.length === 0) {
+  if (!filteredData || filteredData.length === 0 || availableQuestions.length === 0) {
     return (
       <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-900 text-gray-200' : 'text-gray-900'}`}>
         <div className="text-center">
@@ -417,16 +564,537 @@ const DemographicsTab = ({ isSharedView }) => {
     <div className={`demographics-tab p-4 ${darkMode ? 'bg-gray-900 text-white' : ''}`}>
       <div className="flex justify-between items-center mb-6">
         <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : ''}`}>Demographics Insights</h2>
-        <button
-          onClick={exportToCSV}
-          className="flex items-center px-4 py-2 text-sm font-medium text-white bg-pink-600 hover:bg-pink-700 rounded-md shadow-sm"
-        >
-          <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          Export Data
-        </button>
+        {exportData && (
+          <ExportButton activeTab="demographics" tabData={exportData} />
+        )}
       </div>
+
+      {/* Product Insights Section */}
+      {showProductInsights && (
+        <div className={`mb-6 p-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow`}>
+          <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Product Insights</h3>
+          
+          {/* Product Ratings */}
+          {productRatings.length > 0 && (
+            <div className="mb-6">
+              <h4 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Average Star Ratings
+              </h4>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Ratings Chart */}
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={productRatings}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 100 }}
+                      barCategoryGap="20%"
+                    >
+                      <CartesianGrid 
+                        strokeDasharray="3 3" 
+                        stroke={darkMode ? '#374151' : '#e5e7eb'}
+                        strokeOpacity={0.6}
+                      />
+                      <XAxis 
+                        dataKey="displayName"
+                        angle={-45}
+                        textAnchor="end"
+                        height={100}
+                        interval={0}
+                        tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 11 }}
+                        axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                        tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                      />
+                      <YAxis 
+                        domain={[0, 5]}
+                        tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 12 }}
+                        axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                        tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                        label={{ 
+                          value: 'Rating (1-5 stars)', 
+                          angle: -90, 
+                          position: 'insideLeft',
+                          style: { textAnchor: 'middle', fill: darkMode ? '#d1d5db' : '#374151' }
+                        }}
+                      />
+                      <Tooltip 
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-4 border shadow-lg rounded-lg`}>
+                                <p className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                <p className={`text-sm ${darkMode ? 'text-yellow-400' : 'text-yellow-600'} font-medium`}>
+                                  ⭐ {data.avgRating?.toFixed(2)} stars
+                                </p>
+                                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+                                  Based on {data.ratingResponses} responses
+                                </p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Bar 
+                        dataKey="avgRating" 
+                        name="Average Rating" 
+                        fill={darkMode ? '#fbbf24' : '#f59e0b'}
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                
+                {/* Ratings Table */}
+                <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg max-h-80 overflow-y-auto`}>
+                  <table className={`min-w-full divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                    <thead className={darkMode ? 'bg-gray-800' : 'bg-gray-50'}>
+                      <tr>
+                        <th scope="col" className={`px-4 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>
+                          Product
+                        </th>
+                        <th scope="col" className={`px-4 py-3 text-center text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>
+                          Rating
+                        </th>
+                        <th scope="col" className={`px-4 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>
+                          Responses
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
+                      {productRatings.map((product, index) => (
+                        <tr key={index}>
+                          <td className={`px-4 py-4 text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            <button
+                              onClick={() => handleProductClick(product)}
+                              className={`text-left hover:underline focus:outline-none focus:underline transition-colors duration-150 ${
+                                selectedProduct === product.displayName 
+                                  ? darkMode ? 'text-pink-400' : 'text-pink-600'
+                                  : darkMode ? 'text-white hover:text-gray-300' : 'text-gray-900 hover:text-gray-700'
+                              }`}
+                            >
+                              {product.displayName}
+                            </button>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <StarRating 
+                              rating={product.avgRating} 
+                              size="sm" 
+                              showValue={true}
+                              showCount={false}
+                            />
+                          </td>
+                          <td className={`px-4 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>
+                            {product.ratingResponses}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Repurchase Intent */}
+          {repurchaseIntent.length > 0 && (
+            <div className="mb-6">
+              <h4 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Repurchase Intent
+              </h4>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Repurchase Intent Chart */}
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={repurchaseIntent}
+                      margin={{ top: 20, right: 30, left: 30, bottom: 100 }}
+                      barCategoryGap="20%"
+                    >
+                      <CartesianGrid 
+                        strokeDasharray="3 3" 
+                        stroke={darkMode ? '#374151' : '#e5e7eb'}
+                        strokeOpacity={0.6}
+                      />
+                      <XAxis 
+                        dataKey="displayName"
+                        angle={-45}
+                        textAnchor="end"
+                        height={100}
+                        interval={0}
+                        tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 11 }}
+                        axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                        tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                      />
+                      <YAxis 
+                        domain={[0, 100]}
+                        tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 12 }}
+                        axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                        tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                        label={{ 
+                          value: 'Repurchase Intent (%)', 
+                          angle: -90, 
+                          position: 'insideLeft',
+                          style: { textAnchor: 'middle', fill: darkMode ? '#d1d5db' : '#374151' }
+                        }}
+                      />
+                      <Tooltip 
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-4 border shadow-lg rounded-lg`}>
+                                <p className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                <p className={`text-sm font-medium ${
+                                  data.repurchaseIntentRate >= 70 
+                                    ? `${darkMode ? 'text-green-400' : 'text-green-600'}` 
+                                    : data.repurchaseIntentRate >= 50 
+                                    ? `${darkMode ? 'text-yellow-400' : 'text-yellow-600'}` 
+                                    : `${darkMode ? 'text-red-400' : 'text-red-600'}`
+                                }`}>
+                                  📈 {data.repurchaseIntentRate?.toFixed(1)}% Intent
+                                </p>
+                                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+                                  Based on {data.repurchaseResponses} responses
+                                </p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Bar 
+                        dataKey="repurchaseIntentRate" 
+                        name="Repurchase Intent %" 
+                        fill={darkMode ? '#10b981' : '#059669'}
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                
+                {/* Repurchase Intent Table */}
+                <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg max-h-80 overflow-y-auto`}>
+                  <table className={`min-w-full divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                    <thead className={darkMode ? 'bg-gray-800' : 'bg-gray-50'}>
+                      <tr>
+                        <th scope="col" className={`px-4 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>
+                          Product
+                        </th>
+                        <th scope="col" className={`px-4 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>
+                          Intent %
+                        </th>
+                        <th scope="col" className={`px-4 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>
+                          Responses
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
+                      {repurchaseIntent.map((product, index) => (
+                        <tr key={index}>
+                          <td className={`px-4 py-4 text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            <button
+                              onClick={() => handleProductClick(product)}
+                              className={`text-left hover:underline focus:outline-none focus:underline transition-colors duration-150 ${
+                                selectedProduct === product.displayName 
+                                  ? darkMode ? 'text-pink-400' : 'text-pink-600'
+                                  : darkMode ? 'text-white hover:text-gray-300' : 'text-gray-900 hover:text-gray-700'
+                              }`}
+                            >
+                              {product.displayName}
+                            </button>
+                          </td>
+                          <td className={`px-4 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              product.repurchaseIntentRate >= 70 
+                                ? `${darkMode ? 'bg-green-900 text-green-300' : 'bg-green-100 text-green-800'}` 
+                                : product.repurchaseIntentRate >= 50 
+                                ? `${darkMode ? 'bg-yellow-900 text-yellow-300' : 'bg-yellow-100 text-yellow-800'}` 
+                                : `${darkMode ? 'bg-red-900 text-red-300' : 'bg-red-100 text-red-800'}`
+                            }`}>
+                              {product.repurchaseIntentRate?.toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className={`px-4 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>
+                            {product.repurchaseResponses}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Explanation */}
+          <div className={`${darkMode ? 'bg-blue-900 border-blue-800' : 'bg-blue-50 border-blue-200'} p-4 rounded-lg border`}>
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className={`h-5 w-5 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className={`text-sm font-medium ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>About Product Insights</h3>
+                <div className={`mt-2 text-sm ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
+                  <p>
+                    <strong>Star Ratings:</strong> Average ratings from the 'rating' field (1-5 stars).
+                  </p>
+                  <p className="mt-1">
+                    <strong>Repurchase Intent:</strong> Percentage of customers who answered "Yes, definitely" or "Yes, why not" 
+                    to the repurchase question.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product-Specific Demographics Section */}
+      {selectedProduct && (
+        <div className={`mb-6 p-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow`}>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className={`text-lg font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              Demographics for "{selectedProduct}"
+            </h3>
+            <button
+              onClick={clearProductSelection}
+              className={`px-3 py-1 text-sm rounded-md transition-colors duration-150 ${
+                darkMode 
+                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Clear Selection
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Gender Breakdown */}
+            <div>
+              <h4 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Gender Distribution
+              </h4>
+              {productDemographics.gender.length > 0 ? (
+                <div className="grid grid-cols-1 gap-4">
+                  {/* Gender Chart */}
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={productDemographics.gender}
+                        margin={{ top: 20, right: 30, left: 30, bottom: 40 }}
+                        barCategoryGap="20%"
+                      >
+                        <CartesianGrid 
+                          strokeDasharray="3 3" 
+                          stroke={darkMode ? '#374151' : '#e5e7eb'}
+                          strokeOpacity={0.6}
+                        />
+                        <XAxis 
+                          dataKey="name" 
+                          tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 12 }}
+                          axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                          tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                        />
+                        <YAxis 
+                          tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 12 }}
+                          axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                          tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                          label={{ 
+                            value: 'Count', 
+                            angle: -90, 
+                            position: 'insideLeft',
+                            style: { textAnchor: 'middle', fill: darkMode ? '#d1d5db' : '#374151' }
+                          }}
+                        />
+                        <Tooltip 
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              return (
+                                <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-4 border shadow-lg rounded-lg`}>
+                                  <p className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                  <p className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'} font-medium`}>
+                                    👥 {payload[0].value} customers
+                                  </p>
+                                  <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+                                    {payload[0].payload.percentage}% of total
+                                  </p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Bar dataKey="value" name="Count">
+                          {productDemographics.gender.map((entry, index) => (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={darkMode ? DARK_COLORS[index % DARK_COLORS.length] : LIGHT_COLORS[index % LIGHT_COLORS.length]}
+                              radius={[4, 4, 0, 0]}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  {/* Gender Table */}
+                  <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg`}>
+                    <table className={`min-w-full divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                      <thead className={darkMode ? 'bg-gray-800' : 'bg-gray-50'}>
+                        <tr>
+                          <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Gender</th>
+                          <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Count</th>
+                          <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
+                        {productDemographics.gender.map((item, index) => (
+                          <tr key={index}>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                              <div className="flex items-center">
+                                <div 
+                                  className="h-3 w-3 rounded-full mr-2" 
+                                  style={{ 
+                                    backgroundColor: darkMode 
+                                      ? DARK_COLORS[index % DARK_COLORS.length] 
+                                      : LIGHT_COLORS[index % LIGHT_COLORS.length] 
+                                  }}
+                                ></div>
+                                {item.name}
+                              </div>
+                            </td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{item.value}</td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{item.percentage}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg flex items-center justify-center h-20`}>
+                  <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No gender data available for this product</p>
+                </div>
+              )}
+            </div>
+
+            {/* Age Breakdown */}
+            <div>
+              <h4 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Age Distribution
+              </h4>
+              {productDemographics.age.length > 0 ? (
+                <div className="grid grid-cols-1 gap-4">
+                  {/* Age Chart */}
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={productDemographics.age}
+                        margin={{ top: 20, right: 30, left: 30, bottom: 40 }}
+                        barCategoryGap="15%"
+                      >
+                        <CartesianGrid 
+                          strokeDasharray="3 3" 
+                          stroke={darkMode ? '#374151' : '#e5e7eb'}
+                          strokeOpacity={0.6}
+                        />
+                        <XAxis 
+                          dataKey="name" 
+                          tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 11 }}
+                          axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                          tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                        />
+                        <YAxis 
+                          tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 12 }}
+                          axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                          tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                          label={{ 
+                            value: 'Count', 
+                            angle: -90, 
+                            position: 'insideLeft',
+                            style: { textAnchor: 'middle', fill: darkMode ? '#d1d5db' : '#374151' }
+                          }}
+                        />
+                        <Tooltip 
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              return (
+                                <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-4 border shadow-lg rounded-lg`}>
+                                  <p className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                  <p className={`text-sm ${darkMode ? 'text-purple-400' : 'text-purple-600'} font-medium`}>
+                                    🎂 {payload[0].value} customers
+                                  </p>
+                                  <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+                                    {payload[0].payload.percentage}% of total
+                                  </p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Bar dataKey="value" name="Count">
+                          {productDemographics.age.map((entry, index) => (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={darkMode ? DARK_COLORS[(index + 4) % DARK_COLORS.length] : LIGHT_COLORS[(index + 4) % LIGHT_COLORS.length]}
+                              radius={[4, 4, 0, 0]}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  {/* Age Table */}
+                  <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg`}>
+                    <table className={`min-w-full divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                      <thead className={darkMode ? 'bg-gray-800' : 'bg-gray-50'}>
+                        <tr>
+                          <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Age Group</th>
+                          <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Count</th>
+                          <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider`}>Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
+                        {productDemographics.age.map((item, index) => (
+                          <tr key={index}>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                              <div className="flex items-center">
+                                <div 
+                                  className="h-3 w-3 rounded-full mr-2" 
+                                  style={{ 
+                                    backgroundColor: darkMode 
+                                      ? DARK_COLORS[(index + 4) % DARK_COLORS.length] 
+                                      : LIGHT_COLORS[(index + 4) % LIGHT_COLORS.length] 
+                                  }}
+                                ></div>
+                                {item.name}
+                              </div>
+                            </td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{item.value}</td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{item.percentage}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg flex items-center justify-center h-20`}>
+                  <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No age data available for this product</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       {availableQuestions.length > 0 && (
         <div className={`mb-6 p-4 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded-lg`}>
@@ -543,30 +1211,55 @@ const DemographicsTab = ({ isSharedView }) => {
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart
                               data={responseByGender}
-                              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                              margin={{ top: 20, right: 30, left: 30, bottom: 40 }}
+                              barCategoryGap="20%"
                             >
                               <CartesianGrid 
                                 strokeDasharray="3 3" 
-                                stroke={darkMode ? '#444444' : '#e5e5e5'} 
+                                stroke={darkMode ? '#374151' : '#e5e7eb'}
+                                strokeOpacity={0.6}
                               />
                               <XAxis 
                                 dataKey="name" 
-                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
-                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                                tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 12 }}
+                                axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                                tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
                               />
                               <YAxis 
-                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
-                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                                tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 12 }}
+                                axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                                tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                                label={{ 
+                                  value: 'Count', 
+                                  angle: -90, 
+                                  position: 'insideLeft',
+                                  style: { textAnchor: 'middle', fill: darkMode ? '#d1d5db' : '#374151' }
+                                }}
                               />
-                              <Tooltip content={<CustomTooltip />} />
-                              <Legend 
-                                wrapperStyle={{ color: darkMode ? '#e5e5e5' : '#333333' }} 
+                              <Tooltip 
+                                content={({ active, payload, label }) => {
+                                  if (active && payload && payload.length) {
+                                    return (
+                                      <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-4 border shadow-lg rounded-lg`}>
+                                        <p className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                        <p className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'} font-medium`}>
+                                          👥 {payload[0].value} respondents
+                                        </p>
+                                        <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+                                          {((payload[0].value / payload[0].payload.total) * 100).toFixed(1)}% of total
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                }}
                               />
                               <Bar dataKey="value" name="Count">
                                 {responseByGender.map((entry, index) => (
                                   <Cell 
                                     key={`cell-${index}`} 
-                                    fill={darkMode ? DARK_COLORS[index % DARK_COLORS.length] : LIGHT_COLORS[index % LIGHT_COLORS.length]} 
+                                    fill={darkMode ? DARK_COLORS[index % DARK_COLORS.length] : LIGHT_COLORS[index % LIGHT_COLORS.length]}
+                                    radius={[4, 4, 0, 0]}
                                   />
                                 ))}
                               </Bar>
@@ -628,30 +1321,58 @@ const DemographicsTab = ({ isSharedView }) => {
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart
                               data={responseByAge}
-                              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                              margin={{ top: 20, right: 30, left: 30, bottom: 40 }}
+                              barCategoryGap="15%"
                             >
                               <CartesianGrid 
                                 strokeDasharray="3 3" 
-                                stroke={darkMode ? '#444444' : '#e5e5e5'} 
+                                stroke={darkMode ? '#374151' : '#e5e7eb'}
+                                strokeOpacity={0.6}
                               />
                               <XAxis 
                                 dataKey="name" 
-                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
-                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                                tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 11 }}
+                                axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                                tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                                angle={-45}
+                                textAnchor="end"
+                                height={60}
                               />
                               <YAxis 
-                                tick={{ fill: darkMode ? '#e5e5e5' : '#333333' }}
-                                axisLine={{ stroke: darkMode ? '#555555' : '#333333' }}
+                                tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 12 }}
+                                axisLine={{ stroke: darkMode ? '#6b7280' : '#374151', strokeWidth: 1 }}
+                                tickLine={{ stroke: darkMode ? '#6b7280' : '#374151' }}
+                                label={{ 
+                                  value: 'Count', 
+                                  angle: -90, 
+                                  position: 'insideLeft',
+                                  style: { textAnchor: 'middle', fill: darkMode ? '#d1d5db' : '#374151' }
+                                }}
                               />
-                              <Tooltip content={<CustomTooltip />} />
-                              <Legend 
-                                wrapperStyle={{ color: darkMode ? '#e5e5e5' : '#333333' }} 
+                              <Tooltip 
+                                content={({ active, payload, label }) => {
+                                  if (active && payload && payload.length) {
+                                    return (
+                                      <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-4 border shadow-lg rounded-lg`}>
+                                        <p className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                        <p className={`text-sm ${darkMode ? 'text-purple-400' : 'text-purple-600'} font-medium`}>
+                                          🎂 {payload[0].value} respondents
+                                        </p>
+                                        <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+                                          {((payload[0].value / payload[0].payload.total) * 100).toFixed(1)}% of total
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                }}
                               />
                               <Bar dataKey="value" name="Count">
                                 {responseByAge.map((entry, index) => (
                                   <Cell 
                                     key={`cell-${index}`} 
-                                    fill={darkMode ? DARK_COLORS[(index + 4) % DARK_COLORS.length] : LIGHT_COLORS[(index + 4) % LIGHT_COLORS.length]} 
+                                    fill={darkMode ? DARK_COLORS[(index + 4) % DARK_COLORS.length] : LIGHT_COLORS[(index + 4) % LIGHT_COLORS.length]}
+                                    radius={[4, 4, 0, 0]}
                                   />
                                 ))}
                               </Bar>

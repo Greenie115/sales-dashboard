@@ -710,7 +710,7 @@ const OffersTab = ({ isSharedView }) => {
       {/* Offer selection */}
       <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-4 rounded-lg mb-6`}>
         <h3 className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Filter by Offer</h3>
-        <div className="flex flex-wrap gap-2 mt-2 max-h-40 overflow-y-auto">
+        <div className="flex flex-wrap gap-2 mt-2 max-h-48 overflow-y-auto p-2 border border-gray-200 dark:border-gray-600 rounded-md">
           <button
             onClick={() => handleOfferSelection('all')}
             className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${

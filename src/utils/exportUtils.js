@@ -113,52 +113,73 @@ const exportDemographicDataToCSV = (data, fileName) => {
   
   let csvContent = 'Demographics Analysis Report\n\n';
   
-  // Export age distribution data
-  if (data.ageDistribution && data.ageDistribution.length > 0) {
-    csvContent += 'Age Distribution\n';
-    csvContent += 'Age Group,Count,Percentage\n';
+  // Add question information if available
+  if (data.questionNumber && data.questionText) {
+    csvContent += `Question ${parseInt(data.questionNumber)}: ${data.questionText}\n\n`;
+  }
+  
+  // Export product ratings if available
+  if (data.productRatings && data.productRatings.length > 0) {
+    csvContent += 'Product Ratings\n';
+    csvContent += 'Product,Average Rating,Responses\n';
     
-    // Calculate total for percentage
-    const totalAge = data.ageDistribution.reduce((sum, item) => sum + item.count, 0);
-    
-    // Sort by defined age group order if available
-    const sortedAgeData = [...data.ageDistribution].sort((a, b) => {
-      const aIndex = AGE_GROUP_ORDER.indexOf(a.ageGroup);
-      const bIndex = AGE_GROUP_ORDER.indexOf(b.ageGroup);
-      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-      if (aIndex !== -1) return -1;
-      if (bIndex !== -1) return 1;
-      return a.ageGroup.localeCompare(b.ageGroup);
-    });
-    
-    sortedAgeData.forEach(item => {
-      const percentage = ((item.count / totalAge) * 100).toFixed(1);
-      csvContent += `${item.ageGroup},${item.count},${percentage}%\n`;
+    data.productRatings.forEach(item => {
+      const productName = `"${item.displayName.replace(/"/g, '""')}"`;
+      csvContent += `${productName},${item.avgRating.toFixed(2)},${item.ratingResponses}\n`;
     });
     
     csvContent += '\n';
   }
   
-  // Add gender data
-  if (data.genderData && data.genderData.length > 0) {
-    csvContent += 'Gender Distribution\n';
-    csvContent += 'Gender,Count,Percentage\n';
+  // Export repurchase intent if available
+  if (data.repurchaseIntent && data.repurchaseIntent.length > 0) {
+    csvContent += 'Repurchase Intent\n';
+    csvContent += 'Product,Intent %,Responses\n';
     
-    data.genderData.forEach(item => {
-      csvContent += `${item.name},${item.value},${item.percentage}%\n`;
+    data.repurchaseIntent.forEach(item => {
+      const productName = `"${item.displayName.replace(/"/g, '""')}"`;
+      csvContent += `${productName},${item.repurchaseIntentRate.toFixed(1)}%,${item.repurchaseResponses}\n`;
     });
     
     csvContent += '\n';
   }
   
-  // Add response data
-  if (data.responseData && data.responseData.length > 0) {
+  // Add response data if available
+  if (data.responses && data.responses.length > 0) {
     csvContent += 'Response Analysis\n';
     csvContent += 'Response,Count,Percentage\n';
     
-    data.responseData.forEach(item => {
-      const formattedResponse = `"${item.response.replace(/"/g, '""')}"`;
+    data.responses.forEach(item => {
+      const formattedResponse = `"${item.fullResponse.replace(/"/g, '""')}"`;
       csvContent += `${formattedResponse},${item.count},${item.percentage}%\n`;
+    });
+    
+    csvContent += '\n';
+  }
+  
+  // Add gender breakdown if available
+  if (data.genderBreakdown && data.genderBreakdown.length > 0) {
+    csvContent += 'Gender Breakdown\n';
+    csvContent += 'Gender,Count,Percentage\n';
+    
+    const total = data.genderBreakdown.reduce((sum, item) => sum + item.value, 0);
+    data.genderBreakdown.forEach(item => {
+      const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
+      csvContent += `"${item.name}",${item.value},${percentage}%\n`;
+    });
+    
+    csvContent += '\n';
+  }
+  
+  // Add age breakdown if available
+  if (data.ageBreakdown && data.ageBreakdown.length > 0) {
+    csvContent += 'Age Breakdown\n';
+    csvContent += 'Age Group,Count,Percentage\n';
+    
+    const total = data.ageBreakdown.reduce((sum, item) => sum + item.value, 0);
+    data.ageBreakdown.forEach(item => {
+      const percentage = total > 0 ? (item.value / total * 100).toFixed(1) : "0.0";
+      csvContent += `"${item.name}",${item.value},${percentage}%\n`;
     });
   }
   
@@ -290,7 +311,6 @@ const exportSalesDataToPDF = (data, fileName) => {
  */
 const exportDemographicDataToPDF = (data, fileName) => {
   try {
-    const { genderData, ageDistribution, responseData } = data;
     const doc = new jsPDF();
     
     // Add title
@@ -303,52 +323,105 @@ const exportDemographicDataToPDF = (data, fileName) => {
     
     let yPosition = 40;
     
-    // Add age distribution table
-    if (ageDistribution && ageDistribution.length > 0) {
+    // Add question information if available
+    if (data.questionNumber && data.questionText) {
       doc.setFontSize(14);
-      doc.text('Age Distribution', 14, yPosition);
+      doc.text(`Question ${parseInt(data.questionNumber)}: ${data.questionText}`, 14, yPosition);
+      yPosition += 20;
+    }
+    
+    // Add product ratings table
+    if (data.productRatings && data.productRatings.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Product Ratings', 14, yPosition);
       yPosition += 10;
       
-      // Calculate total for percentage
-      const totalAge = ageDistribution.reduce((sum, item) => sum + item.count, 0);
-      
-      // Sort by defined age group order if available
-      const sortedAgeData = [...ageDistribution].sort((a, b) => {
-        const aIndex = AGE_GROUP_ORDER.indexOf(a.ageGroup);
-        const bIndex = AGE_GROUP_ORDER.indexOf(b.ageGroup);
-        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-        if (aIndex !== -1) return -1;
-        if (bIndex !== -1) return 1;
-        return a.ageGroup.localeCompare(b.ageGroup);
-      });
-      
-      const ageTableData = sortedAgeData.map(item => [
-        item.ageGroup,
-        item.count.toString(),
-        `${((item.count / totalAge) * 100).toFixed(1)}%`
+      const ratingsTableData = data.productRatings.map(item => [
+        item.displayName,
+        item.avgRating.toFixed(2),
+        item.ratingResponses.toString()
       ]);
       
       doc.autoTable({
         startY: yPosition,
-        head: [['Age Group', 'Count', 'Percentage']],
-        body: ageTableData,
+        head: [['Product', 'Avg Rating', 'Responses']],
+        body: ratingsTableData,
         theme: 'striped',
-        headStyles: { fillColor: [255, 0, 102] }
+        headStyles: { fillColor: [255, 193, 7] }
       });
       
       yPosition = doc.lastAutoTable.finalY + 20;
     }
     
-    // Add gender distribution table
-    if (genderData && genderData.length > 0) {
+    // Add repurchase intent table
+    if (data.repurchaseIntent && data.repurchaseIntent.length > 0) {
       doc.setFontSize(14);
-      doc.text('Gender Distribution', 14, yPosition);
+      doc.text('Repurchase Intent', 14, yPosition);
       yPosition += 10;
       
-      const genderTableData = genderData.map(item => [
+      const intentTableData = data.repurchaseIntent.map(item => [
+        item.displayName,
+        `${item.repurchaseIntentRate.toFixed(1)}%`,
+        item.repurchaseResponses.toString()
+      ]);
+      
+      doc.autoTable({
+        startY: yPosition,
+        head: [['Product', 'Intent %', 'Responses']],
+        body: intentTableData,
+        theme: 'striped',
+        headStyles: { fillColor: [16, 185, 129] }
+      });
+      
+      yPosition = doc.lastAutoTable.finalY + 20;
+    }
+    
+    // Add response data
+    if (data.responses && data.responses.length > 0) {
+      // Check if we need to start a new page for the response table
+      if (yPosition > 180) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      doc.setFontSize(14);
+      doc.text('Response Analysis', 14, yPosition);
+      yPosition += 10;
+      
+      const responseTableData = data.responses.map(item => [
+        item.fullResponse,
+        item.count.toString(),
+        `${item.percentage}%`
+      ]);
+      
+      doc.autoTable({
+        startY: yPosition,
+        head: [['Response', 'Count', 'Percentage']],
+        body: responseTableData,
+        theme: 'striped',
+        headStyles: { fillColor: [156, 39, 176] }
+      });
+      
+      yPosition = doc.lastAutoTable.finalY + 20;
+    }
+    
+    // Add gender breakdown table
+    if (data.genderBreakdown && data.genderBreakdown.length > 0) {
+      // Check if we need to start a new page
+      if (yPosition > 200) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      doc.setFontSize(14);
+      doc.text('Gender Breakdown', 14, yPosition);
+      yPosition += 10;
+      
+      const total = data.genderBreakdown.reduce((sum, item) => sum + item.value, 0);
+      const genderTableData = data.genderBreakdown.map(item => [
         item.name,
         item.value.toString(),
-        `${item.percentage}%`
+        `${total > 0 ? (item.value / total * 100).toFixed(1) : "0.0"}%`
       ]);
       
       doc.autoTable({
@@ -362,30 +435,31 @@ const exportDemographicDataToPDF = (data, fileName) => {
       yPosition = doc.lastAutoTable.finalY + 20;
     }
     
-    // Add response data
-    if (responseData && responseData.length > 0) {
-      // Check if we need to start a new page for the response table
-      if (yPosition > 180) {
+    // Add age breakdown table
+    if (data.ageBreakdown && data.ageBreakdown.length > 0) {
+      // Check if we need to start a new page
+      if (yPosition > 200) {
         doc.addPage();
         yPosition = 20;
       }
       
       doc.setFontSize(14);
-      doc.text('Response Analysis', 14, yPosition);
+      doc.text('Age Breakdown', 14, yPosition);
       yPosition += 10;
       
-      const responseTableData = responseData.map(item => [
-        item.response,
-        item.count.toString(),
-        `${item.percentage}%`
+      const total = data.ageBreakdown.reduce((sum, item) => sum + item.value, 0);
+      const ageTableData = data.ageBreakdown.map(item => [
+        item.name,
+        item.value.toString(),
+        `${total > 0 ? (item.value / total * 100).toFixed(1) : "0.0"}%`
       ]);
       
       doc.autoTable({
         startY: yPosition,
-        head: [['Response', 'Count', 'Percentage']],
-        body: responseTableData,
+        head: [['Age Group', 'Count', 'Percentage']],
+        body: ageTableData,
         theme: 'striped',
-        headStyles: { fillColor: [156, 39, 176] }
+        headStyles: { fillColor: [255, 0, 102] }
       });
     }
     

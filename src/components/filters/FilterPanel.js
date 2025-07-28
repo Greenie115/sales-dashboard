@@ -165,7 +165,7 @@ const FilterPanel = ({ activeTab }) => {
               </div>
 
               <div className={`transition-all duration-300 overflow-hidden ${expandedSection === 'products' || expandedSection === 'all' ? 'max-h-80' : 'max-h-0'}`}>
-                <div className="flex flex-wrap gap-2 mt-2">
+                <div className="flex flex-wrap gap-2 mt-2 max-h-72 overflow-y-auto">
                   <button
                     onClick={() => handleProductSelection('all')}
                     className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
@@ -223,7 +223,7 @@ const FilterPanel = ({ activeTab }) => {
               </div>
 
               <div className={`transition-all duration-300 overflow-hidden ${expandedSection === 'retailers' || expandedSection === 'all' ? 'max-h-80' : 'max-h-0'}`}>
-                <div className="flex flex-wrap gap-2 mt-2">
+                <div className="flex flex-wrap gap-2 mt-2 max-h-72 overflow-y-auto">
                   <button
                     onClick={() => handleRetailerSelection('all')}
                     className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
