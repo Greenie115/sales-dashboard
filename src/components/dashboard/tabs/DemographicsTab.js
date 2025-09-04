@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useFilter } from '../../../context/FilterContext';
 import { useTheme } from '../../../context/ThemeContext'; // ← Add this import
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { useClientData } from '../../../context/ClientDataContext';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { calculateProductRatings, calculateRepurchaseIntent, filterSalesData } from '../../../utils/dataProcessing';
 import StarRating from '../../common/StarRating';
 import ExportButton from '../export/ExportButton';
+import CalculationErrorBoundary from '../../common/CalculationErrorBoundary';
 
 // Custom colors for light and dark mode
 const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
@@ -23,59 +23,159 @@ const AGE_GROUP_ORDER = [
   'Under 18'
 ];
 
-// Custom tooltip for bar charts with dark mode support
-const CustomTooltip = ({ active, payload, label }) => {
-  // Get darkMode from ThemeContext, not DataContext
-  const { darkMode } = useTheme();
-  
-  if (active && payload && payload.length) {
-    return (
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} p-3 border shadow-md rounded`}>
-        <p className={`text-sm font-medium ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{`${label}`}</p>
-        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{`Count: ${payload[0].value}`}</p>
-        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{`Percentage: ${((payload[0].value / payload[0].payload.total) * 100).toFixed(1)}%`}</p>
-      </div>
-    );
-  }
-  return null;
-};
 
 const DemographicsTab = ({ isSharedView }) => {
-  // Get data from either ClientDataContext or DataContext
-  const clientData = useClientData();
+  // Get data contexts
   const dataContext = useData();
   const filterContext = useFilter(); // Get filter context
-  const contextData = isSharedView ? clientData : dataContext;
   const { 
     salesData,
-    filteredData: directFilteredData,
-    brandMapping = {}
-  } = contextData;
+    brandMapping = {},
+    campaigns,
+    comparisonSettings,
+    canCompare
+  } = dataContext;
   
   const { darkMode } = useTheme();
   
+  // Get active dataset for primary analysis
+  const activeDataset = useMemo(() => {
+    if (comparisonSettings?.mode === 'campaigns' && canCompare) {
+      return campaigns[comparisonSettings.primaryDataset]?.data || [];
+    }
+    return salesData || [];
+  }, [salesData, campaigns, comparisonSettings, canCompare]);
+
+  // Get comparison dataset
+  const comparisonDataset = useMemo(() => {
+    if (comparisonSettings?.mode === 'campaigns' && canCompare) {
+      const otherCampaign = comparisonSettings.primaryDataset === 'A' ? 'B' : 'A';
+      return campaigns[otherCampaign]?.data || [];
+    }
+    return [];
+  }, [campaigns, comparisonSettings, canCompare]);
+
   // Calculate filteredData using useMemo to respect filters
   const filteredData = useMemo(() => {
     try {
-      if (isSharedView && directFilteredData && Array.isArray(directFilteredData) && directFilteredData.length > 0) {
-        return directFilteredData; // Use snapshot data for shared view
-      }
-      
-      // For non-shared view, apply filters to raw salesData
-      if (!salesData || !Array.isArray(salesData) || salesData.length === 0) {
+      if (!activeDataset || !Array.isArray(activeDataset) || activeDataset.length === 0) {
         return [];
       }
       
-      if (!filterContext) {
-        return salesData; // If no filter context, return raw data
+      if (!filterContext || !filterContext.filters) {
+        return activeDataset; // If no filter context, return raw data
       }
       
-      return filterSalesData(salesData, filterContext);
+      return filterSalesData(activeDataset, filterContext.filters);
     } catch (error) {
       console.error('Error filtering demographics data:', error);
-      return salesData || [];
+      return activeDataset || [];
     }
-  }, [isSharedView, directFilteredData, salesData, filterContext]);
+  }, [activeDataset, filterContext]);
+
+  // Calculate filtered comparison data
+  const filteredComparisonData = useMemo(() => {
+    try {
+      if (!comparisonDataset || !Array.isArray(comparisonDataset) || comparisonDataset.length === 0 || comparisonSettings?.mode !== 'campaigns') {
+        return [];
+      }
+      
+      if (!filterContext || !filterContext.filters) {
+        return comparisonDataset;
+      }
+      
+      return filterSalesData(comparisonDataset, filterContext.filters);
+    } catch (error) {
+      console.error('Error filtering comparison demographics data:', error);
+      return [];
+    }
+  }, [comparisonDataset, filterContext, comparisonSettings]);
+
+  // Calculate overall demographics for comparison mode
+  const calculateOverallDemographics = (data) => {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return { gender: [], age: [] };
+    }
+
+    // Gender breakdown
+    const genderCounts = {};
+    data.forEach(row => {
+      const gender = row.gender || 'Not Specified';
+      genderCounts[gender] = (genderCounts[gender] || 0) + 1;
+    });
+
+    const totalGender = Object.values(genderCounts).reduce((sum, count) => sum + count, 0);
+    const genderData = Object.entries(genderCounts).map(([name, value]) => ({
+      name,
+      value,
+      total: totalGender,
+      percentage: totalGender > 0 ? ((value / totalGender) * 100).toFixed(1) : "0.0"
+    }));
+
+    // Age breakdown
+    const ageCounts = {};
+    data.forEach(row => {
+      const age = row.age_group || 'Not Specified';
+      let ageGroup = age;
+      
+      // If the age is a number, convert it to a group
+      if (age && !isNaN(age)) {
+        const ageNum = parseInt(age, 10);
+        if (ageNum < 18) ageGroup = 'Under 18';
+        else if (ageNum < 25) ageGroup = '16-24';
+        else if (ageNum < 35) ageGroup = '25-34';
+        else if (ageNum < 45) ageGroup = '35-44';
+        else if (ageNum < 55) ageGroup = '45-54';
+        else if (ageNum < 65) ageGroup = '55-64';
+        else ageGroup = '65+';
+      }
+      
+      ageCounts[ageGroup] = (ageCounts[ageGroup] || 0) + 1;
+    });
+    
+    const totalAge = Object.values(ageCounts).reduce((sum, count) => sum + count, 0);
+    const ageData = Object.entries(ageCounts).map(([name, value]) => ({
+      name,
+      value,
+      total: totalAge,
+      percentage: totalAge > 0 ? ((value / totalAge) * 100).toFixed(1) : "0.0"
+    }));
+    
+    // Sort age groups in logical order
+    ageData.sort((a, b) => {
+      const aIndex = AGE_GROUP_ORDER.indexOf(a.name);
+      const bIndex = AGE_GROUP_ORDER.indexOf(b.name);
+      
+      if (aIndex !== -1 && bIndex !== -1) {
+        return aIndex - bIndex;
+      }
+      
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      
+      return a.name.localeCompare(b.name);
+    });
+
+    return { gender: genderData, age: ageData };
+  };
+
+  // Calculate comparison demographics
+  const primaryDemographics = useMemo(() => {
+    return calculateOverallDemographics(filteredData);
+  }, [filteredData]);
+  
+  const comparisonDemographics = useMemo(() => {
+    return calculateOverallDemographics(filteredComparisonData);
+  }, [filteredComparisonData]);
+
+  // Campaign labels
+  const campaignLabels = useMemo(() => {
+    if (!comparisonSettings || !campaigns) return { primary: '', comparison: '' };
+    return {
+      primary: campaigns[comparisonSettings.primaryDataset]?.name || `Campaign ${comparisonSettings.primaryDataset}`,
+      comparison: campaigns[comparisonSettings.primaryDataset === 'A' ? 'B' : 'A']?.name || `Campaign ${comparisonSettings.primaryDataset === 'A' ? 'B' : 'A'}`
+    };
+  }, [campaigns, comparisonSettings]);
   
   // Use direct data in shared view
   // const dataToUse = isSharedView && directFilteredData ? directFilteredData : salesData;
@@ -424,6 +524,7 @@ const DemographicsTab = ({ isSharedView }) => {
     }
   };
 
+
   // Calculate demographics for a specific product
   const calculateProductDemographics = (productName) => {
     if (!filteredData || filteredData.length === 0 || !productName) {
@@ -568,6 +669,175 @@ const DemographicsTab = ({ isSharedView }) => {
           <ExportButton activeTab="demographics" tabData={exportData} />
         )}
       </div>
+
+      {/* Campaign Comparison Overview */}
+      {comparisonSettings?.mode === 'campaigns' && canCompare && (
+        <div className={`mb-6 p-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow`}>
+          <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Campaign Comparison Overview</h3>
+          
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                {/* Gender Comparison */}
+                <div>
+                  <h4 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Gender Distribution Comparison
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Primary Campaign Gender */}
+                    <div>
+                      <h5 className={`text-sm font-medium mb-2 ${darkMode ? 'text-pink-400' : 'text-pink-600'}`}>
+                        {campaignLabels.primary}
+                      </h5>
+                      <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={primaryDemographics.gender} margin={{ top: 10, right: 10, left: 10, bottom: 30 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                            <XAxis 
+                              dataKey="name" 
+                              tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 10 }}
+                              angle={-45}
+                              textAnchor="end"
+                              height={40}
+                            />
+                            <YAxis tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 10 }} />
+                            <Tooltip 
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  return (
+                                    <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-2 border shadow-lg rounded-lg`}>
+                                      <p className={`text-xs font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                      <p className={`text-xs ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{payload[0].value} ({payload[0].payload.percentage}%)</p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Bar dataKey="value" fill={darkMode ? '#FF4D94' : '#FF0066'} radius={[2, 2, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                    
+                    {/* Comparison Campaign Gender */}
+                    <div>
+                      <h5 className={`text-sm font-medium mb-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                        {campaignLabels.comparison}
+                      </h5>
+                      <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={comparisonDemographics.gender} margin={{ top: 10, right: 10, left: 10, bottom: 30 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                            <XAxis 
+                              dataKey="name" 
+                              tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 10 }}
+                              angle={-45}
+                              textAnchor="end"
+                              height={40}
+                            />
+                            <YAxis tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 10 }} />
+                            <Tooltip 
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  return (
+                                    <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-2 border shadow-lg rounded-lg`}>
+                                      <p className={`text-xs font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                      <p className={`text-xs ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{payload[0].value} ({payload[0].payload.percentage}%)</p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Bar dataKey="value" fill={darkMode ? '#4D94FF' : '#0066CC'} radius={[2, 2, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Age Comparison */}
+                <div>
+                  <h4 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Age Distribution Comparison
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Primary Campaign Age */}
+                    <div>
+                      <h5 className={`text-sm font-medium mb-2 ${darkMode ? 'text-pink-400' : 'text-pink-600'}`}>
+                        {campaignLabels.primary}
+                      </h5>
+                      <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={primaryDemographics.age} margin={{ top: 10, right: 10, left: 10, bottom: 30 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                            <XAxis 
+                              dataKey="name" 
+                              tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 9 }}
+                              angle={-45}
+                              textAnchor="end"
+                              height={40}
+                            />
+                            <YAxis tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 10 }} />
+                            <Tooltip 
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  return (
+                                    <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-2 border shadow-lg rounded-lg`}>
+                                      <p className={`text-xs font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                      <p className={`text-xs ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{payload[0].value} ({payload[0].payload.percentage}%)</p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Bar dataKey="value" fill={darkMode ? '#CE93D8' : '#9C27B0'} radius={[2, 2, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                    
+                    {/* Comparison Campaign Age */}
+                    <div>
+                      <h5 className={`text-sm font-medium mb-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                        {campaignLabels.comparison}
+                      </h5>
+                      <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={comparisonDemographics.age} margin={{ top: 10, right: 10, left: 10, bottom: 30 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                            <XAxis 
+                              dataKey="name" 
+                              tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 9 }}
+                              angle={-45}
+                              textAnchor="end"
+                              height={40}
+                            />
+                            <YAxis tick={{ fill: darkMode ? '#d1d5db' : '#374151', fontSize: 10 }} />
+                            <Tooltip 
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  return (
+                                    <div className={`${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} p-2 border shadow-lg rounded-lg`}>
+                                      <p className={`text-xs font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{label}</p>
+                                      <p className={`text-xs ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{payload[0].value} ({payload[0].payload.percentage}%)</p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Bar dataKey="value" fill={darkMode ? '#81C784' : '#4CAF50'} radius={[2, 2, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+        </div>
+      )}
 
       {/* Product Insights Section */}
       {showProductInsights && (

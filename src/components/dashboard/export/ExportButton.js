@@ -1,7 +1,7 @@
 // src/components/dashboard/export/ExportButton.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../../context/DataContext';
-import { exportData } from '../../../utils/lazyExportUtils';
+import { exportToCSV } from '../../../utils/exportUtils';
 
 const ExportButton = ({ activeTab, tabData }) => {
   const { 
@@ -53,7 +53,7 @@ const ExportButton = ({ activeTab, tabData }) => {
       const fileName = createFileName();
       
       // Export data based on the selected format using lazy loading
-      await exportData(type, tabData, activeTab, fileName);
+      await exportToCSV(tabData, activeTab, fileName);
       
       setIsExporting(false);
       setShowOptions(false);

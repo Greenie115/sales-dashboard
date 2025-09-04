@@ -5,6 +5,8 @@
  * CSV formats into the standard format expected by the dashboard
  */
 
+import { safeParseDate, safeToISOString } from './dateUtils';
+
 /**
  * Common column name mappings for different CSV formats
  */
@@ -106,47 +108,17 @@ export const COLUMN_MAPPINGS = {
  * Value transformation functions
  */
 export const VALUE_TRANSFORMERS = {
-  // Date format standardization
+  // Date format standardization using robust date utils
   standardizeDate: (value) => {
     if (!value) return value;
     
-    try {
-      const date = new Date(value);
-      if (isNaN(date.getTime())) {
-        // Try common date formats
-        const formats = [
-          /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // MM/DD/YYYY
-          /^(\d{1,2})-(\d{1,2})-(\d{4})$/, // MM-DD-YYYY
-          /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, // YYYY/MM/DD
-          /^(\d{4})-(\d{1,2})-(\d{1,2})$/, // YYYY-MM-DD
-        ];
-        
-        for (const format of formats) {
-          const match = value.match(format);
-          if (match) {
-            let year, month, day;
-            if (format.source.startsWith('^(\\d{4})')) {
-              // YYYY format
-              [, year, month, day] = match;
-            } else {
-              // MM/DD format
-              [, month, day, year] = match;
-            }
-            
-            const parsedDate = new Date(year, month - 1, day);
-            if (!isNaN(parsedDate.getTime())) {
-              return parsedDate.toISOString().split('T')[0];
-            }
-          }
-        }
-        
-        return value; // Return original if can't parse
-      }
-      
-      return date.toISOString().split('T')[0];
-    } catch (error) {
-      return value;
+    const parsedDate = safeParseDate(value);
+    if (parsedDate) {
+      const isoString = safeToISOString(parsedDate);
+      return isoString || value;
     }
+    
+    return value; // Return original if can't parse
   },
   
   // Numeric value cleaning

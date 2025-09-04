@@ -3,15 +3,10 @@ import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext'; // Added ThemeContext import
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, PieChart,
-  Pie, Cell, BarChart, Bar, Area, ComposedChart
+  Tooltip, Legend, ResponsiveContainer, BarChart, Bar
 } from 'recharts';
-import { useClientData } from '../../../context/ClientDataContext';
 import groupBy from 'lodash/groupBy';
 
-// Custom colors for light and dark mode
-const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];
-const DARK_COLORS = ['#FF4D94', '#4D94FF', '#FFD54F', '#4DD0E1', '#CE93D8', '#81C784', '#FFB74D'];
 
 const DEFAULT_PAGE_SIZE = 10;
 
@@ -19,22 +14,59 @@ const OffersTab = ({ isSharedView }) => {
   // Get dark mode from ThemeContext
   const { darkMode } = useTheme();
 
-  const clientData = useClientData();
   const dataContext = useData();
   const { 
     offerData: contextOfferData,
     hasOfferData: contextHasOfferData,
-    filteredData: directFilteredData
-  } = isSharedView ? clientData : dataContext;
+    campaigns,
+    comparisonSettings,
+    canCompare
+  } = dataContext;
 
-  const offerData = isSharedView ? (contextOfferData || directFilteredData) : contextOfferData;
-  const hasOfferData = isSharedView ? (offerData && offerData.length > 0) : contextHasOfferData;
+  // Get active dataset for primary analysis
+  const activeOfferData = useMemo(() => {
+    if (comparisonSettings?.mode === 'campaigns' && canCompare) {
+      return campaigns[comparisonSettings.primaryDataset]?.offerData || [];
+    }
+    return contextOfferData || [];
+  }, [contextOfferData, campaigns, comparisonSettings, canCompare]);
+
+  // Get comparison dataset
+  const comparisonOfferData = useMemo(() => {
+    if (comparisonSettings?.mode === 'campaigns' && canCompare) {
+      const otherCampaign = comparisonSettings.primaryDataset === 'A' ? 'B' : 'A';
+      return campaigns[otherCampaign]?.offerData || [];
+    }
+    return [];
+  }, [campaigns, comparisonSettings, canCompare]);
+
+  const offerData = activeOfferData;
+  const hasOfferData = contextHasOfferData;
+
+  // Campaign labels
+  const campaignLabels = useMemo(() => {
+    if (!comparisonSettings || !campaigns) return { primary: '', comparison: '' };
+    return {
+      primary: campaigns[comparisonSettings.primaryDataset]?.name || `Campaign ${comparisonSettings.primaryDataset}`,
+      comparison: campaigns[comparisonSettings.primaryDataset === 'A' ? 'B' : 'A']?.name || `Campaign ${comparisonSettings.primaryDataset === 'A' ? 'B' : 'A'}`
+    };
+  }, [campaigns, comparisonSettings]);
+
+  // Campaign metrics
+  const campaignMetrics = useMemo(() => {
+    const primaryMetrics = {
+      totalHits: activeOfferData?.length || 0,
+      uniqueOffers: activeOfferData ? [...new Set(activeOfferData.map(item => item.offer_name))].length : 0
+    };
+    
+    const comparisonMetrics = {
+      totalHits: comparisonOfferData?.length || 0,
+      uniqueOffers: comparisonOfferData ? [...new Set(comparisonOfferData.map(item => item.offer_name))].length : 0
+    };
+
+    return { primary: primaryMetrics, comparison: comparisonMetrics };
+  }, [activeOfferData, comparisonOfferData]);
   
-  console.log("OffersTab data:", {
-    isSharedView,
-    hasOfferData,
-    offerDataLength: offerData?.length
-  });
 
   // Local state
   const [selectedOffers, setSelectedOffers] = useState(['all']);
@@ -49,7 +81,7 @@ const OffersTab = ({ isSharedView }) => {
   const [endDate, setEndDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [chartType, setChartType] = useState('line');
   const [showDataPoints, setShowDataPoints] = useState(true);
   const [smoothLine, setSmoothLine] = useState(false);
@@ -324,22 +356,6 @@ const OffersTab = ({ isSharedView }) => {
     }
   }, [filteredOfferData, excludeFirstDays, excludeLastDays, excludeDaysCount, excludeLastDaysCount, customExcludedDates]);
   
-  // Gender distribution
-  const genderData = useMemo(() => {
-    const adjustedData = exclusionAdjustedData;
-    if (!adjustedData.length) return [];
-    try {
-      const genderGroups = groupBy(adjustedData.filter(item => item.gender), 'gender');
-      return Object.entries(genderGroups).map(([gender, items]) => ({
-        name: gender,
-        value: items.length,
-        percentage: (items.length / adjustedData.length) * 100
-      })).sort((a, b) => b.value - a.value);
-    } catch (err) {
-      console.error('Error calculating gender data:', err);
-      return [];
-    }
-  }, [exclusionAdjustedData]);
 
   // Age group distribution
   const ageData = useMemo(() => {
@@ -928,6 +944,7 @@ const OffersTab = ({ isSharedView }) => {
         </div>
       </div>
 
+
       {/* Main content based on insight type */}
       {insightType === 'metrics' && (
         <div>
@@ -1055,7 +1072,207 @@ const OffersTab = ({ isSharedView }) => {
         </div>
       )}
 
-      {/* Other insight type sections would go here, all with dark mode styling */}
+      {/* Offer Distribution */}
+      {insightType === 'offers' && (
+        <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm mb-6`}>
+          <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Offer Distribution</h3>
+          {offerDistribution.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={offerDistribution} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={100}
+                      interval={0}
+                      tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563', fontSize: 11 }}
+                    />
+                    <YAxis tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="value" name="Hits" fill={darkMode ? '#FF4D94' : '#FF0066'} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-gray-50'} p-4 rounded-lg max-h-80 overflow-y-auto`}>
+                <table className={`min-w-full divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                  <thead>
+                    <tr>
+                      <th className={`px-4 py-2 text-left text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase`}>Offer</th>
+                      <th className={`px-4 py-2 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase`}>Hits</th>
+                      <th className={`px-4 py-2 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase`}>%</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                    {offerDistribution.map((offer, index) => (
+                      <tr key={index}>
+                        <td className={`px-4 py-2 text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>{offer.name}</td>
+                        <td className={`px-4 py-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{offer.value}</td>
+                        <td className={`px-4 py-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{offer.percentage.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded`}>
+              <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No offer data available</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Demographics */}
+      {insightType === 'demographics' && (
+        <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm mb-6`}>
+          <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Demographics</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Age Distribution */}
+            <div>
+              <h4 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Age Groups</h4>
+              {ageData.length > 0 ? (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={ageData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
+                      <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <YAxis tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="value" name="Count" fill={darkMode ? '#CE93D8' : '#9C27B0'} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded`}>
+                  <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No age data available</p>
+                </div>
+              )}
+            </div>
+            
+            {/* Rank Distribution */}
+            <div>
+              <h4 className={`text-md font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Rank Distribution</h4>
+              {rankData.length > 0 ? (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={rankData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
+                      <XAxis dataKey="name" tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <YAxis tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="value" name="Count" fill={darkMode ? '#4DD0E1' : '#00ACC1'} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded`}>
+                  <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No rank data available</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Time Analysis */}
+      {insightType === 'time' && (
+        <div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Hour Distribution */}
+            <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm mb-6`}>
+              <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Hits by Hour of Day</h3>
+              {hourData.length > 0 ? (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={hourData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
+                      <XAxis dataKey="name" tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <YAxis tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="value" name="Hits" fill={darkMode ? '#FFB74D' : '#FF9800'} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded`}>
+                  <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No hourly data available</p>
+                </div>
+              )}
+            </div>
+            
+            {/* Day Distribution */}
+            <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm mb-6`}>
+              <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Hits by Day of Week</h3>
+              {dayData.length > 0 ? (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={dayData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
+                      <XAxis dataKey="name" tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <YAxis tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="value" name="Hits" fill={darkMode ? '#81C784' : '#4CAF50'} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded`}>
+                  <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No daily data available</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ranking Analysis */}
+      {insightType === 'ranking' && (
+        <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} p-4 border rounded-lg shadow-sm mb-6`}>
+          <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Ranking Analysis</h3>
+          {rankData.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={rankData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
+                    <XAxis dataKey="name" tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                    <YAxis tick={{ fill: darkMode ? '#E5E7EB' : '#4B5563' }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="value" name="Count" fill={darkMode ? '#4DD0E1' : '#00ACC1'} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-gray-50'} p-4 rounded-lg max-h-80 overflow-y-auto`}>
+                <table className={`min-w-full divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                  <thead>
+                    <tr>
+                      <th className={`px-4 py-2 text-left text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase`}>Rank</th>
+                      <th className={`px-4 py-2 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase`}>Hits</th>
+                      <th className={`px-4 py-2 text-right text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} uppercase`}>%</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                    {rankData.map((rank, index) => (
+                      <tr key={index}>
+                        <td className={`px-4 py-2 text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>#{rank.name}</td>
+                        <td className={`px-4 py-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{rank.value}</td>
+                        <td className={`px-4 py-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'} text-right`}>{rank.percentage.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className={`flex justify-center items-center h-64 ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} rounded`}>
+              <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No ranking data available</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

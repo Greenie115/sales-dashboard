@@ -4,14 +4,12 @@
   "private": true,
   "homepage": "https://Greenie115.github.io/sales-dashboard",
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1",
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "file-saver": "^2.0.5",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
-    "localforage": "^1.10.0",
     "lodash": "^4.17.21",
     "papaparse": "^5.5.2",
     "react": "^18.2.0",
@@ -35,7 +33,6 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "install-router": "npm install react-router-dom --save",
     "analyze": "npm run build && npx webpack-bundle-analyzer build/static/js/*.js"
   },
   "eslintConfig": {

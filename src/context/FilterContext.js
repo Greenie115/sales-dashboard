@@ -4,6 +4,7 @@ import max from 'lodash/max';
 import uniq from 'lodash/uniq';
 import { useData } from './DataContext';
 import { filterSalesData, calculateMetrics as calculateMetricsUtil, getRetailerDistribution as getRetailerDistributionUtil, getProductDistribution as getProductDistributionUtil } from '../utils/dataProcessing';
+import { safeToISOString, safeParseDate } from '../utils/dateUtils';
 
 // Create context
 const FilterContext = createContext();
@@ -45,19 +46,26 @@ export const FilterProvider = ({ children }) => {
       setEndDate(maxDate);
 
       // Initialize comparison dates too, for one month before the primary period
-      const minDateObj = new Date(minDate);
-      const maxDateObj = new Date(maxDate);
+      const minDateObj = safeParseDate(minDate);
+      const maxDateObj = safeParseDate(maxDate);
 
-      // Calculate a comparable previous period (e.g., previous month)
-      const diffDays = Math.ceil((maxDateObj - minDateObj) / (1000 * 60 * 60 * 24));
-      const compEndDate = new Date(minDateObj);
-      compEndDate.setDate(compEndDate.getDate() - 1);
+      if (minDateObj && maxDateObj) {
+        // Calculate a comparable previous period (e.g., previous month)
+        const diffDays = Math.ceil((maxDateObj - minDateObj) / (1000 * 60 * 60 * 24));
+        const compEndDate = new Date(minDateObj);
+        compEndDate.setDate(compEndDate.getDate() - 1);
 
-      const compStartDate = new Date(compEndDate);
-      compStartDate.setDate(compStartDate.getDate() - diffDays);
+        const compStartDate = new Date(compEndDate);
+        compStartDate.setDate(compStartDate.getDate() - diffDays);
 
-      setComparisonStartDate(compStartDate.toISOString().split('T')[0]);
-      setComparisonEndDate(compEndDate.toISOString().split('T')[0]);
+        const compStartIso = safeToISOString(compStartDate);
+        const compEndIso = safeToISOString(compEndDate);
+        
+        if (compStartIso && compEndIso) {
+          setComparisonStartDate(compStartIso);
+          setComparisonEndDate(compEndIso);
+        }
+      }
 
       // Set first available month
       const months = uniq(salesData.map(item => item.month)).sort();

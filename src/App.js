@@ -1,32 +1,15 @@
-import React, { Suspense, lazy } from 'react';
+import React from 'react';
 import { HashRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import { DataProvider } from './context/DataContext';
 import { ExportProvider } from './context/ExportContext';
 import { DemographicsProvider } from './context/DemographicsContext';
 import { DashboardProvider } from './context/DashboardContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { SharingProvider } from './context/SharingContext';
 import { FilterProvider } from './context/FilterContext';
 import Header from './components/dashboard/Header';
 import Footer from './components/dashboard/Footer'; 
 import MainContent from './components/dashboard/MainContent';
-import SharingModal from './components/sharing/SharingModal';
 import ErrorBoundary from './components/ErrorBoundary';
-// import ActiveTabDebugger from './components/debug/ActiveTabDebugger';
-
-// Lazy load components to improve performance
-const SharedDashboardView = lazy(() => import('./components/sharing/SharedDashboardView'));
-const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard'));
-
-// Loading fallback for lazy-loaded components
-const LoadingFallback = () => (
-  <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-    <div className="text-center">
-      <div className="inline-block w-8 h-8 border-t-2 border-b-2 border-pink-600 rounded-full animate-spin"></div>
-      <p className="mt-4 text-gray-600 dark:text-gray-300">Loading...</p>
-    </div>
-  </div>
-);
 
 function App() {
   return (
@@ -55,65 +38,29 @@ function App() {
               <ExportProvider>
                 <DemographicsProvider>
                   <DashboardProvider>
-                    <SharingProvider>
-                      <Routes>
-                        {/* Main dashboard route */}
-                        <Route path="/" element={
-                          <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
-                            <ErrorBoundary>
-                              <Header />
-                            </ErrorBoundary>
-                            <main className="flex-grow">
-                              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                                <ErrorBoundary>
-                                  <MainContent />
-                                </ErrorBoundary>
-                              </div>
-                            </main>
-                            <ErrorBoundary>
-                              <Footer />
-                            </ErrorBoundary>
-                            <ErrorBoundary>
-                              <SharingModal />
-                            </ErrorBoundary>
-                            {/* {process.env.NODE_ENV === 'development' && <ActiveTabDebugger />} */}
-                          </div>
-                        } />
-                        
-                        {/* Shared dashboard view route */}
-                        <Route path="/shared/:shareId" element={
-                          <Suspense fallback={<LoadingFallback />}>
-                            <ErrorBoundary>
-                              <SharedDashboardView />
-                            </ErrorBoundary>
-                          </Suspense>
-                        } />
-                        
-                        {/* Admin dashboard route */}
-                        <Route path="/admin" element={
-                          <Suspense fallback={<LoadingFallback />}>
-                            <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+                    <Routes>
+                      {/* Main dashboard route */}
+                      <Route path="/" element={
+                        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+                          <ErrorBoundary>
+                            <Header />
+                          </ErrorBoundary>
+                          <main className="flex-grow">
+                            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                               <ErrorBoundary>
-                                <Header />
-                              </ErrorBoundary>
-                              <main className="flex-grow">
-                                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                                  <ErrorBoundary>
-                                    <AdminDashboard />
-                                  </ErrorBoundary>
-                                </div>
-                              </main>
-                              <ErrorBoundary>
-                                <Footer />
+                                <MainContent />
                               </ErrorBoundary>
                             </div>
-                          </Suspense>
-                        } />
-                        
-                        {/* Fallback route for any unknown paths */}
-                        <Route path="*" element={<Navigate to="/" replace />} />
-                      </Routes>
-                    </SharingProvider>
+                          </main>
+                          <ErrorBoundary>
+                            <Footer />
+                          </ErrorBoundary>
+                        </div>
+                      } />
+                      
+                      {/* Fallback route for any unknown paths */}
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
                   </DashboardProvider>
                 </DemographicsProvider>
               </ExportProvider>

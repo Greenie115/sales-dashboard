@@ -1,30 +1,34 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useFilter } from '../../context/FilterContext';
-import { useTheme } from '../../context/ThemeContext'; // Added ThemeContext import
+import { useTheme } from '../../context/ThemeContext';
 import EmptyState from './EmptyState';
 import SummaryTab from './tabs/SummaryTab';
 import SalesTab from './tabs/SalesTab';
 import DemographicsTab from './tabs/DemographicsTab';
 import OffersTab from './tabs/OffersTab';
 import FilterPanel from '../filters/FilterPanel';
+import CampaignManager from './CampaignManager';
 
 /**
  * Main content area with tabs and data display
  */
 const MainContent = () => {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  
   // Get data from DataContext
   const {
-    salesData,
     offerData,
     hasOfferData,
     brandNames = [],
     clientName,
     hasData,
-    loading,
-    error,
+    dataError,
     activeTab,
-    setActiveTab
+    setActiveTab,
+    canCompare,
+    comparisonSettings,
+    setComparisonSettings
   } = useData();
 
   // Get filter-related functions from FilterContext
@@ -40,6 +44,18 @@ const MainContent = () => {
     setActiveTab(tab);
   };
 
+  // Auto-enable comparison mode when both campaigns are loaded
+  React.useEffect(() => {
+    if (canCompare && comparisonSettings.mode === 'single') {
+      setComparisonSettings({
+        ...comparisonSettings,
+        mode: 'campaigns',
+        activeDatasets: ['A', 'B']
+      });
+      setShowAdvanced(true);
+    }
+  }, [canCompare, comparisonSettings, setComparisonSettings]);
+
   // If no data is loaded, show empty state
   if (!hasData) {
     return <EmptyState />;
@@ -53,6 +69,39 @@ const MainContent = () => {
 
   return (
     <div className="space-y-6">
+      {/* Optional Advanced Features */}
+      {hasData && (
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center justify-between w-full text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
+              <div className="flex items-center">
+                <svg className="h-4 w-4 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Advanced Features & Comparison
+              </div>
+              <svg 
+                className={`h-4 w-4 transform transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+          
+          {showAdvanced && (
+            <div className="p-4">
+              <CampaignManager />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filter Panel - Appears on all tabs */}
       <FilterPanel activeTab={activeTab} />
 
@@ -148,7 +197,7 @@ const MainContent = () => {
         </div>
 
         {/* Display error if present */}
-        {error && (
+        {dataError && (
           <div className="bg-red-50 p-4 m-6 rounded-md">
             <div className="flex">
               <div className="flex-shrink-0">
@@ -159,7 +208,7 @@ const MainContent = () => {
               <div className="ml-3">
                 <h3 className="text-sm font-medium text-red-800">Error</h3>
                 <div className="mt-2 text-sm text-red-700">
-                  <p>{error}</p>
+                  <p>{dataError}</p>
                 </div>
               </div>
             </div>

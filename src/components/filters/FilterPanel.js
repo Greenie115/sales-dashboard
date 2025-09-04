@@ -4,7 +4,6 @@ import { useData } from '../../context/DataContext';
 import { useFilter } from '../../context/FilterContext';
 import { useTheme } from '../../context/ThemeContext';
 import uniq from 'lodash/uniq';
-import ClientNameEditor from '../dashboard/ClientNameEditor';
 
 /**
  * FilterPanel component for filtering data across all tabs
@@ -36,6 +35,14 @@ const FilterPanel = ({ activeTab }) => {
     setSelectedMonth,
     comparisonMode = false,
     setComparisonMode,
+    comparisonDateRange = 'custom',
+    comparisonStartDate = '',
+    comparisonEndDate = '',
+    comparisonMonth = '',
+    setComparisonDateRange,
+    setComparisonStartDate,
+    setComparisonEndDate,
+    setComparisonMonth,
     handleProductSelection,
     handleRetailerSelection,
     getAvailableMonths,
@@ -145,9 +152,6 @@ const FilterPanel = ({ activeTab }) => {
 
       {/* Filter content */}
       <div className={`transition-all duration-300 overflow-hidden ${isCollapsed ? 'max-h-0' : 'max-h-[2000px]'}`}>
-        <div className="mb-4">
-          <ClientNameEditor />
-        </div>
         <div className="p-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Product filter section */}
@@ -396,9 +400,89 @@ const FilterPanel = ({ activeTab }) => {
                       Comparison Period
                     </div>
 
-                    <div className="text-sm text-gray-600 dark:text-gray-300">
-                      Configure comparison period settings here
+                    {/* Comparison Date Range Buttons */}
+                    <div className="flex gap-2 flex-wrap mb-3">
+                      <button
+                        onClick={() => setComparisonDateRange('previous')}
+                        className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          comparisonDateRange === 'previous'
+                            ? 'bg-blue-200 dark:bg-blue-800/40 text-blue-900 dark:text-blue-200 border border-blue-300 dark:border-blue-700/50'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        Previous Period
+                      </button>
+                      <button
+                        onClick={() => setComparisonDateRange('month')}
+                        className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          comparisonDateRange === 'month'
+                            ? 'bg-blue-200 dark:bg-blue-800/40 text-blue-900 dark:text-blue-200 border border-blue-300 dark:border-blue-700/50'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        Compare Month
+                      </button>
+                      <button
+                        onClick={() => setComparisonDateRange('custom')}
+                        className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          comparisonDateRange === 'custom'
+                            ? 'bg-blue-200 dark:bg-blue-800/40 text-blue-900 dark:text-blue-200 border border-blue-300 dark:border-blue-700/50'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        Custom Dates
+                      </button>
                     </div>
+
+                    {/* Comparison Month Selector */}
+                    {comparisonDateRange === 'month' && (
+                      <select
+                        value={comparisonMonth}
+                        onChange={(e) => setComparisonMonth(e.target.value)}
+                        className="block w-full p-2 text-sm border border-blue-300 dark:border-blue-600/50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white outline-none mb-2"
+                      >
+                        <option value="">Select Comparison Month</option>
+                        {getAvailableMonths().map(month => (
+                          <option key={month} value={month}>{formatMonth(month)}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Custom Date Range Inputs */}
+                    {comparisonDateRange === 'custom' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">From</label>
+                          <input
+                            type="date"
+                            value={comparisonStartDate}
+                            onChange={(e) => setComparisonStartDate(e.target.value)}
+                            className="block w-full p-2 text-sm border border-blue-300 dark:border-blue-600/50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">To</label>
+                          <input
+                            type="date"
+                            value={comparisonEndDate}
+                            onChange={(e) => setComparisonEndDate(e.target.value)}
+                            className="block w-full p-2 text-sm border border-blue-300 dark:border-blue-600/50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white outline-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Auto Previous Period Info */}
+                    {comparisonDateRange === 'previous' && (
+                      <div className="text-sm text-blue-600 dark:text-blue-400 mt-2">
+                        <div className="flex items-center">
+                          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"></path>
+                          </svg>
+                          Automatically compares to previous equivalent period
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -440,7 +524,13 @@ const FilterPanel = ({ activeTab }) => {
 
               {comparisonMode && setComparisonMode && (
                 <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
-                  <span>Comparison Mode</span>
+                  <span>
+                    Comparison: {
+                      comparisonDateRange === 'previous' ? 'Previous Period' :
+                      comparisonDateRange === 'month' ? formatMonth(comparisonMonth) :
+                      `${comparisonStartDate} to ${comparisonEndDate}`
+                    }
+                  </span>
                   <button
                     onClick={() => setComparisonMode(false)}
                     className="ml-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"

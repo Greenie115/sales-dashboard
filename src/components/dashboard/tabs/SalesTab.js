@@ -9,17 +9,20 @@ import {
   filterSalesData,
   calculateMetrics,
   getRetailerDistribution,
-  getProductDistribution
+  getProductDistribution,
+  calculateRepurchaseIntent
 } from '../../../utils/dataProcessing'; // Import centralized functions
+import {
+  calculateMovingAverage
+} from '../../../utils/advancedAnalytics';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
   ComposedChart, Line, Area
 } from 'recharts';
-import { useClientData } from '../../../context/ClientDataContext';
+import CalculationErrorBoundary from '../../common/CalculationErrorBoundary';
 import DateExclusionPanel from '../../filters/DateExclusionPanel';
 import ChartErrorBoundary from '../../common/ChartErrorBoundary';
-import _ from 'lodash';
 
 // Custom tooltip component
 const CustomTooltip = ({ active, payload, label }) => {
@@ -49,16 +52,16 @@ const SalesTab = ({ isSharedView = false }) => {
   const [activeProduct, setActiveProduct] = useState(null);
   const [redemptionTimeframe, setRedemptionTimeframe] = useState('daily');
   const [showTrendLine, setShowTrendLine] = useState(true);
+  const [showMovingAverage, setShowMovingAverage] = useState(true);
+  const [movingAverageWindow, setMovingAverageWindow] = useState(7);
   
   // Initialize excludedDates with empty array
   const [excludedDates, setExcludedDates] = useState([]);
   
-  // Use the appropriate data context based on view mode
-  const clientData = useClientData();
+  // Use data contexts
   const dataContext = useData(); // Get raw data context
   const filterContext = useFilter(); // Get filter context
   const filterState = filterContext?.filters || {}; // Safe access to filters
-  const contextData = isSharedView ? clientData : dataContext; // Use snapshot for shared view
   
   // Get chart colors
   const colors = useChartColors();
@@ -67,33 +70,54 @@ const SalesTab = ({ isSharedView = false }) => {
   const {
     salesData: rawSalesData,
     brandMapping = {},
-    // Get snapshot data for shared view if available
-    filteredData: directFilteredData = [],
-    metrics: directMetrics = {},
-    productDistribution: directProductDistribution = [],
-    retailerDistribution: directRetailerDistribution = []
-  } = contextData || {};
+    campaigns,
+    comparisonSettings,
+    canCompare,
+    getCampaignMetadata
+  } = dataContext || {};
   
+  // Get active dataset for primary analysis
+  const activeDataset = useMemo(() => {
+    if (comparisonSettings?.mode === 'campaigns' && canCompare) {
+      return campaigns[comparisonSettings.primaryDataset]?.data || [];
+    }
+    return rawSalesData || [];
+  }, [rawSalesData, campaigns, comparisonSettings, canCompare]);
+
+  // Get comparison dataset for dual display
+  const comparisonDataset = useMemo(() => {
+    if (comparisonSettings?.mode === 'campaigns' && canCompare) {
+      const otherCampaign = comparisonSettings.primaryDataset === 'A' ? 'B' : 'A';
+      return campaigns[otherCampaign]?.data || [];
+    }
+    return [];
+  }, [campaigns, comparisonSettings, canCompare]);
+
   // Calculate filteredData using useMemo
   const filteredData = useMemo(() => {
     try {
-      if (isSharedView && directFilteredData && Array.isArray(directFilteredData) && directFilteredData.length > 0) {
-        return directFilteredData; // Use snapshot data for shared view
-      }
-      if (!rawSalesData || !Array.isArray(rawSalesData) || !filterState) return [];
-      return filterSalesData(rawSalesData, filterState);
+      if (!activeDataset || !Array.isArray(activeDataset) || !filterState) return [];
+      return filterSalesData(activeDataset, filterState);
     } catch (error) {
       console.error('Error filtering sales data:', error);
       return [];
     }
-  }, [isSharedView, directFilteredData, rawSalesData, filterState]);
+  }, [activeDataset, filterState]);
+
+  // Calculate filtered comparison data
+  const filteredComparisonData = useMemo(() => {
+    try {
+      if (!comparisonDataset || !Array.isArray(comparisonDataset) || !filterState || comparisonSettings?.mode !== 'campaigns') return [];
+      return filterSalesData(comparisonDataset, filterState);
+    } catch (error) {
+      console.error('Error filtering comparison data:', error);
+      return [];
+    }
+  }, [comparisonDataset, filterState, comparisonSettings]);
   
   // Calculate metrics using useMemo
   const metrics = useMemo(() => {
     try {
-      if (isSharedView && directMetrics && typeof directMetrics === 'object' && Object.keys(directMetrics).length > 0) {
-        return directMetrics; // Use snapshot metrics for shared view
-      }
       if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
         return null;
       }
@@ -102,14 +126,24 @@ const SalesTab = ({ isSharedView = false }) => {
       console.error('Error calculating metrics:', error);
       return null;
     }
-  }, [isSharedView, directMetrics, filteredData]);
+  }, [filteredData]);
+
+  // Calculate comparison metrics
+  const comparisonMetrics = useMemo(() => {
+    try {
+      if (!filteredComparisonData || !Array.isArray(filteredComparisonData) || filteredComparisonData.length === 0) {
+        return null;
+      }
+      return calculateMetrics(filteredComparisonData);
+    } catch (error) {
+      console.error('Error calculating comparison metrics:', error);
+      return null;
+    }
+  }, [filteredComparisonData]);
   
   // Calculate retailerData using useMemo
   const retailerData = useMemo(() => {
     try {
-      if (isSharedView && directRetailerDistribution && Array.isArray(directRetailerDistribution) && directRetailerDistribution.length > 0) {
-        return directRetailerDistribution; // Use snapshot data for shared view
-      }
       if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
         return [];
       }
@@ -118,7 +152,20 @@ const SalesTab = ({ isSharedView = false }) => {
       console.error('Error calculating retailer distribution:', error);
       return [];
     }
-  }, [isSharedView, directRetailerDistribution, filteredData]);
+  }, [filteredData]);
+
+  // Calculate comparison retailer data
+  const comparisonRetailerData = useMemo(() => {
+    try {
+      if (!filteredComparisonData || !Array.isArray(filteredComparisonData) || filteredComparisonData.length === 0) {
+        return [];
+      }
+      return getRetailerDistribution(filteredComparisonData);
+    } catch (error) {
+      console.error('Error calculating comparison retailer distribution:', error);
+      return [];
+    }
+  }, [filteredComparisonData]);
 
   // Safely add handlers for date exclusion
   const handleAddExcludedDate = (date) => {
@@ -256,9 +303,6 @@ const SalesTab = ({ isSharedView = false }) => {
   // Calculate productDistribution using useMemo
   const productDistribution = useMemo(() => {
     try {
-      if (isSharedView && directProductDistribution && Array.isArray(directProductDistribution) && directProductDistribution.length > 0) {
-        return directProductDistribution; // Use snapshot data for shared view
-      }
       if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
         return [];
       }
@@ -267,7 +311,20 @@ const SalesTab = ({ isSharedView = false }) => {
       console.error('Error calculating product distribution:', error);
       return [];
     }
-  }, [isSharedView, directProductDistribution, filteredData, brandMapping]);
+  }, [filteredData, brandMapping]);
+
+  // Repurchase intent for products
+  const repurchaseIntentData = useMemo(() => {
+    try {
+      if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
+        return [];
+      }
+      return calculateRepurchaseIntent(filteredData, brandMapping || {});
+    } catch (error) {
+      console.error('Error calculating repurchase intent:', error);
+      return [];
+    }
+  }, [filteredData, brandMapping]);
   
   // Get redemptions over time with improved time handling
   const redemptionsOverTime = useMemo(() => {
@@ -413,6 +470,23 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   }, [filteredData, redemptionTimeframe, filterState, metrics]);
   
+  // Enhanced time series data with moving averages
+  const timeSeriesWithMA = useMemo(() => {
+    if (!redemptionsOverTime || !Array.isArray(redemptionsOverTime) || redemptionsOverTime.length === 0) {
+      return [];
+    }
+    
+    // Add moving averages to the time series data
+    return calculateMovingAverage(redemptionsOverTime.map(item => ({
+      ...item,
+      value: item.count // Map count to value for the analytics function
+    })), movingAverageWindow).map(item => ({
+      ...item,
+      count: item.value, // Map back to count
+      movingAverage: item.movingAverage
+    }));
+  }, [redemptionsOverTime, movingAverageWindow]);
+  
   
   // Calculate trend line
   const trendLineData = useMemo(() => {
@@ -478,8 +552,8 @@ const SalesTab = ({ isSharedView = false }) => {
   };
 
   const filteredRedemptionsData = useMemo(() => {
-    return applyDateExclusions(redemptionsOverTime);
-  }, [redemptionsOverTime, excludedDates]);
+    return applyDateExclusions(timeSeriesWithMA);
+  }, [timeSeriesWithMA, excludedDates, applyDateExclusions]);
   
   // Handle empty data
   if (!filteredData || filteredData.length === 0 || !metrics) {
@@ -558,7 +632,7 @@ const SalesTab = ({ isSharedView = false }) => {
   };
       
   return (
-    <div>
+    <div className="overflow-hidden">
       {/* Key Metrics Cards */}
       <div>
         {/* Title Bar with Export Button */}
@@ -575,7 +649,7 @@ const SalesTab = ({ isSharedView = false }) => {
         </div>
       </div>
       {/* Financial Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
         {/* Total Revenue */}
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
           <div className="flex items-start">
@@ -585,8 +659,8 @@ const SalesTab = ({ isSharedView = false }) => {
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Total Revenue</h3>
-              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">Total Revenue</h3>
+              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 truncate">
                 {formatCurrency(metrics?.totalRevenue || 0, 'whole')}
               </p>
             </div>
@@ -602,8 +676,8 @@ const SalesTab = ({ isSharedView = false }) => {
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Total Transactions</h3>
-              <p className="text-xl font-bold text-pink-600 dark:text-pink-400">{(metrics?.totalUnits || 0).toLocaleString()}</p>
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">Total Transactions</h3>
+              <p className="text-lg font-bold text-pink-600 dark:text-pink-400 truncate">{(metrics?.totalUnits || 0).toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -617,8 +691,8 @@ const SalesTab = ({ isSharedView = false }) => {
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Avg Transaction</h3>
-              <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">Avg Transaction</h3>
+              <p className="text-lg font-bold text-blue-600 dark:text-blue-400 truncate">
                 {formatCurrency(metrics?.avgTransactionValue || 0, 'precise')}
               </p>
             </div>
@@ -634,8 +708,8 @@ const SalesTab = ({ isSharedView = false }) => {
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Unique Customers</h3>
-              <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{(metrics?.uniqueCustomers || 0).toLocaleString()}</p>
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">Unique Customers</h3>
+              <p className="text-lg font-bold text-purple-600 dark:text-purple-400 truncate">{(metrics?.uniqueCustomers || 0).toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -649,8 +723,8 @@ const SalesTab = ({ isSharedView = false }) => {
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Revenue/Customer</h3>
-              <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">Revenue/Customer</h3>
+              <p className="text-lg font-bold text-orange-600 dark:text-orange-400 truncate">
                 {formatCurrency(metrics?.avgRevenuePerCustomer || 0, 'precise')}
               </p>
             </div>
@@ -666,8 +740,8 @@ const SalesTab = ({ isSharedView = false }) => {
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Daily Revenue</h3>
-              <p className="text-xl font-bold text-green-600 dark:text-green-400">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">Daily Revenue</h3>
+              <p className="text-lg font-bold text-green-600 dark:text-green-400 truncate">
                 {formatCurrency(metrics?.avgRevenuePerDay || 0, 'whole')}
               </p>
             </div>
@@ -676,7 +750,7 @@ const SalesTab = ({ isSharedView = false }) => {
       </div>
       
       {/* Retailer and Product Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Retailer Distribution */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="flex justify-between items-center mb-4">
@@ -685,59 +759,106 @@ const SalesTab = ({ isSharedView = false }) => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
               </svg>
               Retailer Distribution
+              {comparisonSettings?.mode === 'campaigns' && canCompare && (
+                <div className="ml-3 flex items-center space-x-1">
+                  <span className="w-3 h-3 rounded-full bg-pink-500"></span>
+                  <span className="text-xs text-gray-500">A</span>
+                  <span className="w-3 h-3 rounded-full bg-blue-500 ml-2"></span>
+                  <span className="text-xs text-gray-500">B</span>
+                </div>
+              )}
             </h3>
           </div>
           
-          <div className="h-96">
+          <div className="h-80 overflow-hidden">
             <ChartErrorBoundary>
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={Array.isArray(retailerData) ? retailerData : []}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={120}
-                    innerRadius={60}
-                    paddingAngle={2}
-                    onMouseEnter={(data, index) => setActiveRetailer(index)}
-                    onMouseLeave={() => setActiveRetailer(null)}
-                    label={({ name, percent }) => 
-                      percent > 0.05 ? `${name}: ${(percent * 100).toFixed(1)}%` : ''
-                    }
-                    labelLine={false}
-                  >
-                    {Array.isArray(retailerData) && retailerData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={colors.colorPalette[index % colors.colorPalette.length]}
-                        stroke={darkMode ? "#374151" : "#fff"}
-                        strokeWidth={1}
-                        style={{
-                          opacity: activeRetailer === null || activeRetailer === index ? 1 : 0.6,
-                          filter: activeRetailer === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
-                          transition: 'opacity 300ms, filter 300ms'
-                        }}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend
-                    layout="vertical"
-                    align="right"
-                    verticalAlign="middle"
-                    wrapperStyle={{ paddingLeft: '30px' }}
-                    iconType="circle"
-                    onMouseEnter={(data, index) => setActiveRetailer(index)}
-                    onMouseLeave={() => setActiveRetailer(null)}
-                    formatter={(value, entry, index) => (
-                      <span className={`text-sm ${activeRetailer === index ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
-                        {value}
-                      </span>
-                    )}
-                  />
-                </PieChart>
+                {comparisonSettings?.mode === 'campaigns' && canCompare && filteredComparisonData.length > 0 ? (
+                  // Comparison mode - show side-by-side bar chart
+                  <BarChart data={(() => {
+                    // Combine retailer data from both campaigns
+                    const combinedData = [];
+                    const allRetailers = new Set([
+                      ...retailerData.map(r => r.name),
+                      ...comparisonRetailerData.map(r => r.name)
+                    ]);
+                    
+                    allRetailers.forEach(retailer => {
+                      const dataA = retailerData.find(r => r.name === retailer) || { value: 0 };
+                      const dataB = comparisonRetailerData.find(r => r.name === retailer) || { value: 0 };
+                      combinedData.push({
+                        name: retailer.length > 12 ? retailer.substring(0, 12) + '...' : retailer,
+                        campaignA: dataA.value,
+                        campaignB: dataB.value
+                      });
+                    });
+                    
+                    return combinedData.sort((a, b) => (b.campaignA + b.campaignB) - (a.campaignA + a.campaignB)).slice(0, 8);
+                  })()}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                    <XAxis 
+                      dataKey="name" 
+                      tick={{ fontSize: 11, fill: darkMode ? '#9CA3AF' : '#6B7280' }}
+                      stroke={darkMode ? '#6B7280' : '#9CA3AF'}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 11, fill: darkMode ? '#9CA3AF' : '#6B7280' }}
+                      stroke={darkMode ? '#6B7280' : '#9CA3AF'}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="campaignA" fill="#EC4899" name={`Campaign ${comparisonSettings.primaryDataset}`} />
+                    <Bar dataKey="campaignB" fill="#3B82F6" name={`Campaign ${comparisonSettings.primaryDataset === 'A' ? 'B' : 'A'}`} />
+                  </BarChart>
+                ) : (
+                  // Single mode - show pie chart
+                  <PieChart>
+                    <Pie
+                      data={Array.isArray(retailerData) ? retailerData : []}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={120}
+                      innerRadius={60}
+                      paddingAngle={2}
+                      onMouseEnter={(data, index) => setActiveRetailer(index)}
+                      onMouseLeave={() => setActiveRetailer(null)}
+                      label={({ name, percent }) => 
+                        percent > 0.05 ? `${name.length > 12 ? name.substring(0, 12) + '...' : name}: ${(percent * 100).toFixed(1)}%` : ''
+                      }
+                      labelLine={false}
+                    >
+                      {Array.isArray(retailerData) && retailerData.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={colors.colorPalette[index % colors.colorPalette.length]}
+                          stroke={darkMode ? "#374151" : "#fff"}
+                          strokeWidth={1}
+                          style={{
+                            opacity: activeRetailer === null || activeRetailer === index ? 1 : 0.6,
+                            filter: activeRetailer === index ? 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))' : 'none',
+                            transition: 'opacity 300ms, filter 300ms'
+                          }}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend
+                      layout="vertical"
+                      align="right"
+                      verticalAlign="middle"
+                      wrapperStyle={{ paddingLeft: '30px' }}
+                      iconType="circle"
+                      onMouseEnter={(data, index) => setActiveRetailer(index)}
+                      onMouseLeave={() => setActiveRetailer(null)}
+                      formatter={(value, entry, index) => (
+                        <span className={`text-sm ${activeRetailer === index ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
+                          {value}
+                        </span>
+                      )}
+                    />
+                  </PieChart>
+                )}
               </ResponsiveContainer>
             </ChartErrorBoundary>
           </div>
@@ -747,29 +868,67 @@ const SalesTab = ({ isSharedView = false }) => {
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Retailer</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Revenue</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Units</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Avg Value</th>
+                  {comparisonSettings?.mode === 'campaigns' && canCompare ? (
+                    <>
+                      <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-pink-600 dark:text-pink-400 uppercase tracking-wider">Campaign A</th>
+                      <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wider">Campaign B</th>
+                      <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Difference</th>
+                    </>
+                  ) : (
+                    <>
+                      <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Revenue</th>
+                      <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Units</th>
+                      <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Avg Value</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {Array.isArray(retailerData) && retailerData.map((retailer, index) => (
-                  <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: colors.colorPalette[index % colors.colorPalette.length] }}></div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">{retailer.name || 'Unknown'}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">
-                      {formatCurrency(retailer.revenue || 0, 'table')}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">{(retailer.value || 0).toLocaleString()}</td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">
-                      {formatCurrency(retailer.avgTransactionValue || 0, 'table')}
-                    </td>
-                  </tr>
-                ))}
+                {comparisonSettings?.mode === 'campaigns' && canCompare ? (
+                  // Comparison table
+                  (() => {
+                    const allRetailers = new Set([
+                      ...retailerData.map(r => r.name),
+                      ...comparisonRetailerData.map(r => r.name)
+                    ]);
+                    
+                    return Array.from(allRetailers).map((retailer, index) => {
+                      const dataA = retailerData.find(r => r.name === retailer) || { value: 0, revenue: 0 };
+                      const dataB = comparisonRetailerData.find(r => r.name === retailer) || { value: 0, revenue: 0 };
+                      const diff = dataA.value - dataB.value;
+                      
+                      return (
+                        <tr key={retailer} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{retailer}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-pink-600 dark:text-pink-400 text-right">{dataA.value.toLocaleString()}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-blue-600 dark:text-blue-400 text-right">{dataB.value.toLocaleString()}</td>
+                          <td className={`px-4 py-3 whitespace-nowrap text-sm text-right ${diff >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {diff >= 0 ? '+' : ''}{diff.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    }).slice(0, 10);
+                  })()
+                ) : (
+                  // Single mode table
+                  Array.isArray(retailerData) && retailerData.map((retailer, index) => (
+                    <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: colors.colorPalette[index % colors.colorPalette.length] }}></div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">{retailer.name || 'Unknown'}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">
+                        {formatCurrency(retailer.revenue || 0, 'table')}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">{(retailer.value || 0).toLocaleString()}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-right">
+                        {formatCurrency(retailer.avgTransactionValue || 0, 'table')}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -903,7 +1062,7 @@ const SalesTab = ({ isSharedView = false }) => {
                   <option value="monthly">Monthly</option>
                 </select>
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end space-x-6">
                 <label className="inline-flex items-center">
                   <input
                     type="checkbox"
@@ -913,11 +1072,35 @@ const SalesTab = ({ isSharedView = false }) => {
                   />
                   <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Show Trend Line</span>
                 </label>
+                <label className="inline-flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={showMovingAverage}
+                    onChange={(e) => setShowMovingAverage(e.target.checked)}
+                    className="rounded border-gray-300 dark:border-gray-600 text-emerald-600 focus:ring-emerald-500 h-4 w-4 dark:bg-gray-700"
+                  />
+                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Moving Average</span>
+                </label>
+                {showMovingAverage && (
+                  <div className="flex items-center space-x-2">
+                    <label className="text-sm text-gray-700 dark:text-gray-300">Window:</label>
+                    <select
+                      value={movingAverageWindow}
+                      onChange={(e) => setMovingAverageWindow(parseInt(e.target.value))}
+                      className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    >
+                      <option value={3}>3 days</option>
+                      <option value={7}>7 days</option>
+                      <option value={14}>14 days</option>
+                      <option value={30}>30 days</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
           </div>
           
-          <div className="h-96">
+          <div className="h-80 overflow-hidden">
             <ChartErrorBoundary>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
@@ -971,6 +1154,18 @@ const SalesTab = ({ isSharedView = false }) => {
                     strokeWidth={2}
                     dot={false}
                     activeDot={false}
+                  />
+                )}
+                {showMovingAverage && Array.isArray(timeSeriesWithMA) && timeSeriesWithMA.length > 0 && (
+                  <Line
+                    type="monotone"
+                    dataKey="movingAverage"
+                    name={`${movingAverageWindow}-day Moving Average`}
+                    stroke="#10B981"
+                    strokeWidth={3}
+                    dot={false}
+                    activeDot={{ r: 4, fill: "#10B981", stroke: "#059669", strokeWidth: 2 }}
+                    strokeDasharray="5 5"
                   />
                 )}
               </ComposedChart>

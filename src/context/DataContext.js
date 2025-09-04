@@ -1,7 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import supabase from '../utils/supabase'; // Import Supabase client
-import { processData, analyzeBrands } from '../utils/dataProcessing'; // Import processing functions
-import { identifyBrandPrefixes, extractBrandNames } from '../utils/brandDetection'; // Keep for now if analyzeBrands uses it internally, or remove if analyzeBrands handles it
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 
 // Create context
 const DataContext = createContext();
@@ -10,16 +7,35 @@ const DataContext = createContext();
 export const useData = () => useContext(DataContext);
 
 export const DataProvider = ({ children }) => {
-  // State for data management
+  // Enhanced state for dual dataset comparison
+  const [campaigns, setCampaigns] = useState(() => {
+    const saved = localStorage.getItem('campaigns');
+    return saved ? JSON.parse(saved) : {
+      A: { data: [], metadata: null },
+      B: { data: [], metadata: null }
+    };
+  });
+  
+  // Primary dataset support
   const [salesData, setSalesData] = useState([]);
   const [offerData, setOfferData] = useState([]);
   const [hasOfferData, setHasOfferData] = useState(false);
-  const [dataLoading, setDataLoading] = useState(true); // Renamed loading state
-  const [dataError, setDataError] = useState(''); // Renamed error state
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState('');
   const [brandMapping, setBrandMapping] = useState({});
   const [brandNames, setBrandNames] = useState([]);
   const [clientName, setClientName] = useState('');
-  const [darkMode, setDarkMode] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  
+  // Campaign comparison state
+  const [comparisonSettings, setComparisonSettings] = useState(() => {
+    const saved = localStorage.getItem('comparisonSettings');
+    return saved ? JSON.parse(saved) : {
+      mode: 'single',
+      activeDatasets: ['A'],
+      primaryDataset: 'A'
+    };
+  });
 
   // Filter and comparison state removed - handled by FilterContext
 
@@ -31,125 +47,261 @@ export const DataProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Fetch data from Supabase on mount
+  // Initialize data context on mount and sync with localStorage
   useEffect(() => {
-    const fetchData = async () => {
-      setDataLoading(true);
-      setDataError('');
-      console.log('Fetching data from Supabase...');
-
-      try {
-        const { data: rawSalesData, error: supabaseError } = await supabase
-          .from('sales_data') // Make sure 'sales_data' matches your table name
-          .select('*');
-
-        if (supabaseError) {
-          throw supabaseError;
-        }
-
-        if (rawSalesData && rawSalesData.length > 0) {
-          console.log(`Fetched ${rawSalesData.length} sales records.`);
-          // 1. Process raw data (add month, day_of_week etc.)
-          const processedSalesData = processData(rawSalesData);
-          setSalesData(processedSalesData);
-          console.log('Sales data processed.');
-
-          // 2. Analyze brands from processed data
-          const { brandMapping: detectedMapping, brandNames: detectedNames } = analyzeBrands(processedSalesData);
-          setBrandMapping(detectedMapping);
-          setBrandNames(detectedNames);
-          console.log('Brands analyzed:', detectedNames);
-
-          // 3. Set client name from brands if not already set
-          if (detectedNames && detectedNames.length > 0) {
-            const brandClientName = detectedNames.join(', ');
-            // Check if clientName state is empty before setting
-            setClientName(prevClientName => {
-              if (!prevClientName) {
-                console.log("Setting client name from brands:", brandClientName);
-                return brandClientName;
-              }
-              console.log("Keeping existing client name:", prevClientName);
-              return prevClientName;
-            });
-          }
-          setActiveTab('summary'); // Default to summary tab after load
-        } else {
-          console.log('No sales data found in Supabase.');
-          setSalesData([]); // Ensure data is empty array if nothing found
-        }
-
-      } catch (error) {
-        console.error('Error fetching or processing sales data:', error);
-        setDataError(`Failed to load sales data: ${error.message}`);
-        setSalesData([]); // Clear data on error
-        setBrandMapping({});
-        setBrandNames([]);
-      } finally {
-        setDataLoading(false);
-        console.log('Data fetching process complete.');
+    setDataLoading(false);
+    setActiveTab('summary');
+    
+    // Sync salesData with Campaign A if it exists
+    if (campaigns.A.data.length > 0) {
+      setSalesData(campaigns.A.data);
+      if (campaigns.A.metadata?.brandMapping) {
+        setBrandMapping(campaigns.A.metadata.brandMapping);
+        setBrandNames(Object.keys(campaigns.A.metadata.brandMapping));
       }
-    };
-
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only once on mount
-
-  // TODO: Add similar fetching logic for offerData if it's also moving to Supabase
+    }
+  }, [campaigns.A.data, campaigns.A.metadata]);
+  
+  // Persist campaigns to localStorage with size check
+  useEffect(() => {
+    try {
+      const campaignData = JSON.stringify(campaigns);
+      // Check if data size is reasonable (< 4MB to leave room for other localStorage items)
+      if (campaignData.length < 4 * 1024 * 1024) {
+        localStorage.setItem('campaigns', campaignData);
+      } else {
+        console.warn('Campaign data too large for localStorage, skipping save');
+        // Keep only metadata in localStorage for large datasets
+        const metadataOnly = {
+          A: { data: [], metadata: campaigns.A.metadata },
+          B: { data: [], metadata: campaigns.B.metadata }
+        };
+        localStorage.setItem('campaigns', JSON.stringify(metadataOnly));
+      }
+    } catch (error) {
+      console.error('Failed to save campaigns to localStorage:', error);
+      // Clear localStorage if we're hitting quota limits
+      if (error.name === 'QuotaExceededError') {
+        try {
+          localStorage.removeItem('campaigns');
+          console.warn('Cleared campaigns from localStorage due to quota exceeded');
+        } catch (clearError) {
+          console.error('Failed to clear localStorage:', clearError);
+        }
+      }
+    }
+  }, [campaigns]);
+  
+  // Persist comparison settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('comparisonSettings', JSON.stringify(comparisonSettings));
+  }, [comparisonSettings]);
 
 
 
   // handleProductSelection and handleRetailerSelection removed - handled by FilterContext
 
+  // Helper function to detect campaign year from data
+  const detectCampaignYear = useCallback((data) => {
+    if (!data || data.length === 0) return null;
+    
+    // Extract years from receipt_date field
+    const years = data
+      .map(row => {
+        if (!row.receipt_date) return null;
+        const date = new Date(row.receipt_date);
+        return !isNaN(date.getTime()) ? date.getFullYear() : null;
+      })
+      .filter(year => year !== null);
+    
+    if (years.length === 0) return null;
+    
+    // Find the most common year
+    const yearCounts = {};
+    years.forEach(year => {
+      yearCounts[year] = (yearCounts[year] || 0) + 1;
+    });
+    
+    const mostCommonYear = Object.keys(yearCounts).reduce((a, b) => 
+      yearCounts[a] > yearCounts[b] ? a : b
+    );
+    
+    return parseInt(mostCommonYear);
+  }, []);
+  
+  // Campaign management functions
+  const setCampaignData = useCallback((campaignId, data, metadata) => {
+    // Detect campaign year
+    const detectedYear = detectCampaignYear(data);
+    
+    // Enhanced metadata with year information
+    const enhancedMetadata = {
+      ...metadata,
+      year: detectedYear,
+      yearLabel: detectedYear ? detectedYear.toString() : 'Unknown Year'
+    };
+    
+    setCampaigns(prev => ({
+      ...prev,
+      [campaignId]: {
+        data: data || [],
+        metadata: enhancedMetadata
+      }
+    }));
+    setLastUpdated(new Date().toISOString());
+    
+    // If setting Campaign A, also update primary state for compatibility
+    if (campaignId === 'A') {
+      setSalesData(data || []);
+      if (enhancedMetadata?.brandMapping) {
+        setBrandMapping(enhancedMetadata.brandMapping);
+        setBrandNames(Object.keys(enhancedMetadata.brandMapping));
+      }
+      if (enhancedMetadata?.clientName) {
+        setClientName(enhancedMetadata.clientName);
+      }
+    }
+  }, [detectCampaignYear]);
+  
+  const clearCampaign = useCallback((campaignId) => {
+    setCampaigns(prev => ({
+      ...prev,
+      [campaignId]: { data: [], metadata: null }
+    }));
+    
+    // If clearing Campaign A, also clear primary state
+    if (campaignId === 'A') {
+      setSalesData([]);
+      setBrandMapping({});
+      setBrandNames([]);
+      setClientName('');
+    }
+  }, []);
+  
   // Clear all data
   const clearData = useCallback(() => {
+    setCampaigns({
+      A: { data: [], metadata: null },
+      B: { data: [], metadata: null }
+    });
     setSalesData([]);
     setOfferData([]);
     setHasOfferData(false);
     setBrandMapping({});
     setBrandNames([]);
     setClientName('');
-    // Reset filter state is now handled in FilterContext or component level
+    setComparisonSettings({
+      mode: 'single',
+      activeDatasets: ['A'],
+      primaryDataset: 'A'
+    });
     setActiveTab('summary');
   }, []);
+  
+  // Get active dataset based on comparison settings
+  const getActiveDataset = useCallback(() => {
+    const { mode, activeDatasets, primaryDataset } = comparisonSettings;
+    
+    if (mode === 'single' || activeDatasets.length === 1) {
+      const campaignId = activeDatasets[0] || primaryDataset;
+      return campaigns[campaignId]?.data || [];
+    }
+    
+    // For comparison mode, return primary dataset
+    return campaigns[primaryDataset]?.data || [];
+  }, [campaigns, comparisonSettings]);
+  
+  // Get campaign metadata
+  const getCampaignMetadata = useCallback((campaignId) => {
+    return campaigns[campaignId]?.metadata || null;
+  }, [campaigns]);
+  
+  // Check if campaign has data
+  const hasCampaignData = useCallback((campaignId) => {
+    return campaigns[campaignId]?.data?.length > 0 || false;
+  }, [campaigns]);
 
 
 
   // getAvailableMonths removed - can be derived elsewhere if needed
 
   // Check if we have data
-  const hasData = salesData.length > 0 || hasOfferData;
+  const hasData = salesData.length > 0 || hasOfferData || 
+                  campaigns.A.data.length > 0 || campaigns.B.data.length > 0;
+  
+  // Check if we can do campaign comparison
+  const canCompare = campaigns.A.data.length > 0 && campaigns.B.data.length > 0;
+  
+  // Check if we can do yearly comparison (campaigns from different years)
+  const canCompareYearly = useMemo(() => {
+    if (!canCompare) return false;
+    
+    const yearA = campaigns.A.metadata?.year;
+    const yearB = campaigns.B.metadata?.year;
+    
+    return yearA && yearB && yearA !== yearB;
+  }, [canCompare, campaigns.A.metadata?.year, campaigns.B.metadata?.year]);
+  
+  // Get year difference for yearly comparison
+  const getYearDifference = useCallback(() => {
+    if (!canCompareYearly) return 0;
+    
+    const yearA = campaigns.A.metadata?.year;
+    const yearB = campaigns.B.metadata?.year;
+    
+    return Math.abs(yearA - yearB);
+  }, [canCompareYearly, campaigns.A.metadata?.year, campaigns.B.metadata?.year]);
+  
+  // Get year labels for display
+  const getYearLabels = useCallback(() => {
+    return {
+      A: campaigns.A.metadata?.yearLabel || campaigns.A.metadata?.year || 'Unknown',
+      B: campaigns.B.metadata?.yearLabel || campaigns.B.metadata?.year || 'Unknown'
+    };
+  }, [campaigns.A.metadata, campaigns.B.metadata]);
 
-  // Context value - IMPORTANT: Include all functions and state!
+  // Context value
   const value = {
+    // Primary dataset support
     salesData,
     offerData,
     hasOfferData,
-    dataLoading, // Use new state names
-    dataError,   // Use new state names
+    dataLoading,
+    dataError,
     brandMapping,
     brandNames,
     clientName,
     hasData,
     activeTab,
     setActiveTab,
-    // Filter/Comparison state removed
-    // handleFileUpload removed
-    // Selection handlers removed
-    // Filter/Comparison setters removed
-    clearData, // Keep clearData, but update it
-    // getAvailableMonths removed
-    // Setter methods needed for components
-    setSalesData, // Keep raw data setters if needed internally or for clearing
-    setOfferData, // Keep raw data setters
+    lastUpdated,
+    
+    // Campaign comparison support
+    campaigns,
+    comparisonSettings,
+    canCompare,
+    canCompareYearly,
+    getYearDifference,
+    getYearLabels,
+    
+    // Campaign management functions
+    setCampaignData,
+    clearCampaign,
+    clearData,
+    getActiveDataset,
+    getCampaignMetadata,
+    hasCampaignData,
+    setComparisonSettings,
+    
+    // Setter methods
+    setSalesData,
+    setOfferData,
     setHasOfferData,
-    setDataLoading, // Use correct setter name
-    setDataError,   // Add the setDataError function
-    setBrandMapping, // Keep brand setters
-    setBrandNames,   // Keep brand setters
+    setDataLoading,
+    setDataError,
+    setBrandMapping,
+    setBrandNames,
     setClientName,
-    darkMode,
-    setDarkMode,
     excludedDates,
     setExcludedDates,
   };

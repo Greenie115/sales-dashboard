@@ -1,8 +1,8 @@
 // src/utils/dataProcessing.js
 import { identifyBrandPrefixes, extractBrandNames } from './brandDetection';
+import { safeDateComponents } from './dateUtils';
 import uniq from 'lodash/uniq';
 import groupBy from 'lodash/groupBy';
-import orderBy from 'lodash/orderBy';
 
 /**
  * Process raw data to add derived fields and structured information
@@ -20,28 +20,23 @@ export const processData = (rawData) => {
       );
     });
     
-    // Process dates and add derived fields with enhanced validation
+    // Process dates and add derived fields with robust validation
     return cleanedData.map(item => {
       if (!item.receipt_date) return item;
       
-      const date = new Date(item.receipt_date);
+      const dateComponents = safeDateComponents(item.receipt_date);
       
-      // Validate date is reasonable (not before 1990 or after current date + 1 year)
-      const minDate = new Date('1990-01-01');
-      const maxDate = new Date();
-      maxDate.setFullYear(maxDate.getFullYear() + 1);
-      
-      if (isNaN(date.getTime()) || date < minDate || date > maxDate) {
+      if (!dateComponents) {
         console.warn('Invalid date detected and filtered out:', item.receipt_date, 'in row:', item);
         return null; // Mark for removal
       }
       
       return {
         ...item,
-        receipt_date: date.toISOString().split('T')[0],
-        month: date.toISOString().slice(0, 7), // YYYY-MM format
-        day_of_week: date.getDay(), // 0 = Sunday, 6 = Saturday
-        hour_of_day: date.getHours() // 0-23
+        receipt_date: dateComponents.dateString,
+        month: dateComponents.monthString,
+        day_of_week: dateComponents.dayOfWeek,
+        hour_of_day: dateComponents.hourOfDay
       };
     }).filter(item => item !== null); // Remove invalid date entries
   } catch (error) {
@@ -210,11 +205,16 @@ export const getRedemptionsOverTime = (data, timeframe = 'daily') => {
     case 'weekly':
       // Group by week (using the first day of the week)
       groupedData = groupBy(data, item => {
-        const date = new Date(item.receipt_date);
+        const dateComponents = safeDateComponents(item.receipt_date);
+        if (!dateComponents) return 'invalid-date';
+        
+        const date = dateComponents.date;
         const dayOfWeek = date.getDay();
         const diff = date.getDate() - dayOfWeek; // adjust to get first day of week (Sunday)
-        const firstDay = new Date(date.setDate(diff));
-        return firstDay.toISOString().split('T')[0];
+        const firstDay = new Date(date.getFullYear(), date.getMonth(), diff);
+        
+        const firstDayComponents = safeDateComponents(firstDay);
+        return firstDayComponents ? firstDayComponents.dateString : 'invalid-date';
       });
       format = date => {
         const startDate = new Date(date);
@@ -482,11 +482,16 @@ export const getRevenueOverTime = (data, timeframe = 'daily') => {
       break;
     case 'weekly':
       groupedData = groupBy(data, item => {
-        const date = new Date(item.receipt_date);
+        const dateComponents = safeDateComponents(item.receipt_date);
+        if (!dateComponents) return 'invalid-date';
+        
+        const date = dateComponents.date;
         const dayOfWeek = date.getDay();
         const diff = date.getDate() - dayOfWeek;
-        const firstDay = new Date(date.setDate(diff));
-        return firstDay.toISOString().split('T')[0];
+        const firstDay = new Date(date.getFullYear(), date.getMonth(), diff);
+        
+        const firstDayComponents = safeDateComponents(firstDay);
+        return firstDayComponents ? firstDayComponents.dateString : 'invalid-date';
       });
       format = date => {
         const startDate = new Date(date);
@@ -713,7 +718,7 @@ export const calculateProductRatings = (data, brandMapping = {}) => {
 };
 
 /**
- * Calculate repurchase intent for products from question_07
+ * Calculate repurchase intent for products from question_07 (with fallback for missing data)
  */
 export const calculateRepurchaseIntent = (data, brandMapping = {}) => {
   if (!data || data.length === 0) return [];
@@ -739,9 +744,8 @@ export const calculateRepurchaseIntent = (data, brandMapping = {}) => {
         item.question_07.toLowerCase().includes('would you purchase')
       );
       
-      if (itemsWithRepurchase.length === 0) {
-        return null; // No repurchase data for this product
-      }
+      // Always return product data, even if no repurchase survey responses
+      const hasRepurchaseData = itemsWithRepurchase.length > 0;
       
       // Count responses for each answer type
       const responseCounts = {
@@ -771,7 +775,7 @@ export const calculateRepurchaseIntent = (data, brandMapping = {}) => {
       
       const totalResponses = itemsWithRepurchase.length;
       const positiveResponses = responseCounts.yes_definitely + responseCounts.yes_why_not;
-      const repurchaseIntentRate = totalResponses > 0 ? (positiveResponses / totalResponses) * 100 : 0;
+      const repurchaseIntentRate = totalResponses > 0 ? (positiveResponses / totalResponses) * 100 : null;
       
       return {
         name: product,
@@ -788,9 +792,18 @@ export const calculateRepurchaseIntent = (data, brandMapping = {}) => {
           no: totalResponses > 0 ? (responseCounts.no / totalResponses) * 100 : 0,
           other: totalResponses > 0 ? (responseCounts.other / totalResponses) * 100 : 0
         },
-        hasRepurchaseData: totalResponses > 0
+        hasRepurchaseData: hasRepurchaseData,
+        dataStatus: hasRepurchaseData ? 'available' : 'no_survey_data'
       };
     })
-    .filter(item => item !== null && item.hasRepurchaseData) // Only include products with repurchase data
-    .sort((a, b) => b.repurchaseIntentRate - a.repurchaseIntentRate);
+    .filter(item => item !== null) // Include all products now
+    .sort((a, b) => {
+      // Sort by repurchase rate if available, then by total responses
+      if (a.repurchaseIntentRate !== null && b.repurchaseIntentRate !== null) {
+        return b.repurchaseIntentRate - a.repurchaseIntentRate;
+      }
+      if (a.repurchaseIntentRate !== null) return -1;
+      if (b.repurchaseIntentRate !== null) return 1;
+      return b.totalResponses - a.totalResponses;
+    });
 };

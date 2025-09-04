@@ -1,17 +1,11 @@
 // src/components/dashboard/Header.js
 import React, { useState, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import ThemeToggle from '../ThemeToggle';
-import ShareButton from '../sharing/ShareButton';
 import Papa from 'papaparse';
-import logo from '../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg'
-import { useClientData } from '../../context/ClientDataContext';
+import logo from '../../assets/unnamed-ezgif.com-webp-to-jpg-converter.jpg';
 
 const Header = () => {
-  const { clientName } = useClientData();
-  const location = useLocation();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
   const [processingFile, setProcessingFile] = useState(false);
   
@@ -19,17 +13,17 @@ const Header = () => {
   const { 
     salesData,
     offerData,
-    hasData,
-    dataLoading, // Correct state name
-    dataError,   // Correct state name
-    setDataLoading, // Correct setter name
+    clientName,
+    dataLoading,
+    setDataLoading,
     setSalesData,
     setOfferData,
     setHasOfferData,
-    setDataError, // Correct setter name
+    setDataError,
     setBrandMapping,
     setBrandNames,
-    setActiveTab
+    setActiveTab,
+    clearData
   } = useData();
   
   // Enhanced file processing with validation and correction
@@ -89,6 +83,13 @@ const Header = () => {
     };
     
     reader.readAsText(file);
+  };
+  
+  // Clear all data with confirmation
+  const handleClearAllData = () => {
+    if (window.confirm('Are you sure you want to clear all data? This action cannot be undone.')) {
+      clearData();
+    }
   };
 
   // Process data with automatic cleaning
@@ -212,7 +213,7 @@ const Header = () => {
               alt="Logo"
             />
             <div className="ml-2">
-              <span className="text-xl font-semibold text-gray-900 dark:text-white">Insights Dashboard</span>
+              <span className="text-xl font-semibold text-gray-900 dark:text-white">Sales Insights Dashboard</span>
               {clientName && (
                 <div className="text-sm text-gray-500 dark:text-gray-400">
                   {clientName}
@@ -229,14 +230,14 @@ const Header = () => {
               <ThemeToggle />
             </div>
             
-            {/* Show data status */}
+            {/* Show simple data status */}
             {salesData && salesData.length > 0 ? (
               <span className="mr-4 text-sm text-green-600 dark:text-green-400 font-medium hidden md:block">
-                {salesData.length} records loaded
+                {salesData.length.toLocaleString()} records loaded
               </span>
             ) : offerData && offerData.length > 0 ? (
               <span className="mr-4 text-sm text-green-600 dark:text-green-400 font-medium hidden md:block">
-                {offerData.length} offer records loaded
+                {offerData.length.toLocaleString()} offer records loaded
               </span>
             ) : (
               <span className="mr-4 text-sm text-gray-500 dark:text-gray-400 font-medium hidden md:block">
@@ -244,41 +245,31 @@ const Header = () => {
               </span>
             )}
             
-            {/* Share button - only show when data is loaded */}
-            {hasData && (
-              <div className="mr-2">
-                <ShareButton />
-              </div>
-            )}
             
-            {/* Admin link */}
-            <div className="mr-2">
-              <Link 
-                to={location.pathname === '/admin' ? '/' : '/admin'}
-                className={`px-3 py-2 rounded-md text-sm font-medium flex items-center transition-colors ${
-                  location.pathname === '/admin' 
-                    ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900' 
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
+            {/* Clear data button */}
+            {(salesData.length > 0 || offerData.length > 0) && (
+              <button
+                onClick={handleClearAllData}
+                className="mr-2 px-3 py-1 rounded-md text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-800 transition-colors"
+                title="Clear all data"
               >
-                <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <svg className="h-4 w-4 mr-1 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                {location.pathname === '/admin' ? 'Dashboard' : 'Admin'}
-              </Link>
-            </div>
+                Clear Data
+              </button>
+            )}
             
             {/* Upload button */}
             <div className="mr-2">
               <label 
-                className="cursor-pointer bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-800/40 px-3 py-2 rounded-md text-sm font-medium flex items-center"
+                className="cursor-pointer bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-800/40 px-3 py-2 rounded-md text-sm font-medium flex items-center transition-colors"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                {processingFile || dataLoading ? 'Loading...' : 'Upload CSV'}
+                {processingFile || dataLoading ? 'Loading...' : 'Upload Data'}
                 <input 
                   type="file" 
                   className="hidden" 
