@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useData } from '../../../context/DataContext'; // Provides raw salesData
 import { useFilter } from '../../../context/FilterContext'; // Provides filter state
 import { useTheme } from '../../../context/ThemeContext';
@@ -9,8 +9,7 @@ import {
   filterSalesData,
   calculateMetrics,
   getRetailerDistribution,
-  getProductDistribution,
-  calculateRepurchaseIntent
+  getProductDistribution
 } from '../../../utils/dataProcessing'; // Import centralized functions
 import {
   calculateMovingAverage
@@ -20,14 +19,11 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
   ComposedChart, Line, Area
 } from 'recharts';
-import CalculationErrorBoundary from '../../common/CalculationErrorBoundary';
 import DateExclusionPanel from '../../filters/DateExclusionPanel';
 import ChartErrorBoundary from '../../common/ChartErrorBoundary';
 
 // Custom tooltip component
 const CustomTooltip = ({ active, payload, label }) => {
-  const { darkMode } = useTheme();
-  
   if (active && payload && payload.length) {
     return (
       <div className="bg-white dark:bg-gray-800 p-3 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
@@ -61,7 +57,7 @@ const SalesTab = ({ isSharedView = false }) => {
   // Use data contexts
   const dataContext = useData(); // Get raw data context
   const filterContext = useFilter(); // Get filter context
-  const filterState = filterContext?.filters || {}; // Safe access to filters
+  const filterState = useMemo(() => filterContext?.filters || {}, [filterContext?.filters]); // Safe access to filters
   
   // Get chart colors
   const colors = useChartColors();
@@ -72,8 +68,7 @@ const SalesTab = ({ isSharedView = false }) => {
     brandMapping = {},
     campaigns,
     comparisonSettings,
-    canCompare,
-    getCampaignMetadata
+    canCompare
   } = dataContext || {};
   
   // Get active dataset for primary analysis
@@ -128,18 +123,6 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   }, [filteredData]);
 
-  // Calculate comparison metrics
-  const comparisonMetrics = useMemo(() => {
-    try {
-      if (!filteredComparisonData || !Array.isArray(filteredComparisonData) || filteredComparisonData.length === 0) {
-        return null;
-      }
-      return calculateMetrics(filteredComparisonData);
-    } catch (error) {
-      console.error('Error calculating comparison metrics:', error);
-      return null;
-    }
-  }, [filteredComparisonData]);
   
   // Calculate retailerData using useMemo
   const retailerData = useMemo(() => {
@@ -179,7 +162,7 @@ const SalesTab = ({ isSharedView = false }) => {
   };
 
   // This function safely applies date exclusions to the chart data
-  const applyDateExclusions = (data) => {
+  const applyDateExclusions = useCallback((data) => {
     // Safety checks - ensure both data and excludedDates are arrays
     if (!data || !Array.isArray(data)) return [];
     if (!excludedDates || !Array.isArray(excludedDates) || excludedDates.length === 0) return data;
@@ -209,7 +192,7 @@ const SalesTab = ({ isSharedView = false }) => {
       // Return original data on error
       return data;
     }
-  };
+  }, [excludedDates, redemptionTimeframe]);
   
   const exportSalesData = () => {
     try {
@@ -313,18 +296,6 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   }, [filteredData, brandMapping]);
 
-  // Repurchase intent for products
-  const repurchaseIntentData = useMemo(() => {
-    try {
-      if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
-        return [];
-      }
-      return calculateRepurchaseIntent(filteredData, brandMapping || {});
-    } catch (error) {
-      console.error('Error calculating repurchase intent:', error);
-      return [];
-    }
-  }, [filteredData, brandMapping]);
   
   // Get redemptions over time with improved time handling
   const redemptionsOverTime = useMemo(() => {
@@ -533,27 +504,10 @@ const SalesTab = ({ isSharedView = false }) => {
     }
   }, [redemptionsOverTime]);
   
-  // Helper function to format date
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return dateString;
-      
-      const day = date.getDate().toString().padStart(2, '0');
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const year = date.getFullYear();
-      
-      return `${day}/${month}/${year}`;
-    } catch (error) {
-      return dateString;
-    }
-  };
 
   const filteredRedemptionsData = useMemo(() => {
     return applyDateExclusions(timeSeriesWithMA);
-  }, [timeSeriesWithMA, excludedDates, applyDateExclusions]);
+  }, [timeSeriesWithMA, applyDateExclusions]);
   
   // Handle empty data
   if (!filteredData || filteredData.length === 0 || !metrics) {

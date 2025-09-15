@@ -1,22 +1,22 @@
 // src/components/filters/FilterPanel.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
 import { useFilter } from '../../context/FilterContext';
-import { useTheme } from '../../context/ThemeContext';
-import uniq from 'lodash/uniq';
+import { getCombinedCampaignData, getUniqueProducts, getUniqueRetailers } from '../../utils/campaignUtils';
+import { InfoTooltip, HelpTooltip } from '../common/Tooltip';
 
 /**
  * FilterPanel component for filtering data across all tabs
  */
 const FilterPanel = ({ activeTab }) => {
-  const { darkMode } = useTheme();
-
   // Get data-related state from DataContext
   const {
     salesData,
-    offerData,
     hasData,
-    brandMapping = {} // Import the brandMapping
+    dataLoading,
+    campaigns,
+    comparisonSettings,
+    canCompare
   } = useData();
 
   // Get filter-related state and functions from FilterContext
@@ -27,8 +27,6 @@ const FilterPanel = ({ activeTab }) => {
     startDate = '',
     endDate = '',
     selectedMonth = '',
-    setSelectedProducts,
-    setSelectedRetailers,
     setDateRange,
     setStartDate,
     setEndDate,
@@ -62,40 +60,57 @@ const FilterPanel = ({ activeTab }) => {
     }
   };
 
-  // Helper function to get display name without brand prefix
-  const getProductDisplayName = (product) => {
-    // Use the brand mapping if available
-    if (brandMapping && brandMapping[product]) {
-      return brandMapping[product].displayName || product;
-    }
 
-    // Fallback: Remove the brand prefix (first word or two)
-    const words = product.split(' ');
-    if (words.length >= 3) {
-      // Remove first word or two words for longer product names
-      const wordsToRemove = words.length >= 5 ? 2 : 1;
-      return words.slice(wordsToRemove).join(' ');
-    }
+  // Get the data source for filters (either combined or single campaign) - memoized
+  const filterDataSource = useMemo(() => getCombinedCampaignData({
+    campaigns,
+    comparisonSettings,
+    canCompare,
+    fallbackData: salesData
+  }), [campaigns, comparisonSettings, canCompare, salesData]);
 
-    return product;
-  };
+  // Available retailers from data (combined when in comparison mode) - memoized
+  const availableRetailers = useMemo(() => getUniqueRetailers(filterDataSource), [filterDataSource]);
 
-  // We're now using handleProductSelection and handleRetailerSelection from FilterContext
-  // as well as getAvailableMonths and formatMonth
-
-  // Available retailers from data
-  const availableRetailers = uniq((salesData || []).map(item => item.chain || ''))
-    .filter(Boolean)
-    .sort();
-
-  // Available products from data
-  const availableProducts = uniq((salesData || []).map(item => item.product_name || ''))
-    .filter(Boolean)
-    .sort();
+  // Available products from data (combined when in comparison mode) - memoized
+  const availableProducts = useMemo(() => getUniqueProducts(filterDataSource), [filterDataSource]);
 
   // If no data is available, don't show the filter panel
-  if (!hasData) {
+  if (!hasData && !dataLoading) {
     return null;
+  }
+
+  // Show skeleton loading state when data is loading
+  if (dataLoading && !hasData) {
+    return (
+      <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center">
+          <div className="flex items-center">
+            <div className="h-6 w-16 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"></div>
+            <div className="ml-4 h-4 w-32 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"></div>
+          </div>
+          <div className="h-8 w-8 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"></div>
+        </div>
+        <div className="p-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="space-y-3">
+                <div className="h-4 w-20 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"></div>
+                <div className="h-10 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"></div>
+                <div className="space-y-2">
+                  {[1, 2, 3].map((j) => (
+                    <div key={j} className="flex items-center space-x-2">
+                      <div className="h-4 w-4 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"></div>
+                      <div className="h-4 w-24 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -104,6 +119,10 @@ const FilterPanel = ({ activeTab }) => {
       <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center">
         <div className="flex items-center">
           <h2 className="text-lg font-medium text-gray-900 dark:text-white">Filters</h2>
+          <InfoTooltip 
+            content="Filter your data by products, retailers, and date ranges to focus on specific insights. Changes apply to all charts and metrics." 
+            className="ml-2"
+          />
           <div className="ml-3 flex flex-wrap items-center">
             <span className="text-sm text-gray-500 dark:text-gray-400 mr-2">
               {selectedProducts.includes('all') ? 'All Products' : `${selectedProducts.length} Products`}
@@ -122,16 +141,18 @@ const FilterPanel = ({ activeTab }) => {
         </div>
         <div className="flex items-center">
           {setComparisonMode && (
-            <button
-              onClick={() => setComparisonMode(!comparisonMode)}
-              className={`mr-3 px-3 py-1 text-sm rounded-md ${
-                comparisonMode
-                  ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-              }`}
-            >
-              {comparisonMode ? 'Comparison On' : 'Compare Periods'}
-            </button>
+            <HelpTooltip content="Enable time period comparison to analyze trends and changes over different date ranges">
+              <button
+                onClick={() => setComparisonMode(!comparisonMode)}
+                className={`mr-3 px-3 py-1 text-sm rounded-md transition-colors ${
+                  comparisonMode
+                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/30'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
+                }`}
+              >
+                {comparisonMode ? '✓ Comparison On' : 'Compare Periods'}
+              </button>
+            </HelpTooltip>
           )}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
@@ -157,7 +178,13 @@ const FilterPanel = ({ activeTab }) => {
             {/* Product filter section */}
             <div>
               <div className="flex justify-between items-center mb-2 cursor-pointer" onClick={() => toggleSection('products')}>
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Products</h3>
+                <div className="flex items-center">
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Products</h3>
+                  <HelpTooltip 
+                    content="Filter by specific products to analyze their individual performance and trends" 
+                    className="ml-1"
+                  />
+                </div>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   className={`h-4 w-4 text-gray-400 dark:text-gray-500 transition-transform ${expandedSection === 'products' || expandedSection === 'all' ? 'transform rotate-180' : ''}`}
@@ -196,7 +223,7 @@ const FilterPanel = ({ activeTab }) => {
                           : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                       }`}
                     >
-                      <span>{getProductDisplayName(product).length > 20 ? `${getProductDisplayName(product).substring(0, 20)}...` : getProductDisplayName(product)}</span>
+                      <span>{product.length > 20 ? `${product.substring(0, 20)}...` : product}</span>
                       {selectedProducts.includes(product) && !selectedProducts.includes('all') ? (
                         <svg className="ml-1 h-3 w-3 text-pink-600 dark:text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -494,7 +521,7 @@ const FilterPanel = ({ activeTab }) => {
             <div className="flex flex-wrap gap-2">
               {!selectedProducts.includes('all') && selectedProducts.map(product => (
                 <div key={product} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300">
-                  <span>Product: {getProductDisplayName(product).length > 15 ? `${getProductDisplayName(product).substring(0, 15)}...` : getProductDisplayName(product)}</span>
+                  <span>Product: {product.length > 15 ? `${product.substring(0, 15)}...` : product}</span>
                   <button
                     onClick={() => handleProductSelection(product)}
                     className="ml-1 text-pink-600 dark:text-pink-400 hover:text-pink-800 dark:hover:text-pink-200"

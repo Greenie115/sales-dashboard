@@ -1,6 +1,5 @@
 // src/components/dashboard/TabContent.js
-import React from 'react';
-import { useDashboard } from '../../context/DashboardContext';
+import React, { useState, useEffect } from 'react';
 
 // Import tab components
 import SummaryTab from './tabs/SummaryTab';
@@ -9,7 +8,17 @@ import DemographicsTab from './tabs/DemographicsTab';
 import OffersTab from './tabs/OffersTab';
 
 const TabContent = ({ activeTab, data, filteredData }) => {
-  const { state } = useDashboard();
+  const [isVisible, setIsVisible] = useState(true);
+  
+  // Add fade transition when tab changes
+  useEffect(() => {
+    setIsVisible(false);
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [activeTab]);
   
   // Render content based on active tab
   const renderTabContent = () => {
@@ -29,7 +38,13 @@ const TabContent = ({ activeTab, data, filteredData }) => {
   
   return (
     <div className="p-6">
-      {renderTabContent()}
+      <div 
+        className={`transition-all duration-300 ease-in-out ${
+          isVisible ? 'opacity-100 transform translate-y-0' : 'opacity-0 transform translate-y-2'
+        }`}
+      >
+        {renderTabContent()}
+      </div>
     </div>
   );
 };

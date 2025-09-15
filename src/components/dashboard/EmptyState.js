@@ -1,21 +1,33 @@
 import React, { useRef, useState } from 'react';
 import { useData } from '../../context/DataContext';
 import Papa from 'papaparse';
+import LoadingSpinner from '../common/LoadingSpinner';
 
 const EmptyState = () => {
   const fileInputRef = useRef(null);
+  
+  // Auto-focus the file input when component mounts
+  React.useEffect(() => {
+    // Delay focus slightly to ensure page is ready
+    const timer = setTimeout(() => {
+      if (fileInputRef.current) {
+        fileInputRef.current.focus();
+      }
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, []);
   const { 
     setDataLoading, 
     setSalesData, 
     setOfferData, 
     setHasOfferData, 
     setDataError,
-    setBrandMapping,
-    setBrandNames,
     setActiveTab,
     setCampaignData
   } = useData();
   const [processingFile, setProcessingFile] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Enhanced file processing with validation and correction
   const processFile = (file) => {
@@ -165,18 +177,12 @@ const EmptyState = () => {
       setSalesData(processedData);
       setActiveTab('summary');
       
-      // Auto-detect and set brand mapping
-      const productNames = processedData.map(row => row.product_name).filter(Boolean);
-      const detectedBrands = autoDetectBrands(productNames);
-      setBrandMapping(detectedBrands);
-      setBrandNames(Object.keys(detectedBrands));
       
       // Save to primary dataset
       const metadata = {
         name: 'Sales Data',
         fileName: file.name || 'upload.csv',
         uploadDate: new Date().toISOString(),
-        brandMapping: detectedBrands,
         recordCount: processedData.length,
         dateRange: {
           start: processedData.length > 0 ? processedData
@@ -207,32 +213,6 @@ const EmptyState = () => {
     }
   };
 
-  // Auto-detect brand names from product names
-  const autoDetectBrands = (productNames) => {
-    const brandMap = {};
-    const brandCounts = {};
-    
-    productNames.forEach(productName => {
-      if (!productName) return;
-      
-      // Extract potential brand (first word, normalized)
-      const words = productName.toLowerCase().trim().split(/\s+/);
-      const potentialBrand = words[0];
-      
-      if (potentialBrand && potentialBrand.length > 1) {
-        brandCounts[potentialBrand] = (brandCounts[potentialBrand] || 0) + 1;
-      }
-    });
-    
-    // Only include brands that appear multiple times
-    Object.entries(brandCounts).forEach(([brand, count]) => {
-      if (count >= 2) {
-        brandMap[brand] = brand.charAt(0).toUpperCase() + brand.slice(1);
-      }
-    });
-    
-    return brandMap;
-  };
 
 
   // Handle file selection
@@ -243,11 +223,49 @@ const EmptyState = () => {
     }
   };
 
+  // Handle drag and drop events
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
+        processFile(file);
+      } else {
+        setDataError('Please upload a CSV file only');
+      }
+    }
+  };
+
 
   return (
     <div className="space-y-6">      
       {/* Main Upload Interface */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-12 border border-gray-200 dark:border-gray-700">
+      <div 
+        className={`bg-white dark:bg-gray-800 shadow rounded-lg p-12 border-2 transition-all duration-200 ${
+          isDragOver 
+            ? 'border-pink-400 dark:border-pink-500 bg-pink-50 dark:bg-pink-900/10 scale-[1.02]' 
+            : 'border-dashed border-gray-300 dark:border-gray-600 hover:border-pink-300 dark:hover:border-pink-600'
+        }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div className="text-center">
           <svg 
             className="mx-auto h-20 w-20 text-pink-400 dark:text-pink-500" 
@@ -263,30 +281,56 @@ const EmptyState = () => {
               strokeWidth="2"
             />
           </svg>
-          <h3 className="mt-6 text-2xl font-bold text-gray-900 dark:text-white">Upload Your Sales Data</h3>
-          <p className="mt-4 text-lg text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-            Get instant insights from your items purchased file. Upload your CSV to see sales analytics, demographics, and performance metrics.
+          <h3 className={`mt-6 text-2xl font-bold transition-colors ${
+            isDragOver ? 'text-pink-600 dark:text-pink-400' : 'text-gray-900 dark:text-white'
+          }`}>
+            {isDragOver ? 'Drop CSV file here' : 'Upload Sales Data'}
+          </h3>
+          <p className={`mt-4 text-base max-w-sm mx-auto transition-colors ${
+            isDragOver 
+              ? 'text-pink-700 dark:text-pink-300' 
+              : 'text-gray-600 dark:text-gray-400'
+          }`}>
+            {isDragOver 
+              ? 'Release to upload' 
+              : 'Drop your CSV file or click to browse'
+            }
           </p>
+          <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+            <p className="mb-2">📊 <strong>Get started:</strong> Upload your sales data to see analytics</p>
+            <p className="mb-2">📈 <strong>Compare campaigns:</strong> Upload multiple files for comparison</p>
+            <p>💡 <strong>Tip:</strong> Files with 'hits_offer' in the name are treated as offer data</p>
+          </div>
           <div className="mt-8">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center px-6 py-3 border border-transparent text-lg font-medium rounded-lg text-white bg-pink-600 hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 dark:focus:ring-offset-gray-800 shadow-lg hover:shadow-xl transition-all duration-200"
+              className={`inline-flex items-center px-6 py-3 border border-transparent text-lg font-medium rounded-lg text-white shadow-lg hover:shadow-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 dark:focus:ring-offset-gray-800 ${
+                processingFile 
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : isDragOver
+                  ? 'bg-pink-700 scale-105'
+                  : 'bg-pink-600 hover:bg-pink-700'
+              }`}
               disabled={processingFile}
             >
-              <svg 
-                className="-ml-1 mr-3 h-6 w-6" 
-                xmlns="http://www.w3.org/2000/svg" 
-                fill="none" 
-                viewBox="0 0 24 24" 
-                stroke="currentColor"
-              >
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth={2} 
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" 
-                />
-              </svg>
+              {processingFile ? (
+                <LoadingSpinner size="sm" color="gray" className="-ml-1 mr-3" />
+              ) : (
+                <svg 
+                  className="-ml-1 mr-3 h-6 w-6" 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" 
+                  />
+                </svg>
+              )}
               {processingFile ? 'Processing your file...' : 'Choose CSV File'}
             </button>
             <input 
@@ -297,9 +341,8 @@ const EmptyState = () => {
               onChange={handleFileChange}
             />
           </div>
-          <div className="mt-6 text-sm text-gray-500 dark:text-gray-400">
-            <p className="mb-2">Supported format: CSV files with sales or offer data</p>
-            <p className="text-xs">Once uploaded, you'll see comprehensive analytics and have the option to compare with additional datasets</p>
+          <div className="mt-6 text-xs text-gray-500 dark:text-gray-400 opacity-75">
+            CSV files only • Max 50MB
           </div>
         </div>
       </div>

@@ -6,7 +6,6 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { calculateProductRatings, calculateRepurchaseIntent, filterSalesData } from '../../../utils/dataProcessing';
 import StarRating from '../../common/StarRating';
 import ExportButton from '../export/ExportButton';
-import CalculationErrorBoundary from '../../common/CalculationErrorBoundary';
 
 // Custom colors for light and dark mode
 const LIGHT_COLORS = ['#FF0066', '#0066CC', '#FFC107', '#00ACC1', '#9C27B0', '#4CAF50', '#FF9800'];

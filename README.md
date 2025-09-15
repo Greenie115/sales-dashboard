@@ -1,42 +1,33 @@
 # Sales Dashboard
 
-A comprehensive sales data visualization dashboard with client sharing capabilities. This application allows you to upload, analyze, and share sales data with clients in a secure and customizable way.
+A comprehensive sales data visualization dashboard for analyzing CSV sales data. This standalone application allows you to upload, analyze, and compare sales performance across multiple campaigns with advanced analytics and insights.
 
 ## Features
 
-- Upload and analyze sales data from CSV files
-- View sales metrics, trends, and distributions
-- Filter data by products, retailers, and date ranges
-- Share customized dashboard views with clients
-- Control what data and visualizations clients can see
-- Dark/light mode support
+- Upload and analyze sales data from multiple CSV formats
+- Compare performance between two campaigns (A vs B)
+- Advanced date parsing supporting international formats (MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD)
+- Comprehensive sales metrics, trends, and distributions
+- Repurchase intent analysis with intelligent brand detection
+- Dynamic filtering by products, retailers, and date ranges
+- Advanced demographics analysis with clickable product exploration
+- Offer performance tracking and analysis
+- Real-time data processing with progress indicators
+- Error handling and recovery for robust data analysis
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
-- npm or yarn
-- Supabase account (for data sharing functionality)
+- Node.js (v16 or higher)
+- npm
 
 ### Installation
 
-Make sure you have Node.js installed, then run:
-
 ```bash
 npm install
+npm start
 ```
-
-This will install all dependencies, including React Router DOM which is required for the sharing feature.
-
-### Supabase Setup (for Sharing Functionality)
-
-1. Create a Supabase account at [https://supabase.com](https://supabase.com)
-2. Create a new project
-3. Copy your project URL and anon key from the Supabase dashboard
-4. Create a `.env` file in the root directory based on `.env.example`
-5. Add your Supabase URL and anon key to the `.env` file
-6. Set up the database schema by following the instructions in `supabase/README.md`
 
 ## Available Scripts
 
@@ -105,54 +96,56 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
 
-## Data Sharing Functionality
+## Dashboard Tabs
 
-This dashboard includes powerful data sharing capabilities that allow you to share insights with clients while maintaining control over what data is visible.
+### Summary Tab
+- Key performance indicators and metrics overview
+- Top performing products and retailers
+- Repurchase intent analysis for all products
+- Campaign comparison metrics when multiple datasets are loaded
 
-### How to Share Data
+### Sales Tab  
+- Detailed sales performance analytics
+- Revenue trends and distribution charts
+- Product and retailer performance breakdowns
+- Time-based sales analysis
 
-1. Upload and analyze your sales data
-2. Click the "Share" button in the dashboard header
-3. Configure your sharing options:
-   - Select which tabs to include (Summary, Sales, Demographics, Offers)
-   - Choose whether to hide retailer names for confidentiality
-   - Set whether to hide total values or show only percentages
-   - Add client notes
-   - Set an expiration date for the shared link
-4. Click "Generate Link" to create a shareable URL
-5. Copy and send the link to your client
+### Demographics Tab
+- Customer demographic insights and trends
+- Interactive product exploration (click products to filter data)
+- Geographic and demographic distribution analysis
 
-### Data Privacy and Security
-
-When sharing data with clients, you can:
-
-- Anonymize retailer names to protect sensitive business relationships
-- Hide absolute values and show only percentages
-- Limit which dashboard tabs are accessible
-- Set expiration dates for shared links
-- Hide specific charts that contain sensitive information
-
-### Troubleshooting Sharing Issues
-
-If you're having trouble with the sharing functionality:
-
-1. Check that your Supabase credentials are correct in the `.env` file
-2. Verify that the `shared_dashboards` table exists in your Supabase database
-3. Check the browser console for any error messages
-4. Try reducing the amount of data being shared if you're getting timeout errors
+### Offers Tab
+- Offer performance tracking and analysis
+- Campaign effectiveness metrics
+- Offer hit analysis and optimization insights
 
 ## Data Format
 
-### Sales Data CSV Format
+### Supported CSV Formats
 
-The application expects CSV files with the following columns:
-- `receipt_date`: Date of the transaction (YYYY-MM-DD format)
-- `product_name`: Name of the product
-- `chain`: Retailer/chain name
-- Additional columns are supported but not required
+The dashboard automatically detects and processes various CSV formats:
 
-### Offer Data CSV Format
+#### Sales Data
+- **Date columns**: Supports multiple formats (MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, ISO timestamps)
+- **Product identification**: Automatically detects product name columns
+- **Retailer data**: Identifies chain/retailer information
+- **Revenue data**: Processes sales amounts and pricing information
+- **Flexible column mapping**: Automatically maps common column variations
 
-For offer data, the CSV should include:
-- `hit_id`: Unique identifier for the offer hit
-- Additional columns as needed
+#### Survey Data (Optional)
+- **Repurchase intent**: Processes survey responses for repurchase likelihood
+- **Customer feedback**: Analyzes satisfaction and intent data
+- **Demographic information**: Age, location, and other customer attributes
+
+#### Offer Data (Optional)
+- **Campaign tracking**: Processes offer hit data and performance metrics
+- **Engagement metrics**: Click-through rates and conversion data
+
+### Data Processing Features
+
+- **Automatic column detection**: Smart mapping of CSV columns to data types
+- **Brand detection**: Intelligent identification of product brands and categories
+- **Error recovery**: Robust handling of malformed data and missing values
+- **Progress tracking**: Real-time processing updates with stage indicators
+- **Memory optimization**: Efficient processing of large datasets

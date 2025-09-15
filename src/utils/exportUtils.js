@@ -1,68 +1,132 @@
 // src/utils/exportUtils.js
-import Papa from 'papaparse';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-import { createProductRetailerMatrix } from './dataProcessing';
-import { formatDate, formatMonth, AGE_GROUP_ORDER } from './formatUtils';
+import { 
+  filterSalesData,
+  getRetailerDistribution,
+  calculateMetrics
+} from './dataProcessing';
+
+/**
+ * Get comparison data for export when in comparison mode
+ * @param {Object} campaigns - Campaign data
+ * @param {Object} comparisonSettings - Comparison settings
+ * @param {Object} filterState - Current filter state
+ * @param {string} activeTab - Active tab type
+ * @returns {Object|null} Processed comparison data or null
+ */
+export const getComparisonDataForExport = (campaigns, comparisonSettings, filterState, activeTab) => {
+  if (!campaigns || !comparisonSettings || comparisonSettings.mode !== 'campaigns') {
+    return null;
+  }
+  
+  const primaryDataset = comparisonSettings.primaryDataset || 'A';
+  const comparisonDataset = primaryDataset === 'A' ? 'B' : 'A';
+  
+  const comparisonRawData = campaigns[comparisonDataset]?.data || [];
+  if (!comparisonRawData.length) return null;
+  
+  // Filter the comparison data using the same filters
+  const filteredComparisonData = filterSalesData(comparisonRawData, filterState);
+  if (!filteredComparisonData.length) return null;
+  
+  // Process data based on active tab
+  if (activeTab === 'summary' || activeTab === 'sales') {
+    const comparisonRetailerData = getRetailerDistribution(filteredComparisonData);
+    
+    // Calculate product distribution for comparison
+    const productCounts = {};
+    filteredComparisonData.forEach(item => {
+      const productName = item.product_name || 'Unknown Product';
+      productCounts[productName] = (productCounts[productName] || 0) + 1;
+    });
+    
+    const comparisonProductDistribution = Object.entries(productCounts)
+      .map(([name, count]) => ({
+        displayName: name,
+        count,
+        percentage: (count / filteredComparisonData.length) * 100
+      }))
+      .sort((a, b) => b.count - a.count);
+    
+    return {
+      comparisonRetailerData,
+      comparisonProductDistribution,
+      comparisonMetrics: calculateMetrics(filteredComparisonData)
+    };
+  }
+  
+  // For other tabs, return the raw filtered data for now
+  return {
+    comparisonData: filteredComparisonData
+  };
+};
 
 /**
  * Export data to CSV
  */
-export const exportToCSV = (data, activeTab, fileName) => {
+export const exportToCSV = (data, activeTab, fileName, comparisonContext = null) => {
   try {
     // Determine which data to export based on active tab
     if (activeTab === 'summary' || activeTab === 'sales') {
       // Export sales data
-      exportSalesDataToCSV(data, fileName);
+      exportSalesDataToCSV(data, fileName, comparisonContext);
     } else if (activeTab === 'demographics') {
       // Export demographic data
-      exportDemographicDataToCSV(data, fileName);
+      exportDemographicDataToCSV(data, fileName, comparisonContext);
     } else if (activeTab === 'offers') {
       // Export offer data
-      exportOfferDataToCSV(data, fileName);
+      exportOfferDataToCSV(data, fileName, comparisonContext);
     } else {
       throw new Error(`Unsupported tab type: ${activeTab}`);
     }
   } catch (error) {
     console.error('Error exporting CSV:', error);
-    alert('Failed to export CSV. Check console for details.');
+    throw new Error(`Unable to export CSV: ${error.message || 'Unknown error'}. Please check your data and try again.`);
   }
 };
 
 /**
  * Export data to PDF
  */
-export const exportToPDF = (data, activeTab, fileName) => {
+export const exportToPDF = (data, activeTab, fileName, comparisonContext = null) => {
   try {
     // Determine which data to export based on active tab
     if (activeTab === 'summary' || activeTab === 'sales') {
       // Export sales data
-      exportSalesDataToPDF(data, fileName);
+      exportSalesDataToPDF(data, fileName, comparisonContext);
     } else if (activeTab === 'demographics') {
       // Export demographic data
-      exportDemographicDataToPDF(data, fileName);
+      exportDemographicDataToPDF(data, fileName, comparisonContext);
     } else if (activeTab === 'offers') {
       // Export offer data
-      exportOfferDataToPDF(data, fileName);
+      exportOfferDataToPDF(data, fileName, comparisonContext);
     } else {
       throw new Error(`Unsupported tab type: ${activeTab}`);
     }
   } catch (error) {
     console.error('Error exporting PDF:', error);
-    alert('Failed to export PDF. Check console for details.');
+    throw new Error(`Unable to export PDF: ${error.message || 'Unknown error'}. Please check your data and try again.`);
   }
 };
 
 /**
  * Export sales data to CSV
  */
-const exportSalesDataToCSV = (data, fileName) => {
+const exportSalesDataToCSV = (data, fileName, comparisonContext = null) => {
   // Extract what we need from the data object
-  const { filteredData, retailerData, productDistribution, brandMapping } = data;
+  const { retailerData, productDistribution } = data;
   
   // Begin building CSV content
   let csvContent = 'Sales Analysis Report\n\n';
+  
+  // Add comparison context if available
+  if (comparisonContext && comparisonContext.isComparison) {
+    csvContent += `Campaign Comparison Mode\n`;
+    csvContent += `Primary Dataset: ${comparisonContext.primaryName || 'Campaign A'}\n`;
+    csvContent += `Comparison Dataset: ${comparisonContext.comparisonName || 'Campaign B'}\n\n`;
+  }
   
   // Add retailer distribution data
   if (retailerData && retailerData.length > 0) {
@@ -73,7 +137,7 @@ const exportSalesDataToCSV = (data, fileName) => {
       const row = [
         `"${item.name}"`,
         item.value,
-        `${item.percentage.toFixed(1)}%`
+        `${(item.percentage || 0).toFixed(1)}%`
       ];
       csvContent += row.join(',') + '\n';
     });
@@ -90,10 +154,49 @@ const exportSalesDataToCSV = (data, fileName) => {
       const row = [
         `"${item.displayName}"`,
         item.count,
-        `${item.percentage.toFixed(1)}%`
+        `${(item.percentage || 0).toFixed(1)}%`
       ];
       csvContent += row.join(',') + '\n';
     });
+  }
+  
+  // Add comparison data if available
+  if (comparisonContext && comparisonContext.comparisonData) {
+    const { comparisonRetailerData, comparisonProductDistribution } = comparisonContext.comparisonData;
+    
+    csvContent += '\n\n=== COMPARISON DATA ===\n\n';
+    
+    // Add comparison retailer data
+    if (comparisonRetailerData && comparisonRetailerData.length > 0) {
+      csvContent += `${comparisonContext.comparisonName || 'Campaign B'} - Retailer Distribution\n`;
+      csvContent += 'Retailer,Units,Percentage\n';
+      
+      comparisonRetailerData.forEach(item => {
+        const row = [
+          `"${item.name}"`,
+          item.value,
+          `${(item.percentage || 0).toFixed(1)}%`
+        ];
+        csvContent += row.join(',') + '\n';
+      });
+      
+      csvContent += '\n';
+    }
+    
+    // Add comparison product data
+    if (comparisonProductDistribution && comparisonProductDistribution.length > 0) {
+      csvContent += `${comparisonContext.comparisonName || 'Campaign B'} - Product Distribution\n`;
+      csvContent += 'Product,Units,Percentage\n';
+      
+      comparisonProductDistribution.forEach(item => {
+        const row = [
+          `"${item.displayName}"`,
+          item.count,
+          `${(item.percentage || 0).toFixed(1)}%`
+        ];
+        csvContent += row.join(',') + '\n';
+      });
+    }
   }
   
   // Create and download the CSV file
@@ -104,14 +207,20 @@ const exportSalesDataToCSV = (data, fileName) => {
 /**
  * Export demographic data to CSV
  */
-const exportDemographicDataToCSV = (data, fileName) => {
+const exportDemographicDataToCSV = (data, fileName, comparisonContext = null) => {
   // Check if we have demographic data to export
   if (!data) {
-    alert('No demographic data available to export.');
-    return;
+    throw new Error('No demographic data available to export. Please ensure your data is loaded and try again.');
   }
   
   let csvContent = 'Demographics Analysis Report\n\n';
+  
+  // Add comparison context if available
+  if (comparisonContext && comparisonContext.isComparison) {
+    csvContent += `Campaign Comparison Mode\n`;
+    csvContent += `Primary Dataset: ${comparisonContext.primaryName || 'Campaign A'}\n`;
+    csvContent += `Comparison Dataset: ${comparisonContext.comparisonName || 'Campaign B'}\n\n`;
+  }
   
   // Add question information if available
   if (data.questionNumber && data.questionText) {
@@ -125,7 +234,7 @@ const exportDemographicDataToCSV = (data, fileName) => {
     
     data.productRatings.forEach(item => {
       const productName = `"${item.displayName.replace(/"/g, '""')}"`;
-      csvContent += `${productName},${item.avgRating.toFixed(2)},${item.ratingResponses}\n`;
+      csvContent += `${productName},${(item.avgRating || 0).toFixed(2)},${item.ratingResponses}\n`;
     });
     
     csvContent += '\n';
@@ -138,7 +247,7 @@ const exportDemographicDataToCSV = (data, fileName) => {
     
     data.repurchaseIntent.forEach(item => {
       const productName = `"${item.displayName.replace(/"/g, '""')}"`;
-      csvContent += `${productName},${item.repurchaseIntentRate.toFixed(1)}%,${item.repurchaseResponses}\n`;
+      csvContent += `${productName},${(item.repurchaseIntentRate || 0).toFixed(1)}%,${item.repurchaseResponses}\n`;
     });
     
     csvContent += '\n';
@@ -191,14 +300,20 @@ const exportDemographicDataToCSV = (data, fileName) => {
 /**
  * Export offer data to CSV
  */
-const exportOfferDataToCSV = (data, fileName) => {
+const exportOfferDataToCSV = (data, fileName, comparisonContext = null) => {
   if (!data) {
-    alert('No offer data available to export.');
-    return;
+    throw new Error('No offer data available to export. Please ensure your data is loaded and try again.');
   }
   
   try {
     let csvContent = 'Offer Analysis Report\n\n';
+    
+    // Add comparison context if available
+    if (comparisonContext && comparisonContext.isComparison) {
+      csvContent += `Campaign Comparison Mode\n`;
+      csvContent += `Primary Dataset: ${comparisonContext.primaryName || 'Campaign A'}\n`;
+      csvContent += `Comparison Dataset: ${comparisonContext.comparisonName || 'Campaign B'}\n\n`;
+    }
     
     // Add offer metrics if available
     if (data.metrics) {
@@ -215,7 +330,7 @@ const exportOfferDataToCSV = (data, fileName) => {
       
       data.offerData.forEach(item => {
         const formattedOfferName = `"${item.name.replace(/"/g, '""')}"`;
-        csvContent += `${formattedOfferName},${item.value},${item.percentage.toFixed(1)}%\n`;
+        csvContent += `${formattedOfferName},${item.value},${(item.percentage || 0).toFixed(1)}%\n`;
       });
     }
     
@@ -224,14 +339,14 @@ const exportOfferDataToCSV = (data, fileName) => {
     saveAs(blob, `${fileName}.csv`);
   } catch (error) {
     console.error('Error exporting offer data to CSV:', error);
-    alert('Failed to export offer data to CSV.');
+    throw new Error(`Unable to export offer data to CSV: ${error.message || 'Unknown error'}. Please try again.`);
   }
 };
 
 /**
  * Export sales data to PDF
  */
-const exportSalesDataToPDF = (data, fileName) => {
+const exportSalesDataToPDF = (data, fileName, comparisonContext = null) => {
   try {
     const { retailerData, productDistribution } = data;
     const doc = new jsPDF();
@@ -240,11 +355,81 @@ const exportSalesDataToPDF = (data, fileName) => {
     doc.setFontSize(18);
     doc.text('Sales Analysis Report', 14, 22);
     
-    // Add date
+    // Add date and comparison context
     doc.setFontSize(12);
     doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 30);
     
     let yPosition = 40;
+    
+    // Add comparison context if available
+    if (comparisonContext && comparisonContext.isComparison) {
+      doc.setFontSize(10);
+      doc.text(`Campaign Comparison Mode`, 14, yPosition);
+      doc.text(`Primary: ${comparisonContext.primaryName || 'Campaign A'}`, 14, yPosition + 5);
+      doc.text(`Comparison: ${comparisonContext.comparisonName || 'Campaign B'}`, 14, yPosition + 10);
+      yPosition += 20;
+    }
+    
+    // Add comparison data tables if available
+    if (comparisonContext && comparisonContext.comparisonData) {
+      const { comparisonRetailerData, comparisonProductDistribution } = comparisonContext.comparisonData;
+      
+      // Add comparison retailer distribution table
+      if (comparisonRetailerData && comparisonRetailerData.length > 0) {
+        // Check if we need a new page
+        if (yPosition > 180) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        doc.setFontSize(14);
+        doc.text(`${comparisonContext.comparisonName || 'Campaign B'} - Retailer Distribution`, 14, yPosition);
+        yPosition += 10;
+        
+        const comparisonRetailerTableData = comparisonRetailerData.map(item => [
+          item.name,
+          item.value.toString(),
+          `${(item.percentage || 0).toFixed(1)}%`
+        ]);
+        
+        doc.autoTable({
+          startY: yPosition,
+          head: [['Retailer', 'Units', 'Percentage']],
+          body: comparisonRetailerTableData,
+          theme: 'striped',
+          headStyles: { fillColor: [0, 102, 204] }
+        });
+        
+        yPosition = doc.lastAutoTable.finalY + 20;
+      }
+      
+      // Add comparison product distribution table
+      if (comparisonProductDistribution && comparisonProductDistribution.length > 0) {
+        // Check if we need a new page
+        if (yPosition > 180) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        doc.setFontSize(14);
+        doc.text(`${comparisonContext.comparisonName || 'Campaign B'} - Product Distribution`, 14, yPosition);
+        yPosition += 10;
+        
+        const comparisonProductTableData = comparisonProductDistribution.slice(0, 10).map(item => [
+          item.displayName,
+          item.count.toString(),
+          `${(item.percentage || 0).toFixed(1)}%`
+        ]);
+        
+        doc.autoTable({
+          startY: yPosition,
+          head: [['Product', 'Units', 'Percentage']],
+          body: comparisonProductTableData,
+          theme: 'striped',
+          headStyles: { fillColor: [0, 102, 204] }
+        });
+      }
+    }
     
     // Add retailer distribution table
     if (retailerData && retailerData.length > 0) {
@@ -255,7 +440,7 @@ const exportSalesDataToPDF = (data, fileName) => {
       const retailerTableData = retailerData.map(item => [
         item.name,
         item.value.toString(),
-        `${item.percentage.toFixed(1)}%`
+        `${(item.percentage || 0).toFixed(1)}%`
       ]);
       
       doc.autoTable({
@@ -278,7 +463,7 @@ const exportSalesDataToPDF = (data, fileName) => {
       const productTableData = productDistribution.slice(0, 10).map(item => [
         item.displayName,
         item.count.toString(),
-        `${item.percentage.toFixed(1)}%`
+        `${(item.percentage || 0).toFixed(1)}%`
       ]);
       
       doc.autoTable({
@@ -302,14 +487,14 @@ const exportSalesDataToPDF = (data, fileName) => {
     doc.save(`${fileName}.pdf`);
   } catch (error) {
     console.error('Error exporting sales data to PDF:', error);
-    alert('Failed to export sales data to PDF.');
+    throw new Error(`Unable to export sales data to PDF: ${error.message || 'Unknown error'}. Please try again.`);
   }
 };
 
 /**
  * Export demographic data to PDF
  */
-const exportDemographicDataToPDF = (data, fileName) => {
+const exportDemographicDataToPDF = (data, fileName, comparisonContext = null) => {
   try {
     const doc = new jsPDF();
     
@@ -338,7 +523,7 @@ const exportDemographicDataToPDF = (data, fileName) => {
       
       const ratingsTableData = data.productRatings.map(item => [
         item.displayName,
-        item.avgRating.toFixed(2),
+        (item.avgRating || 0).toFixed(2),
         item.ratingResponses.toString()
       ]);
       
@@ -361,7 +546,7 @@ const exportDemographicDataToPDF = (data, fileName) => {
       
       const intentTableData = data.repurchaseIntent.map(item => [
         item.displayName,
-        `${item.repurchaseIntentRate.toFixed(1)}%`,
+        `${(item.repurchaseIntentRate || 0).toFixed(1)}%`,
         item.repurchaseResponses.toString()
       ]);
       
@@ -475,14 +660,14 @@ const exportDemographicDataToPDF = (data, fileName) => {
     doc.save(`${fileName}.pdf`);
   } catch (error) {
     console.error('Error exporting demographic data to PDF:', error);
-    alert('Failed to export demographic data to PDF.');
+    throw new Error(`Unable to export demographic data to PDF: ${error.message || 'Unknown error'}. Please try again.`);
   }
 };
 
 /**
  * Export offer data to PDF
  */
-const exportOfferDataToPDF = (data, fileName) => {
+const exportOfferDataToPDF = (data, fileName, comparisonContext = null) => {
   try {
     const doc = new jsPDF();
     
@@ -527,7 +712,7 @@ const exportOfferDataToPDF = (data, fileName) => {
       const offerTableData = data.offerData.map(item => [
         item.name,
         item.value.toString(),
-        `${item.percentage.toFixed(1)}%`
+        `${(item.percentage || 0).toFixed(1)}%`
       ]);
       
       doc.autoTable({
@@ -551,6 +736,6 @@ const exportOfferDataToPDF = (data, fileName) => {
     doc.save(`${fileName}.pdf`);
   } catch (error) {
     console.error('Error exporting offer data to PDF:', error);
-    alert('Failed to export offer data to PDF.');
+    throw new Error(`Unable to export offer data to PDF: ${error.message || 'Unknown error'}. Please try again.`);
   }
 };

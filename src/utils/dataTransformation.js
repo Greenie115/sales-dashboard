@@ -105,12 +105,46 @@ export const COLUMN_MAPPINGS = {
 };
 
 /**
+ * Helper functions to check if transformation is needed
+ */
+const TRANSFORMATION_CHECKS = {
+  // Check if a date is already in ISO format
+  isISODate: (value) => {
+    if (!value || typeof value !== 'string') return false;
+    return /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/.test(value.trim());
+  },
+  
+  // Check if a value is already a clean number
+  isCleanNumber: (value) => {
+    if (value === null || value === undefined || value === '') return false;
+    const num = parseFloat(value);
+    return !isNaN(num) && value.toString() === num.toString();
+  },
+  
+  // Check if text is already clean (no leading/trailing spaces, not empty)
+  isCleanText: (value) => {
+    if (!value || typeof value !== 'string') return false;
+    return value === value.trim() && value.length > 0;
+  },
+  
+  // Check if a column already has the standard name
+  hasStandardColumnName: (columnName, targetName) => {
+    return columnName.toLowerCase().trim() === targetName.toLowerCase();
+  }
+};
+
+/**
  * Value transformation functions
  */
 export const VALUE_TRANSFORMERS = {
   // Date format standardization using robust date utils
   standardizeDate: (value) => {
     if (!value) return value;
+    
+    // Skip transformation if already in ISO format
+    if (TRANSFORMATION_CHECKS.isISODate(value)) {
+      return value;
+    }
     
     const parsedDate = safeParseDate(value);
     if (parsedDate) {
@@ -125,6 +159,11 @@ export const VALUE_TRANSFORMERS = {
   cleanNumeric: (value) => {
     if (!value) return null;
     
+    // Skip transformation if already a clean number
+    if (TRANSFORMATION_CHECKS.isCleanNumber(value)) {
+      return value;
+    }
+    
     // Remove currency symbols and commas
     const cleaned = value.toString()
       .replace(/[$£€¥₹,]/g, '')
@@ -138,6 +177,11 @@ export const VALUE_TRANSFORMERS = {
   // Text cleaning
   cleanText: (value) => {
     if (!value) return value;
+    
+    // Skip transformation if already clean text
+    if (TRANSFORMATION_CHECKS.isCleanText(value)) {
+      return value;
+    }
     
     return value.toString()
       .trim()
@@ -260,26 +304,31 @@ export const transformData = (data, dataType = 'sales') => {
     mappedColumns: {},
     transformedFields: [],
     issues: [],
+    warnings: [],
     stats: {
       totalRows: data.length,
       successfulRows: 0,
-      transformedValues: 0
+      transformedValues: 0,
+      skippedTransformations: 0
     }
   };
   
-  // Step 1: Map column names
+  // Step 1: Smart column mapping (only map if actually needed)
   const mappedData = data.map(row => {
     const mappedRow = {};
     
     Object.entries(row).forEach(([originalColumn, value]) => {
       const cleanColumn = originalColumn.toLowerCase().trim();
-      const mappedColumn = rules.columnMappings[cleanColumn] || originalColumn;
+      const targetColumn = rules.columnMappings[cleanColumn];
       
-      if (rules.columnMappings[cleanColumn]) {
-        report.mappedColumns[originalColumn] = mappedColumn;
+      // Only apply mapping if the column name actually needs to be changed
+      if (targetColumn && !TRANSFORMATION_CHECKS.hasStandardColumnName(originalColumn, targetColumn)) {
+        mappedRow[targetColumn] = value;
+        report.mappedColumns[originalColumn] = targetColumn;
+      } else {
+        // Use original column name if no mapping needed or already standard
+        mappedRow[originalColumn] = value;
       }
-      
-      mappedRow[mappedColumn] = value;
     });
     
     return mappedRow;
@@ -303,12 +352,22 @@ export const transformData = (data, dataType = 'sales') => {
             if (!report.transformedFields.includes(column)) {
               report.transformedFields.push(column);
             }
+          } else {
+            // Track skipped transformations (data was already in correct format)
+            report.stats.skippedTransformations++;
           }
         } catch (error) {
-          report.issues.push(
-            `Row ${index + 1}: Error transforming ${column}: ${error.message}`
-          );
-          rowHasErrors = true;
+          // Distinguish between critical errors and minor issues
+          const errorMessage = `Row ${index + 1}: Error transforming ${column}: ${error.message}`;
+          
+          // If transformation fails but we have the original value, treat as warning
+          if (transformedRow[column] !== null && transformedRow[column] !== undefined) {
+            report.warnings.push(errorMessage);
+          } else {
+            // Critical error - missing required data
+            report.issues.push(errorMessage);
+            rowHasErrors = true;
+          }
         }
       }
     });

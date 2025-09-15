@@ -7,9 +7,6 @@ import {
 } from 'recharts';
 import groupBy from 'lodash/groupBy';
 
-
-const DEFAULT_PAGE_SIZE = 10;
-
 const OffersTab = ({ isSharedView }) => {
   // Get dark mode from ThemeContext
   const { darkMode } = useTheme();
@@ -17,7 +14,6 @@ const OffersTab = ({ isSharedView }) => {
   const dataContext = useData();
   const { 
     offerData: contextOfferData,
-    hasOfferData: contextHasOfferData,
     campaigns,
     comparisonSettings,
     canCompare
@@ -31,42 +27,8 @@ const OffersTab = ({ isSharedView }) => {
     return contextOfferData || [];
   }, [contextOfferData, campaigns, comparisonSettings, canCompare]);
 
-  // Get comparison dataset
-  const comparisonOfferData = useMemo(() => {
-    if (comparisonSettings?.mode === 'campaigns' && canCompare) {
-      const otherCampaign = comparisonSettings.primaryDataset === 'A' ? 'B' : 'A';
-      return campaigns[otherCampaign]?.offerData || [];
-    }
-    return [];
-  }, [campaigns, comparisonSettings, canCompare]);
 
   const offerData = activeOfferData;
-  const hasOfferData = contextHasOfferData;
-
-  // Campaign labels
-  const campaignLabels = useMemo(() => {
-    if (!comparisonSettings || !campaigns) return { primary: '', comparison: '' };
-    return {
-      primary: campaigns[comparisonSettings.primaryDataset]?.name || `Campaign ${comparisonSettings.primaryDataset}`,
-      comparison: campaigns[comparisonSettings.primaryDataset === 'A' ? 'B' : 'A']?.name || `Campaign ${comparisonSettings.primaryDataset === 'A' ? 'B' : 'A'}`
-    };
-  }, [campaigns, comparisonSettings]);
-
-  // Campaign metrics
-  const campaignMetrics = useMemo(() => {
-    const primaryMetrics = {
-      totalHits: activeOfferData?.length || 0,
-      uniqueOffers: activeOfferData ? [...new Set(activeOfferData.map(item => item.offer_name))].length : 0
-    };
-    
-    const comparisonMetrics = {
-      totalHits: comparisonOfferData?.length || 0,
-      uniqueOffers: comparisonOfferData ? [...new Set(comparisonOfferData.map(item => item.offer_name))].length : 0
-    };
-
-    return { primary: primaryMetrics, comparison: comparisonMetrics };
-  }, [activeOfferData, comparisonOfferData]);
-  
 
   // Local state
   const [selectedOffers, setSelectedOffers] = useState(['all']);
@@ -80,8 +42,6 @@ const OffersTab = ({ isSharedView }) => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [chartType, setChartType] = useState('line');
   const [showDataPoints, setShowDataPoints] = useState(true);
   const [smoothLine, setSmoothLine] = useState(false);
@@ -113,26 +73,6 @@ const OffersTab = ({ isSharedView }) => {
     }
   };
 
-  // Debug offer data to examine date format
-  useEffect(() => {
-    if (offerData && offerData.length > 0) {
-      for (let i = 0; i < Math.min(5, offerData.length); i++) {
-        console.log(`Item ${i+1}:`, offerData[i]);
-        console.log(`  created_at:`, offerData[i].created_at);
-        
-        // Try to parse the date
-        try {
-          const date = new Date(offerData[i].created_at);
-          console.log(`  parsed date:`, date);
-          console.log(`  is valid:`, !isNaN(date.getTime()));
-          console.log(`  ISO string:`, date.toISOString());
-          console.log(`  date string:`, date.toISOString().split('T')[0]);
-        } catch (e) {
-          console.error(`  parsing error:`, e);
-        }
-      }
-    }
-  }, [offerData]);
 
   // Preprocess data when it changes
   useEffect(() => {
@@ -188,9 +128,6 @@ const OffersTab = ({ isSharedView }) => {
         }
       });
 
-      console.log("Valid dates found:", validDates);
-      console.log("Unique dates:", uniqueDates.size);
-      console.log("Date buckets created:", Object.keys(byDate).length);
 
       if (datesWithHits.length > 0) {
         const sortedDates = [...datesWithHits].sort();
@@ -283,7 +220,6 @@ const OffersTab = ({ isSharedView }) => {
 
   // Apply exclusion rules for first/last days and custom excluded dates
   const exclusionAdjustedData = useMemo(() => {
-    console.log("Applying exclusions to filtered data:", filteredOfferData.length);
     
     if (!filteredOfferData.length || 
         (!excludeFirstDays && 
@@ -316,7 +252,6 @@ const OffersTab = ({ isSharedView }) => {
             
             return date.toISOString().split('T')[0];
           } catch (e) {
-            console.error("Error processing date:", e, item);
             return null;
           }
         });
@@ -324,7 +259,6 @@ const OffersTab = ({ isSharedView }) => {
         delete itemsByDate['null'];
         
         const sortedDates = Object.keys(itemsByDate).sort();
-        console.log(`Offer ${offerName}: ${sortedDates.length} unique dates`);
         
         const excludeDates = new Set(customExcludedDates);
         
@@ -337,7 +271,6 @@ const OffersTab = ({ isSharedView }) => {
         }
         
         if (excludeDates.size > 0) {
-          console.log(`Excluding ${excludeDates.size} dates from offer ${offerName}`);
           sortedDates.forEach(date => {
             if (!excludeDates.has(date)) {
               adjustedData = [...adjustedData, ...itemsByDate[date]];
@@ -348,7 +281,6 @@ const OffersTab = ({ isSharedView }) => {
         }
       });
       
-      console.log("After exclusions, data items:", adjustedData.length);
       return adjustedData;
     } catch (err) {
       console.error('Error applying exclusions:', err);
@@ -415,7 +347,6 @@ const OffersTab = ({ isSharedView }) => {
 
   // Time distribution
   const { hourData, dayData, trendData } = useMemo(() => {
-    console.log("exclusionAdjustedData length:", exclusionAdjustedData.length);
     
     if (!exclusionAdjustedData.length) {
       return { hourData: [], dayData: [], trendData: [] };
@@ -426,7 +357,6 @@ const OffersTab = ({ isSharedView }) => {
       const dataWithDates = exclusionAdjustedData
         .filter(item => item.created_at);
       
-      console.log("Items with created_at:", dataWithDates.length);
       
       if (dataWithDates.length === 0) {
         return { hourData: [], dayData: [], trendData: [] };
@@ -437,7 +367,6 @@ const OffersTab = ({ isSharedView }) => {
         try {
           const date = new Date(item.created_at);
           if (isNaN(date.getTime())) {
-            console.log("Invalid date:", item.created_at);
             return null;
           }
           
@@ -453,7 +382,6 @@ const OffersTab = ({ isSharedView }) => {
         }
       }).filter(Boolean);
       
-      console.log("Valid parsed dates:", mappedData.length);
 
       // Hour distribution
       const hourGroups = groupBy(mappedData, 'hour');
@@ -472,7 +400,6 @@ const OffersTab = ({ isSharedView }) => {
 
       // Time trend
       const hitsByDate = groupBy(mappedData, 'date');
-      console.log("Dates with hits:", Object.keys(hitsByDate).length);
       
       const trendData = Object.keys(hitsByDate).length > 0 
         ? Object.entries(hitsByDate)
@@ -484,10 +411,7 @@ const OffersTab = ({ isSharedView }) => {
             .sort((a, b) => a.date.localeCompare(b.date))
         : [];
       
-      console.log("Final trend data points:", trendData.length);
       if (trendData.length > 0) {
-        console.log("First point:", trendData[0]);
-        console.log("Last point:", trendData[trendData.length - 1]);
       }
 
       return { hourData, dayData, trendData };
@@ -499,10 +423,7 @@ const OffersTab = ({ isSharedView }) => {
 
   // Debug trend data
   useEffect(() => {
-    console.log("Trend data for chart:", trendData);
-    console.log("Is data empty?", trendData.length === 0);
     if (trendData.length > 0) {
-      console.log("Sample point:", trendData[0]);
     }
   }, [trendData]);
 
@@ -569,51 +490,6 @@ const OffersTab = ({ isSharedView }) => {
     }
   }, [exclusionAdjustedData, selectedOffers]);
 
-  // Pagination helper and controls
-  const getPaginatedData = (dataArray) => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return dataArray.slice(startIndex, startIndex + pageSize);
-  };
-
-  const renderPagination = (totalItems) => {
-    const totalPages = Math.ceil(totalItems / pageSize);
-    if (totalPages <= 1) return null;
-    return (
-      <div className="flex items-center justify-between mt-4">
-        <div>
-          <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-700'}`}>
-            Showing <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span> to{' '}
-            <span className="font-medium">{Math.min(currentPage * pageSize, totalItems)}</span> of{' '}
-            <span className="font-medium">{totalItems}</span> results
-          </span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            className={`px-3 py-1 rounded-md ${
-              currentPage === 1 
-                ? `${darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'} cursor-not-allowed` 
-                : `${darkMode ? 'bg-pink-900 text-pink-300 hover:bg-pink-800' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`
-            }`}
-          >
-            Previous
-          </button>
-          <button
-            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            className={`px-3 py-1 rounded-md ${
-              currentPage === totalPages 
-                ? `${darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'} cursor-not-allowed` 
-                : `${darkMode ? 'bg-pink-900 text-pink-300 hover:bg-pink-800' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`
-            }`}
-          >
-            Next
-          </button>
-        </div>
-      </div>
-    );
-  };
 
   // Handle custom date exclusion
   const handleAddExcludedDate = () => {
@@ -627,10 +503,6 @@ const OffersTab = ({ isSharedView }) => {
     setCustomExcludedDates(customExcludedDates.filter(d => d !== date));
   };
 
-  // Reset pagination when changing insight type
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [insightType]);
 
   // Custom tooltip with dark mode support
   const CustomTooltip = ({ active, payload, label }) => {

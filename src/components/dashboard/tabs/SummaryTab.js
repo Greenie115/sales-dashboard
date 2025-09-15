@@ -14,7 +14,6 @@ import {
   calculateRepurchaseIntent
 } from '../../../utils/dataProcessing';
 import ChartErrorBoundary from '../../common/ChartErrorBoundary';
-import CalculationErrorBoundary from '../../common/CalculationErrorBoundary';
 
 /**
  * SummaryTab component displays the executive summary
@@ -229,9 +228,7 @@ const SummaryTab = React.memo(() => {
 
   // Click handlers for interactive elements
   const handleChartElementClick = (data, chartType) => {
-    console.log(`${chartType} clicked:`, data);
     // In a real app, this could trigger filtering or navigation
-    // For now, we'll just log the interaction
   };
 
   // Enhanced pie chart with click interaction

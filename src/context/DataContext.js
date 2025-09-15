@@ -22,8 +22,6 @@ export const DataProvider = ({ children }) => {
   const [hasOfferData, setHasOfferData] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
-  const [brandMapping, setBrandMapping] = useState({});
-  const [brandNames, setBrandNames] = useState([]);
   const [clientName, setClientName] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   
@@ -55,10 +53,6 @@ export const DataProvider = ({ children }) => {
     // Sync salesData with Campaign A if it exists
     if (campaigns.A.data.length > 0) {
       setSalesData(campaigns.A.data);
-      if (campaigns.A.metadata?.brandMapping) {
-        setBrandMapping(campaigns.A.metadata.brandMapping);
-        setBrandNames(Object.keys(campaigns.A.metadata.brandMapping));
-      }
     }
   }, [campaigns.A.data, campaigns.A.metadata]);
   
@@ -153,10 +147,6 @@ export const DataProvider = ({ children }) => {
     // If setting Campaign A, also update primary state for compatibility
     if (campaignId === 'A') {
       setSalesData(data || []);
-      if (enhancedMetadata?.brandMapping) {
-        setBrandMapping(enhancedMetadata.brandMapping);
-        setBrandNames(Object.keys(enhancedMetadata.brandMapping));
-      }
       if (enhancedMetadata?.clientName) {
         setClientName(enhancedMetadata.clientName);
       }
@@ -172,10 +162,23 @@ export const DataProvider = ({ children }) => {
     // If clearing Campaign A, also clear primary state
     if (campaignId === 'A') {
       setSalesData([]);
-      setBrandMapping({});
-      setBrandNames([]);
       setClientName('');
     }
+  }, []);
+
+  // Update campaign metadata (name, description, etc.)
+  const updateCampaignMetadata = useCallback((campaignId, updates) => {
+    setCampaigns(prev => ({
+      ...prev,
+      [campaignId]: {
+        ...prev[campaignId],
+        metadata: {
+          ...prev[campaignId]?.metadata,
+          ...updates
+        }
+      }
+    }));
+    setLastUpdated(new Date().toISOString());
   }, []);
   
   // Clear all data
@@ -187,8 +190,6 @@ export const DataProvider = ({ children }) => {
     setSalesData([]);
     setOfferData([]);
     setHasOfferData(false);
-    setBrandMapping({});
-    setBrandNames([]);
     setClientName('');
     setComparisonSettings({
       mode: 'single',
@@ -268,8 +269,6 @@ export const DataProvider = ({ children }) => {
     hasOfferData,
     dataLoading,
     dataError,
-    brandMapping,
-    brandNames,
     clientName,
     hasData,
     activeTab,
@@ -288,6 +287,7 @@ export const DataProvider = ({ children }) => {
     setCampaignData,
     clearCampaign,
     clearData,
+    updateCampaignMetadata,
     getActiveDataset,
     getCampaignMetadata,
     hasCampaignData,
@@ -299,8 +299,6 @@ export const DataProvider = ({ children }) => {
     setHasOfferData,
     setDataLoading,
     setDataError,
-    setBrandMapping,
-    setBrandNames,
     setClientName,
     excludedDates,
     setExcludedDates,

@@ -1,10 +1,11 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import min from 'lodash/min';
 import max from 'lodash/max';
 import uniq from 'lodash/uniq';
 import { useData } from './DataContext';
 import { filterSalesData, calculateMetrics as calculateMetricsUtil, getRetailerDistribution as getRetailerDistributionUtil, getProductDistribution as getProductDistributionUtil } from '../utils/dataProcessing';
 import { safeToISOString, safeParseDate } from '../utils/dateUtils';
+import { getCombinedCampaignData } from '../utils/campaignUtils';
 
 // Create context
 const FilterContext = createContext();
@@ -14,7 +15,7 @@ export const useFilter = () => useContext(FilterContext);
 
 // Provider component
 export const FilterProvider = ({ children }) => {
-  const { salesData } = useData();
+  const { salesData, campaigns, comparisonSettings, canCompare } = useData();
 
   // Filter state
   const [selectedProducts, setSelectedProducts] = useState(['all']);
@@ -34,11 +35,24 @@ export const FilterProvider = ({ children }) => {
   // UI state
   const [isFilterPanelCollapsed, setIsFilterPanelCollapsed] = useState(false);
 
-  // Initialize date range when salesData changes
+  // Get the appropriate dataset for filtering using utility function
+  const getFilterDataset = useCallback(() => {
+    return getCombinedCampaignData({
+      campaigns,
+      comparisonSettings,
+      canCompare,
+      fallbackData: salesData
+    });
+  }, [salesData, campaigns, comparisonSettings, canCompare]);
+
+  // Get the current dataset for filtering
+  const currentDataset = getFilterDataset();
+
+  // Initialize date range when the dataset changes
   useEffect(() => {
-    // Check if salesData exists and is an array
-    if (salesData && Array.isArray(salesData) && salesData.length > 0) {
-      const dates = salesData.map(row => row.receipt_date);
+    // Check if currentDataset exists and is an array
+    if (currentDataset && Array.isArray(currentDataset) && currentDataset.length > 0) {
+      const dates = currentDataset.map(row => row.receipt_date);
       const minDate = min(dates);
       const maxDate = max(dates);
 
@@ -68,13 +82,13 @@ export const FilterProvider = ({ children }) => {
       }
 
       // Set first available month
-      const months = uniq(salesData.map(item => item.month)).sort();
+      const months = uniq(currentDataset.map(item => item.month)).sort();
       if (months.length > 0) {
         setSelectedMonth(months[months.length - 1]);
         setComparisonMonth(months.length > 1 ? months[months.length - 2] : months[0]);
       }
     }
-  }, [salesData]);
+  }, [currentDataset]);
 
   // Toggle filter panel
   const toggleFilterPanel = () => {
@@ -111,10 +125,10 @@ export const FilterProvider = ({ children }) => {
     }
   };
 
-  // Get available months from salesData
+  // Get available months from currentDataset
   const getAvailableMonths = () => {
-    if (!salesData || !Array.isArray(salesData)) return [];
-    return uniq(salesData.map(item => item.month)).sort();
+    if (!currentDataset || !Array.isArray(currentDataset)) return [];
+    return uniq(currentDataset.map(item => item.month)).sort();
   };
 
   // Formatting helper for month display
@@ -129,8 +143,6 @@ export const FilterProvider = ({ children }) => {
     }
   };
 
-  // We already have salesData from useData() at the top of the component
-
   // Function to get filtered data based on current filters
   const getFilteredData = (customFilters = null) => {
     // Use provided custom filters or current filters
@@ -143,7 +155,7 @@ export const FilterProvider = ({ children }) => {
       selectedMonth
     };
 
-    return filterSalesData(salesData, filtersToUse);
+    return filterSalesData(currentDataset, filtersToUse);
   };
 
   // Function to calculate metrics for the filtered data

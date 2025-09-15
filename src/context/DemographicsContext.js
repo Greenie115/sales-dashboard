@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import uniq from 'lodash/uniq';
 import groupBy from 'lodash/groupBy';
 import orderBy from 'lodash/orderBy';
@@ -21,7 +21,7 @@ export const DemographicsProvider = ({ children }) => {
   const [availableQuestions, setAvailableQuestions] = useState([]);
 
   // Define the preferred sorting order for age groups
-  const AGE_GROUP_ORDER = [
+  const AGE_GROUP_ORDER = useMemo(() => [
     '16-24',
     '25-34',
     '35-44',
@@ -29,7 +29,7 @@ export const DemographicsProvider = ({ children }) => {
     '55-64',
     '65+',
     'Under 18'
-  ];
+  ], []);
 
   // Function to analyze demographic data
   const analyzeDemographics = useCallback((data) => {

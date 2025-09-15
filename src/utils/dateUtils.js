@@ -190,7 +190,7 @@ export const safeDateComponents = (date) => {
 };
 
 /**
- * Detect likely date format from sample data
+ * Detect likely date format from sample data with improved ISO detection
  * @param {Array} sampleDates - Array of sample date strings
  * @returns {string} - Detected format ('ISO', 'US', 'EU', 'unknown')
  */
@@ -198,30 +198,55 @@ export const detectDateFormat = (sampleDates) => {
   if (!sampleDates || sampleDates.length === 0) return 'unknown';
   
   let isoCount = 0;
+  let isoTimeCount = 0;
   let usCount = 0;
   let euCount = 0;
+  let totalValidDates = 0;
   
-  sampleDates.slice(0, 10).forEach(dateStr => {
+  sampleDates.slice(0, 15).forEach(dateStr => {
     if (!dateStr) return;
     
-    // Check for ISO format
-    if (/^\d{4}-\d{1,2}-\d{1,2}/.test(dateStr)) {
+    const trimmed = dateStr.toString().trim();
+    
+    // Check for ISO date format (YYYY-MM-DD)
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) {
       isoCount++;
+      totalValidDates++;
     }
-    // Check for US format (MM/DD patterns where MM > 12 would be invalid in EU)
-    else if (/^(\d{1,2})[/-](\d{1,2})[/-]\d{4}$/.test(dateStr)) {
-      const [, first, second] = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-]\d{4}$/);
-      if (parseInt(first) > 12) {
+    // Check for ISO datetime format (YYYY-MM-DDTHH:mm:ss)
+    else if (/^\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}/.test(trimmed)) {
+      isoTimeCount++;
+      totalValidDates++;
+    }
+    // Check for US/EU format (MM/DD or DD/MM patterns)
+    else if (/^(\d{1,2})[/-](\d{1,2})[/-]\d{4}$/.test(trimmed)) {
+      const [, first, second] = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-]\d{4}$/);
+      const firstNum = parseInt(first);
+      const secondNum = parseInt(second);
+      
+      if (firstNum > 12) {
         euCount++; // Must be DD/MM
-      } else if (parseInt(second) > 12) {
+        totalValidDates++;
+      } else if (secondNum > 12) {
         usCount++; // Must be MM/DD
+        totalValidDates++;
+      } else {
+        // Ambiguous - could be either, lean towards US as default
+        usCount++;
+        totalValidDates++;
       }
     }
   });
   
-  if (isoCount > usCount && isoCount > euCount) return 'ISO';
-  if (usCount > euCount) return 'US';
-  if (euCount > 0) return 'EU';
+  // Prioritize ISO formats (including datetime)
+  const totalIsoCount = isoCount + isoTimeCount;
+  if (totalIsoCount > 0 && totalIsoCount >= totalValidDates * 0.7) {
+    return 'ISO';
+  }
+  
+  if (usCount > euCount && usCount > totalIsoCount) return 'US';
+  if (euCount > 0 && euCount >= usCount) return 'EU';
+  if (totalIsoCount > 0) return 'ISO';
   
   return 'unknown';
 };
@@ -240,14 +265,17 @@ export const batchProcessDates = (data, dateField = 'receipt_date', options = {}
   
   // Sample dates for format detection
   const sampleDates = data
-    .slice(0, 20)
+    .slice(0, 30) // Increase sample size for better detection
     .map(row => row[dateField])
     .filter(Boolean);
     
   const detectedFormat = detectDateFormat(sampleDates);
   const parseOptions = {
     ...options,
-    preferEuropean: detectedFormat === 'EU'
+    preferEuropean: detectedFormat === 'EU',
+    // Be more lenient with date ranges for CSV data
+    maxFutureYears: 2,
+    minYear: 1980
   };
   
   let invalidCount = 0;
@@ -255,13 +283,36 @@ export const batchProcessDates = (data, dateField = 'receipt_date', options = {}
   const processedData = data.map(row => {
     if (!row[dateField]) return row;
     
-    const dateComponents = safeDateComponents(safeParseDate(row[dateField], parseOptions));
+    const dateValue = row[dateField];
     
-    if (!dateComponents) {
-      invalidCount++;
-      console.warn(`Invalid date in row:`, row[dateField]);
-      return row; // Keep original row
+    // Skip processing if the date is already in ISO format and has derived fields
+    if (detectedFormat === 'ISO' && 
+        /^\d{4}-\d{2}-\d{2}$/.test(dateValue) &&
+        row.month && row.day_of_week !== undefined) {
+      return row;
     }
+    
+    const parsedDate = safeParseDate(dateValue, parseOptions);
+    
+    if (!parsedDate) {
+      // Only count as invalid if we can't parse it at all
+      // For ISO format, be more lenient
+      if (detectedFormat === 'ISO' && /^\d{4}-\d{2}-\d{2}/.test(dateValue)) {
+        // Try to keep ISO dates even if we can't fully parse them
+        return {
+          ...row,
+          month: dateValue.slice(0, 7), // YYYY-MM
+          day_of_week: 0, // Default
+          hour_of_day: 0  // Default
+        };
+      }
+      
+      invalidCount++;
+      console.warn(`Invalid date in row:`, dateValue);
+      return row; // Keep original row with original date
+    }
+    
+    const dateComponents = safeDateComponents(parsedDate);
     
     return {
       ...row,

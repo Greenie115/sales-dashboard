@@ -28,7 +28,7 @@ const exportOfferDataToCSV = (offerData, fileName) => {
         
         offerData.offerData.forEach(item => {
           const formattedOfferName = `"${item.name.replace(/"/g, '""')}"`;
-          csvContent += `${formattedOfferName},${item.value},${item.averageHitsPerDay || 'N/A'},${item.percentage.toFixed(1)}\n`;
+          csvContent += `${formattedOfferName},${item.value},${item.averageHitsPerDay || 'N/A'},${(item.percentage || 0).toFixed(1)}\n`;
         });
         
         // Add gender data if available
@@ -37,7 +37,7 @@ const exportOfferDataToCSV = (offerData, fileName) => {
           csvContent += 'Gender,Count,Percentage\n';
           
           offerData.genderData.forEach(item => {
-            csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
+            csvContent += `${item.name},${item.value},${(item.percentage || 0).toFixed(1)}\n`;
           });
         }
         
@@ -47,7 +47,7 @@ const exportOfferDataToCSV = (offerData, fileName) => {
           csvContent += 'Age Group,Count,Percentage\n';
           
           offerData.ageData.forEach(item => {
-            csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
+            csvContent += `${item.name},${item.value},${(item.percentage || 0).toFixed(1)}\n`;
           });
         }
       }
@@ -92,7 +92,7 @@ export const ExportProvider = ({ children }) => {
           csvContent += 'Age Group,Count,Percentage\n';
           
           data.demographicData.ageData.forEach(item => {
-            csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
+            csvContent += `${item.name},${item.value},${(item.percentage || 0).toFixed(1)}\n`;
           });
         }
         
@@ -102,7 +102,7 @@ export const ExportProvider = ({ children }) => {
           csvContent += 'Gender,Count,Percentage\n';
           
           data.demographicData.genderData.forEach(item => {
-            csvContent += `${item.name},${item.value},${item.percentage.toFixed(1)}\n`;
+            csvContent += `${item.name},${item.value},${(item.percentage || 0).toFixed(1)}\n`;
           });
         }
       } else {
@@ -144,7 +144,7 @@ export const ExportProvider = ({ children }) => {
     try {
       // PDF export implementation would go here
       // This is a placeholder for actual PDF generation logic
-      console.log('PDF export for', fileName, 'with data', data);
+      // PDF export placeholder - functionality implemented in exportUtils
       
       setIsExporting(false);
       return true;

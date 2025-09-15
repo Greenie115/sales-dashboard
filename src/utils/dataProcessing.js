@@ -1,5 +1,4 @@
 // src/utils/dataProcessing.js
-import { identifyBrandPrefixes, extractBrandNames } from './brandDetection';
 import { safeDateComponents } from './dateUtils';
 import uniq from 'lodash/uniq';
 import groupBy from 'lodash/groupBy';
@@ -146,39 +145,22 @@ export const getRetailerDistribution = (data) => {
 };
 
 /**
- * Get product distribution from data using brand detection
+ * Get product distribution from data
  */
-export const getProductDistribution = (data, brandMapping = {}) => {
+export const getProductDistribution = (data) => {
   if (!data || data.length === 0) return [];
   
   const groupedByProduct = groupBy(data, 'product_name');
   const totalUnits = data.length;
   
   return Object.entries(groupedByProduct)
-    .map(([product, items]) => {
-      // Use the mapping to get display name
-      const productInfo = brandMapping[product] || { displayName: product };
-      let displayName = productInfo.displayName || product;
-      
-      // Fallback: If the display name is still the full product name
-      // and has 3+ words, remove the first word(s)
-      if (displayName === product) {
-        const words = displayName.split(' ');
-        if (words.length >= 3) {
-          const wordsToRemove = words.length >= 5 ? 2 : 1;
-          displayName = words.slice(wordsToRemove).join(' ');
-        }
-      }
-      
-      return {
-        name: product, // Keep original name for data integrity
-        displayName: displayName, // Use formatted name for display
-        brandName: productInfo.brandName || '', // Store the brand name if needed
-        count: items.length,
-        percentage: (items.length / totalUnits) * 100,
-        value: items.reduce((sum, item) => sum + (item.receipt_amount || 0), 0)
-      };
-    })
+    .map(([product, items]) => ({
+      name: product,
+      displayName: product,
+      count: items.length,
+      percentage: (items.length / totalUnits) * 100,
+      value: items.reduce((sum, item) => sum + (item.receipt_amount || 0), 0)
+    }))
     .sort((a, b) => b.count - a.count);
 };
 
@@ -308,28 +290,6 @@ export const processFileData = async (file) => {
   });
 };
 
-/**
- * Analyze data to detect brands and create mapping
- */
-export const analyzeBrands = (data) => {
-  if (!data || data.length === 0) return { brandMapping: {}, brandNames: [] };
-  
-  try {
-    // Extract unique product names
-    const uniqueProducts = uniq(data.map(item => item.product_name)).filter(Boolean);
-    
-    // Generate brand mapping
-    const brandMapping = identifyBrandPrefixes(uniqueProducts);
-    
-    // Extract brand names
-    const brandNames = extractBrandNames(brandMapping);
-    
-    return { brandMapping, brandNames };
-  } catch (error) {
-    console.error('Error analyzing brands:', error);
-    return { brandMapping: {}, brandNames: [] };
-  }
-};
 
 /**
  * Create a product-retailer matrix from data
@@ -619,7 +579,7 @@ export const getCustomerAnalytics = (data) => {
 /**
  * Get product performance with financial metrics
  */
-export const getProductPerformance = (data, brandMapping = {}) => {
+export const getProductPerformance = (data) => {
   if (!data || data.length === 0) return [];
   
   const groupedByProduct = groupBy(data, 'product_name');
@@ -627,16 +587,7 @@ export const getProductPerformance = (data, brandMapping = {}) => {
   
   return Object.entries(groupedByProduct)
     .map(([product, items]) => {
-      const productInfo = brandMapping[product] || { displayName: product };
-      let displayName = productInfo.displayName || product;
-      
-      if (displayName === product) {
-        const words = displayName.split(' ');
-        if (words.length >= 3) {
-          const wordsToRemove = words.length >= 5 ? 2 : 1;
-          displayName = words.slice(wordsToRemove).join(' ');
-        }
-      }
+      const displayName = product;
       
       const revenue = items.reduce((sum, item) => sum + (parseFloat(item.receipt_amount) || 0), 0);
       const avgTransactionValue = items.length > 0 ? revenue / items.length : 0;
@@ -645,7 +596,6 @@ export const getProductPerformance = (data, brandMapping = {}) => {
       return {
         name: product,
         displayName: displayName,
-        brandName: productInfo.brandName || '',
         transactions: items.length,
         revenue: revenue,
         percentage: (items.length / data.length) * 100,
@@ -661,23 +611,14 @@ export const getProductPerformance = (data, brandMapping = {}) => {
 /**
  * Calculate product ratings from the data
  */
-export const calculateProductRatings = (data, brandMapping = {}) => {
+export const calculateProductRatings = (data) => {
   if (!data || data.length === 0) return [];
   
   const groupedByProduct = groupBy(data, 'product_name');
   
   return Object.entries(groupedByProduct)
     .map(([product, items]) => {
-      const productInfo = brandMapping[product] || { displayName: product };
-      let displayName = productInfo.displayName || product;
-      
-      if (displayName === product) {
-        const words = displayName.split(' ');
-        if (words.length >= 3) {
-          const wordsToRemove = words.length >= 5 ? 2 : 1;
-          displayName = words.slice(wordsToRemove).join(' ');
-        }
-      }
+      const displayName = product;
       
       // Filter items that have ratings
       const itemsWithRatings = items.filter(item => 
@@ -705,7 +646,6 @@ export const calculateProductRatings = (data, brandMapping = {}) => {
       return {
         name: product,
         displayName: displayName,
-        brandName: productInfo.brandName || '',
         totalResponses: items.length,
         ratingResponses: itemsWithRatings.length,
         avgRating: avgRating,
@@ -720,23 +660,14 @@ export const calculateProductRatings = (data, brandMapping = {}) => {
 /**
  * Calculate repurchase intent for products from question_07 (with fallback for missing data)
  */
-export const calculateRepurchaseIntent = (data, brandMapping = {}) => {
+export const calculateRepurchaseIntent = (data) => {
   if (!data || data.length === 0) return [];
   
   const groupedByProduct = groupBy(data, 'product_name');
   
   return Object.entries(groupedByProduct)
     .map(([product, items]) => {
-      const productInfo = brandMapping[product] || { displayName: product };
-      let displayName = productInfo.displayName || product;
-      
-      if (displayName === product) {
-        const words = displayName.split(' ');
-        if (words.length >= 3) {
-          const wordsToRemove = words.length >= 5 ? 2 : 1;
-          displayName = words.slice(wordsToRemove).join(' ');
-        }
-      }
+      const displayName = product;
       
       // Filter items that have repurchase intent responses (question_07)
       const itemsWithRepurchase = items.filter(item => 
@@ -780,7 +711,6 @@ export const calculateRepurchaseIntent = (data, brandMapping = {}) => {
       return {
         name: product,
         displayName: displayName,
-        brandName: productInfo.brandName || '',
         totalResponses: items.length,
         repurchaseResponses: totalResponses,
         repurchaseIntentRate: repurchaseIntentRate,
